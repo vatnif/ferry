@@ -1,0 +1,880 @@
+<title>Ferry — UI Mockups (M0)</title>
+<style>
+  /* ---------- Design tokens ---------- */
+  :root {
+    --page-bg: #eef0f1;
+    --page-text: #1d1f21;
+    --page-muted: #5d6468;
+    --card-border: #d4d8da;
+
+    --accent: #0d6e8c;            /* Ferry sea-teal */
+    --accent-contrast: #ffffff;
+    --accent-soft: rgba(13,110,140,.12);
+
+    --win-shadow: 0 18px 50px rgba(20,40,50,.22), 0 2px 8px rgba(20,40,50,.12);
+    --titlebar-bg: linear-gradient(#f7f7f6, #ededec);
+    --titlebar-text: #3b3f42;
+    --toolbar-bg: #f4f4f3;
+    --sidebar-bg: #e9e9e7;
+    --content-bg: #ffffff;
+    --panel-bg: #f7f7f6;
+    --border: #d7d7d5;
+    --border-strong: #c3c3c1;
+    --text: #1d1f21;
+    --muted: #71767a;
+    --faint: #9aa0a4;
+    --row-alt: #f6f8f9;
+    --row-hover: #eef4f6;
+    --selection: var(--accent);
+    --selection-text: #ffffff;
+    --input-bg: #ffffff;
+    --ok: #1f883d;
+    --warn: #b7791f;
+    --danger: #c53030;
+    --progress-track: #e3e6e8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --page-bg: #17191b;
+      --page-text: #e8eaec;
+      --page-muted: #9aa1a6;
+      --card-border: #2c3033;
+
+      --accent: #35b3d4;
+      --accent-contrast: #06232c;
+      --accent-soft: rgba(53,179,212,.16);
+
+      --win-shadow: 0 18px 55px rgba(0,0,0,.55), 0 2px 8px rgba(0,0,0,.4);
+      --titlebar-bg: linear-gradient(#3b3d3f, #333537);
+      --titlebar-text: #d6d8da;
+      --toolbar-bg: #313335;
+      --sidebar-bg: #2a2c2e;
+      --content-bg: #1f2123;
+      --panel-bg: #27292b;
+      --border: #414446;
+      --border-strong: #4c4f52;
+      --text: #e8eaec;
+      --muted: #a2a8ad;
+      --faint: #767c81;
+      --row-alt: #24262a;
+      --row-hover: #2a3438;
+      --selection: #0f7d9e;
+      --selection-text: #f2fbfe;
+      --input-bg: #1a1c1e;
+      --ok: #4cc366;
+      --warn: #e2b03e;
+      --danger: #f07171;
+      --progress-track: #3a3d40;
+    }
+  }
+  :root[data-theme="dark"] {
+    --page-bg: #17191b; --page-text: #e8eaec; --page-muted: #9aa1a6; --card-border: #2c3033;
+    --accent: #35b3d4; --accent-contrast: #06232c; --accent-soft: rgba(53,179,212,.16);
+    --win-shadow: 0 18px 55px rgba(0,0,0,.55), 0 2px 8px rgba(0,0,0,.4);
+    --titlebar-bg: linear-gradient(#3b3d3f, #333537); --titlebar-text: #d6d8da;
+    --toolbar-bg: #313335; --sidebar-bg: #2a2c2e; --content-bg: #1f2123; --panel-bg: #27292b;
+    --border: #414446; --border-strong: #4c4f52; --text: #e8eaec; --muted: #a2a8ad; --faint: #767c81;
+    --row-alt: #24262a; --row-hover: #2a3438; --selection: #0f7d9e; --selection-text: #f2fbfe;
+    --input-bg: #1a1c1e; --ok: #4cc366; --warn: #e2b03e; --danger: #f07171; --progress-track: #3a3d40;
+  }
+  :root[data-theme="light"] {
+    --page-bg: #eef0f1; --page-text: #1d1f21; --page-muted: #5d6468; --card-border: #d4d8da;
+    --accent: #0d6e8c; --accent-contrast: #ffffff; --accent-soft: rgba(13,110,140,.12);
+    --win-shadow: 0 18px 50px rgba(20,40,50,.22), 0 2px 8px rgba(20,40,50,.12);
+    --titlebar-bg: linear-gradient(#f7f7f6, #ededec); --titlebar-text: #3b3f42;
+    --toolbar-bg: #f4f4f3; --sidebar-bg: #e9e9e7; --content-bg: #ffffff; --panel-bg: #f7f7f6;
+    --border: #d7d7d5; --border-strong: #c3c3c1; --text: #1d1f21; --muted: #71767a; --faint: #9aa0a4;
+    --row-alt: #f6f8f9; --row-hover: #eef4f6; --selection: #0d6e8c; --selection-text: #ffffff;
+    --input-bg: #ffffff; --ok: #1f883d; --warn: #b7791f; --danger: #c53030; --progress-track: #e3e6e8;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page-bg);
+    color: var(--page-text);
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  }
+
+  /* ---------- Page chrome ---------- */
+  .page-header {
+    max-width: 1200px; margin: 0 auto; padding: 36px 24px 8px;
+  }
+  .page-header .eyebrow {
+    font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--accent); font-weight: 600;
+  }
+  .page-header h1 { margin: 6px 0 4px; font-size: 26px; font-weight: 700; letter-spacing: -.01em; }
+  .page-header p { margin: 0; color: var(--page-muted); max-width: 66ch; }
+
+  nav.switcher {
+    position: sticky; top: 0; z-index: 50;
+    background: color-mix(in srgb, var(--page-bg) 88%, transparent);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--card-border);
+    margin-top: 20px;
+  }
+  nav.switcher .inner {
+    max-width: 1200px; margin: 0 auto; padding: 10px 24px;
+    display: flex; gap: 8px; flex-wrap: wrap;
+  }
+  nav.switcher button {
+    font: 600 13px/1 -apple-system, BlinkMacSystemFont, sans-serif;
+    padding: 8px 14px; border-radius: 999px;
+    border: 1px solid var(--card-border);
+    background: transparent; color: var(--page-text); cursor: pointer;
+  }
+  nav.switcher button:hover { background: var(--accent-soft); }
+  nav.switcher button.active {
+    background: var(--accent); color: var(--accent-contrast); border-color: var(--accent);
+  }
+  nav.switcher button:focus-visible,
+  .mock button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  main { max-width: 1200px; margin: 0 auto; padding: 28px 24px 80px; }
+  section.screen { display: none; }
+  section.screen.visible { display: block; }
+  section.screen > h2 { font-size: 20px; margin: 8px 0 2px; }
+  section.screen > .sub { color: var(--page-muted); margin: 0 0 20px; max-width: 74ch; }
+
+  .notes {
+    margin-top: 22px; border: 1px solid var(--card-border); border-radius: 10px;
+    background: color-mix(in srgb, var(--page-bg) 60%, var(--content-bg));
+    padding: 16px 20px;
+  }
+  .notes h3 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .1em; color: var(--page-muted); }
+  .notes ol { margin: 0; padding-left: 22px; display: grid; gap: 6px; }
+  .notes li { max-width: 90ch; }
+  .notes b { font-weight: 600; }
+
+  .mock-wrap { overflow-x: auto; padding: 6px 2px 14px; }
+
+  /* ---------- macOS window chrome ---------- */
+  .window {
+    min-width: 980px; max-width: 1120px; margin: 0 auto;
+    border-radius: 12px; overflow: hidden;
+    border: 1px solid var(--border-strong);
+    box-shadow: var(--win-shadow);
+    background: var(--content-bg);
+    font-size: 13px; color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  }
+  .window.dialog { min-width: 0; max-width: 480px; }
+  .window.medium { min-width: 0; max-width: 760px; }
+
+  .titlebar {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--titlebar-bg);
+    border-bottom: 1px solid var(--border);
+    padding: 9px 12px; color: var(--titlebar-text);
+  }
+  .lights { display: flex; gap: 8px; }
+  .lights span { width: 12px; height: 12px; border-radius: 50%; display: block; }
+  .lights .r { background: #ff5f57; } .lights .y { background: #febc2e; } .lights .g { background: #28c840; }
+  .titlebar .title { flex: 1; text-align: center; font-weight: 600; font-size: 13px; }
+  .titlebar .spacer { width: 52px; }
+
+  /* window tabs */
+  .wintabs { display: flex; background: var(--titlebar-bg); border-bottom: 1px solid var(--border); padding: 0 8px; gap: 2px; }
+  .wintab {
+    padding: 6px 16px 7px; font-size: 12px; color: var(--muted);
+    border: 1px solid transparent; border-bottom: none; border-radius: 7px 7px 0 0;
+    display: flex; align-items: center; gap: 7px;
+  }
+  .wintab.active { background: var(--toolbar-bg); border-color: var(--border); color: var(--text); font-weight: 600; }
+  .wintab .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+  .wintab .dot.off { background: var(--faint); }
+  .wintab.newtab { padding: 6px 10px; }
+
+  .toolbar {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--toolbar-bg); border-bottom: 1px solid var(--border);
+    padding: 8px 12px;
+  }
+  .tbtn {
+    display: inline-flex; align-items: center; gap: 6px;
+    border: 1px solid var(--border); background: var(--content-bg);
+    color: var(--text); border-radius: 6px; padding: 5px 10px;
+    font: 500 12px/1.2 -apple-system, sans-serif; cursor: default;
+  }
+  .tbtn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); }
+  .tbtn .ico { font-size: 12px; opacity: .85; }
+  .tgroup { display: flex; gap: 4px; }
+  .toolbar .flex { flex: 1; }
+  .searchfield {
+    border: 1px solid var(--border); border-radius: 6px; background: var(--input-bg);
+    color: var(--muted); padding: 5px 10px; min-width: 170px; font-size: 12px;
+  }
+
+  /* ---------- Main layout ---------- */
+  .body-split { display: flex; min-height: 520px; }
+  .sidebar {
+    width: 220px; flex: 0 0 220px; background: var(--sidebar-bg);
+    border-right: 1px solid var(--border); padding: 12px 8px; overflow: hidden;
+  }
+  .sidebar h4 {
+    margin: 10px 8px 4px; font-size: 11px; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--faint); font-weight: 600;
+  }
+  .sideitem {
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 8px; border-radius: 6px; font-size: 13px; color: var(--text);
+  }
+  .sideitem .caret { color: var(--faint); font-size: 10px; width: 10px; }
+  .sideitem.folder { font-weight: 600; }
+  .sideitem.conn { padding-left: 26px; }
+  .sideitem.conn.nest2 { padding-left: 44px; }
+  .sideitem.selected { background: var(--selection); color: var(--selection-text); }
+  .sideitem.selected .proto { background: rgba(255,255,255,.25); color: inherit; border-color: transparent; }
+  .proto {
+    font-size: 9px; font-weight: 700; letter-spacing: .05em;
+    border: 1px solid var(--border-strong); border-radius: 4px;
+    padding: 1px 4px; color: var(--muted); margin-left: auto;
+  }
+
+  .dual { flex: 1; display: flex; flex-direction: column; background: var(--content-bg); }
+  .panes { flex: 1; display: flex; min-height: 0; }
+  .pane { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .pane + .pane { border-left: 1px solid var(--border); }
+
+  .pane-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 10px; border-bottom: 1px solid var(--border); background: var(--panel-bg);
+  }
+  .pane-head .scope { font-weight: 700; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); }
+  .crumbs { display: flex; align-items: center; gap: 4px; color: var(--muted); font-size: 12px; min-width: 0; overflow: hidden; }
+  .crumbs b { color: var(--text); font-weight: 600; }
+  .crumbs .sep { color: var(--faint); }
+  .pane-head .mini { margin-left: auto; display: flex; gap: 4px; }
+  .mini .tbtn { padding: 3px 7px; font-size: 11px; }
+
+  table.files { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  table.files th {
+    text-align: left; font-weight: 600; color: var(--muted); font-size: 11px;
+    padding: 5px 10px; border-bottom: 1px solid var(--border); background: var(--panel-bg);
+    position: sticky; top: 0;
+  }
+  table.files th.sorted { color: var(--text); }
+  table.files th.sorted::after { content: " ▲"; font-size: 9px; color: var(--accent); }
+  table.files td { padding: 4.5px 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  table.files td.num { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+  table.files td.perm { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px; color: var(--muted); }
+  table.files tr:nth-child(even) td { background: var(--row-alt); }
+  table.files tr.sel td { background: var(--selection); color: var(--selection-text); }
+  table.files tr.sel td.num, table.files tr.sel td.perm { color: var(--selection-text); }
+  table.files tr.dim td { color: var(--faint); }
+  .fico { display: inline-block; width: 17px; }
+
+  .pane-status {
+    margin-top: auto; padding: 5px 10px; font-size: 11px; color: var(--muted);
+    border-top: 1px solid var(--border); background: var(--panel-bg);
+    display: flex; gap: 14px;
+  }
+  .pane-status .right { margin-left: auto; }
+
+  /* ---------- Transfer queue ---------- */
+  .queue { border-top: 1px solid var(--border-strong); background: var(--panel-bg); }
+  .queue-head {
+    display: flex; align-items: center; gap: 10px; padding: 6px 12px;
+    font-size: 12px; font-weight: 600; color: var(--muted);
+    border-bottom: 1px solid var(--border);
+  }
+  .queue-head .count { background: var(--accent-soft); color: var(--accent); border-radius: 999px; padding: 1px 8px; font-size: 11px; }
+  .queue-head .collapse { margin-left: auto; color: var(--faint); }
+  .qrow { display: grid; grid-template-columns: 26px 1fr 340px 120px 90px; align-items: center; gap: 10px; padding: 7px 12px; border-bottom: 1px solid var(--border); font-size: 12px; }
+  .qrow:last-child { border-bottom: none; }
+  .qname { min-width: 0; }
+  .qname .n { font-weight: 600; }
+  .qname .path { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .qbar { height: 5px; border-radius: 3px; background: var(--progress-track); overflow: hidden; }
+  .qbar > i { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
+  .qmeta { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 11px; }
+  .qact { display: flex; gap: 4px; justify-content: flex-end; }
+  .qact .tbtn { padding: 2px 7px; font-size: 10px; }
+  .qstate { font-size: 10px; font-weight: 700; letter-spacing: .04em; border-radius: 4px; padding: 2px 6px; }
+  .qstate.run { background: var(--accent-soft); color: var(--accent); }
+  .qstate.wait { background: var(--progress-track); color: var(--muted); }
+  .qstate.err { background: rgba(197,48,48,.12); color: var(--danger); }
+
+  .statusbar {
+    display: flex; gap: 16px; padding: 5px 12px; font-size: 11px; color: var(--muted);
+    background: var(--toolbar-bg); border-top: 1px solid var(--border);
+  }
+  .statusbar .ok { color: var(--ok); font-weight: 600; }
+
+  /* ---------- Forms / sheets ---------- */
+  .sheet-body { padding: 20px 24px 22px; background: var(--content-bg); }
+  .frm { display: grid; grid-template-columns: 150px 1fr; gap: 10px 14px; align-items: center; }
+  .frm label { text-align: right; color: var(--muted); font-size: 12.5px; }
+  .frm .wide { grid-column: 2; }
+  .in {
+    border: 1px solid var(--border); border-radius: 6px; background: var(--input-bg);
+    color: var(--text); padding: 6px 9px; font-size: 13px; width: 100%;
+  }
+  .in.short { width: 90px; }
+  .row-flex { display: flex; gap: 8px; align-items: center; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 7px; overflow: hidden; }
+  .seg span { padding: 5px 14px; font-size: 12px; color: var(--muted); border-right: 1px solid var(--border); }
+  .seg span:last-child { border-right: none; }
+  .seg span.on { background: var(--accent); color: var(--accent-contrast); font-weight: 600; }
+  .hint { font-size: 11.5px; color: var(--faint); grid-column: 2; margin-top: -4px; }
+  .hint .kc { color: var(--accent); font-weight: 600; }
+  .divider { grid-column: 1 / -1; border-top: 1px solid var(--border); margin: 8px 0 2px; }
+  .disclosure { grid-column: 1 / -1; font-size: 12.5px; font-weight: 600; color: var(--muted); }
+  .disclosure .caret { color: var(--faint); font-size: 10px; margin-right: 6px; }
+  .sheet-foot {
+    display: flex; gap: 8px; padding: 14px 24px; border-top: 1px solid var(--border);
+    background: var(--panel-bg);
+  }
+  .sheet-foot .flex { flex: 1; }
+  .btn {
+    border: 1px solid var(--border); background: var(--content-bg); color: var(--text);
+    border-radius: 6px; padding: 6px 16px; font: 500 13px/1.2 -apple-system, sans-serif;
+  }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast); font-weight: 600; }
+  .btn.danger { color: var(--danger); }
+  .check { display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; color: var(--text); }
+  .check .box { width: 13px; height: 13px; border: 1px solid var(--border-strong); border-radius: 3px; margin-top: 2px; flex: 0 0 13px; background: var(--input-bg); }
+  .check .box.on { background: var(--accent); border-color: var(--accent); position: relative; }
+  .check .box.on::after { content: "✓"; color: var(--accent-contrast); font-size: 10px; position: absolute; top: -1px; left: 2px; }
+
+  /* ---------- Host key dialog ---------- */
+  .dlg-body { padding: 22px 24px; display: flex; gap: 16px; }
+  .dlg-icon { font-size: 34px; line-height: 1; }
+  .dlg-body h3 { margin: 0 0 6px; font-size: 14px; }
+  .dlg-body p { margin: 0 0 10px; font-size: 12.5px; color: var(--muted); max-width: 46ch; }
+  .fingerprint {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11.5px;
+    background: var(--panel-bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 8px 10px; color: var(--text); word-break: break-all; margin-bottom: 10px;
+  }
+
+  /* ---------- Tunnels ---------- */
+  .tunnel-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .tunnel-table th { text-align: left; font-size: 11px; color: var(--muted); font-weight: 600; padding: 6px 12px; border-bottom: 1px solid var(--border); background: var(--panel-bg); }
+  .tunnel-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); }
+  .tunnel-table td.mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11.5px; }
+  .pill { font-size: 10px; font-weight: 700; border-radius: 999px; padding: 2px 9px; letter-spacing: .04em; }
+  .pill.local { background: var(--accent-soft); color: var(--accent); }
+  .pill.remote { background: rgba(183,121,31,.14); color: var(--warn); }
+  .pill.socks { background: rgba(110,80,200,.14); color: #7a5fd0; }
+  .toggle { width: 34px; height: 19px; border-radius: 999px; background: var(--progress-track); position: relative; display: inline-block; vertical-align: middle; }
+  .toggle.on { background: var(--ok); }
+  .toggle::after { content: ""; position: absolute; top: 2px; left: 2px; width: 15px; height: 15px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.3); }
+  .toggle.on::after { left: 17px; }
+  .tstatus { font-size: 11px; color: var(--ok); font-weight: 600; }
+  .tstatus.off { color: var(--faint); font-weight: 400; }
+
+  /* ---------- App icon concepts ---------- */
+  .icon-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 18px; }
+  .icon-card {
+    border: 1px solid var(--card-border); border-radius: 12px; padding: 20px;
+    background: color-mix(in srgb, var(--page-bg) 55%, var(--content-bg));
+    display: flex; flex-direction: column; gap: 12px; align-items: flex-start;
+  }
+  .icon-card h3 { margin: 0; font-size: 15px; }
+  .icon-card h3 .rec { font-size: 10px; font-weight: 700; letter-spacing: .06em; color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 2px 8px; vertical-align: 2px; margin-left: 6px; }
+  .icon-card p { margin: 0; font-size: 13px; color: var(--page-muted); }
+  .icon-sizes { display: flex; align-items: flex-end; gap: 18px; }
+  .icon-sizes .cap { font-size: 10px; color: var(--faint); text-align: center; margin-top: 6px; }
+  .appicon {
+    border-radius: 22.37%; overflow: hidden;
+    box-shadow: 0 5px 14px rgba(10,30,40,.35), inset 0 1px 1px rgba(255,255,255,.2);
+  }
+  .appicon svg { display: block; width: 100%; height: 100%; }
+  .sz128 { width: 128px; height: 128px; }
+  .sz32 { width: 32px; height: 32px; }
+
+  /* ---------- Settings ---------- */
+  .settings-tabs { display: flex; justify-content: center; gap: 24px; background: var(--toolbar-bg); border-bottom: 1px solid var(--border); padding: 8px 0 6px; }
+  .stab { text-align: center; font-size: 11px; color: var(--muted); width: 74px; }
+  .stab .sico { font-size: 20px; display: block; margin-bottom: 2px; }
+  .stab.on { color: var(--accent); font-weight: 600; }
+  .stab.on .sico { filter: none; }
+  .settings-body { padding: 22px 30px 26px; background: var(--content-bg); }
+</style>
+
+<header class="page-header">
+  <div class="eyebrow">Ferry · Milestone 0</div>
+  <h1>UI mockups for review</h1>
+  <p>Five key screens, rendered as macOS windows in the system font. Use the theme toggle to check light and dark. Each screen has numbered review notes — reply with the screen and note number for anything you want changed.</p>
+</header>
+
+<nav class="switcher" aria-label="Screens">
+  <div class="inner">
+    <button data-target="s-main" class="active">1 · Main window</button>
+    <button data-target="s-conn">2 · Connection sheet</button>
+    <button data-target="s-hostkey">3 · Host key prompt</button>
+    <button data-target="s-tunnels">4 · Tunnel manager</button>
+    <button data-target="s-settings">5 · Settings</button>
+    <button data-target="s-icon">6 · App icon</button>
+  </div>
+</nav>
+
+<main>
+
+<!-- ============ 1. MAIN WINDOW ============ -->
+<section class="screen visible" id="s-main">
+  <h2>Main window — dual-pane browser</h2>
+  <p class="sub">The core workspace: connection sidebar, local pane (left) + remote pane (right), and the transfer queue docked at the bottom. One window can hold several connections as tabs.</p>
+
+  <div class="mock-wrap"><div class="window mock">
+    <div class="titlebar"><div class="lights"><span class="r"></span><span class="y"></span><span class="g"></span></div><div class="title">Ferry</div><div class="spacer"></div></div>
+    <div class="wintabs">
+      <div class="wintab active"><span class="dot"></span> prod-web-01</div>
+      <div class="wintab"><span class="dot"></span> acme / db-bastion</div>
+      <div class="wintab"><span class="dot off"></span> pi.home</div>
+      <div class="wintab newtab">＋</div>
+    </div>
+    <div class="toolbar">
+      <div class="tgroup"><button class="tbtn"><span class="ico">‹</span></button><button class="tbtn"><span class="ico">›</span></button></div>
+      <button class="tbtn"><span class="ico">⬆︎</span> Upload</button>
+      <button class="tbtn"><span class="ico">⬇︎</span> Download</button>
+      <button class="tbtn"><span class="ico">📁</span> New Folder</button>
+      <button class="tbtn"><span class="ico">↻</span> Refresh</button>
+      <button class="tbtn primary" aria-pressed="true"><span class="ico">🔗</span> Linked</button>
+      <div class="flex"></div>
+      <button class="tbtn"><span class="ico">🛠</span> Tunnels</button>
+      <button class="tbtn"><span class="ico">＞_</span> Terminal</button>
+      <span class="searchfield">🔍 Filter…</span>
+    </div>
+
+    <div class="body-split">
+      <aside class="sidebar">
+        <h4>Connections</h4>
+        <div class="sideitem folder"><span class="caret">▾</span> Work</div>
+        <div class="sideitem conn selected">prod-web-01 <span class="proto">SFTP</span></div>
+        <div class="sideitem conn">staging <span class="proto">SFTP</span></div>
+        <div class="sideitem folder"><span class="caret">▾</span> Clients</div>
+        <div class="sideitem conn"><span class="caret">▾</span> acme</div>
+        <div class="sideitem conn nest2">db-bastion <span class="proto">SFTP</span></div>
+        <div class="sideitem conn nest2">acme-legacy <span class="proto">FTPS</span></div>
+        <div class="sideitem folder"><span class="caret">▸</span> Personal</div>
+        <h4>This Mac</h4>
+        <div class="sideitem conn">Home</div>
+        <div class="sideitem conn">Downloads</div>
+        <div class="sideitem conn">Projects</div>
+      </aside>
+
+      <div class="dual">
+        <div class="panes">
+          <div class="pane">
+            <div class="pane-head">
+              <span class="scope">Local</span>
+              <span class="crumbs">~ <span class="sep">›</span> Projects <span class="sep">›</span> <b>website</b></span>
+              <span class="mini"><button class="tbtn">👁</button><button class="tbtn">⋯</button></span>
+            </div>
+            <table class="files">
+              <thead><tr><th class="sorted" style="width:44%">Name</th><th style="width:16%">Size</th><th style="width:26%">Modified</th><th>Kind</th></tr></thead>
+              <tbody>
+                <tr><td><span class="fico">📁</span> assets</td><td class="num">—</td><td class="num">Yesterday, 18:22</td><td class="num">Folder</td></tr>
+                <tr><td><span class="fico">📁</span> css</td><td class="num">—</td><td class="num">Jul 2, 10:04</td><td class="num">Folder</td></tr>
+                <tr class="sel"><td><span class="fico">📄</span> index.html</td><td class="num">14 KB</td><td class="num">Today, 11:48</td><td class="num">HTML</td></tr>
+                <tr><td><span class="fico">📄</span> app.js</td><td class="num">96 KB</td><td class="num">Today, 11:47</td><td class="num">JavaScript</td></tr>
+                <tr><td><span class="fico">🖼</span> hero.jpg</td><td class="num">1.8 MB</td><td class="num">Jun 30, 09:12</td><td class="num">JPEG</td></tr>
+                <tr class="dim"><td><span class="fico">📄</span> .env</td><td class="num">1 KB</td><td class="num">Jun 28, 16:40</td><td class="num">Document</td></tr>
+              </tbody>
+            </table>
+            <div class="pane-status">6 items, 1 hidden shown <span class="right">412 GB free</span></div>
+          </div>
+
+          <div class="pane">
+            <div class="pane-head">
+              <span class="scope" style="color: var(--ok)">Remote · prod-web-01</span>
+              <span class="crumbs">/ <span class="sep">›</span> var <span class="sep">›</span> www <span class="sep">›</span> <b>html</b></span>
+              <span class="mini"><button class="tbtn">👁</button><button class="tbtn">⋯</button></span>
+            </div>
+            <table class="files">
+              <thead><tr><th class="sorted" style="width:38%">Name</th><th style="width:13%">Size</th><th style="width:23%">Modified</th><th style="width:14%">Perms</th><th>Owner</th></tr></thead>
+              <tbody>
+                <tr><td><span class="fico">📁</span> assets</td><td class="num">—</td><td class="num">Jul 4, 22:10</td><td class="perm">drwxr-xr-x</td><td class="num">www-data</td></tr>
+                <tr><td><span class="fico">📁</span> css</td><td class="num">—</td><td class="num">Jul 2, 10:06</td><td class="perm">drwxr-xr-x</td><td class="num">www-data</td></tr>
+                <tr class="sel"><td><span class="fico">📄</span> index.html</td><td class="num">13 KB</td><td class="num">Jul 2, 10:06</td><td class="perm">-rw-r--r--</td><td class="num">www-data</td></tr>
+                <tr><td><span class="fico">📄</span> app.js</td><td class="num">94 KB</td><td class="num">Jul 2, 10:06</td><td class="perm">-rw-r--r--</td><td class="num">www-data</td></tr>
+                <tr><td><span class="fico">📄</span> robots.txt</td><td class="num">64 B</td><td class="num">May 11, 08:00</td><td class="perm">-rw-r--r--</td><td class="num">root</td></tr>
+                <tr><td><span class="fico">🖼</span> hero.jpg</td><td class="num">1.8 MB</td><td class="num">Jun 30, 09:15</td><td class="perm">-rw-r--r--</td><td class="num">www-data</td></tr>
+              </tbody>
+            </table>
+            <div class="pane-status">6 items <span class="right">SFTP · OpenSSH 9.6</span></div>
+          </div>
+        </div>
+
+        <div class="queue">
+          <div class="queue-head">Transfers <span class="count">2 active · 1 queued</span> <span class="collapse">⌄</span></div>
+          <div class="qrow">
+            <span>⬆︎</span>
+            <div class="qname"><div class="n">app.js</div><div class="path">~/Projects/website → /var/www/html</div></div>
+            <div class="qbar"><i style="width:72%"></i></div>
+            <div class="qmeta">68 KB of 96 KB · 2.4 MB/s · 0:01</div>
+            <div class="qact"><span class="qstate run">UPLOADING</span><button class="tbtn">⏸</button><button class="tbtn">✕</button></div>
+          </div>
+          <div class="qrow">
+            <span>⬇︎</span>
+            <div class="qname"><div class="n">backup-2026-07-04.tar.gz</div><div class="path">/var/backups → ~/Downloads</div></div>
+            <div class="qbar"><i style="width:31%"></i></div>
+            <div class="qmeta">1.2 GB of 3.9 GB · 11.8 MB/s · 3:54</div>
+            <div class="qact"><span class="qstate run">RESUMED</span><button class="tbtn">⏸</button><button class="tbtn">✕</button></div>
+          </div>
+          <div class="qrow">
+            <span>⬆︎</span>
+            <div class="qname"><div class="n">hero.jpg</div><div class="path">~/Projects/website → /var/www/html</div></div>
+            <div class="qbar"><i style="width:0%"></i></div>
+            <div class="qmeta">waiting · 1.8 MB</div>
+            <div class="qact"><span class="qstate wait">QUEUED</span><button class="tbtn">✕</button></div>
+          </div>
+        </div>
+
+        <div class="statusbar"><span class="ok">● Connected</span><span>prod-web-01 · deploy@203.0.113.14:22 · SFTP</span><span>latency 12 ms</span><span>🔗 panes linked</span><span style="margin-left:auto">2 tunnels active</span></div>
+      </div>
+    </div>
+  </div></div>
+
+  <div class="notes">
+    <h3>Review notes — Main window</h3>
+    <ol>
+      <li><b>Sidebar</b> holds the connection manager: folders (Work, Clients…) expand/collapse, connections show a protocol badge, drag to reorganize. Double-click connects in the current tab; ⌘-double-click opens a new tab. Right-click gives Edit / Duplicate / Delete / New Folder. Below it, "This Mac" holds local favorites.</li>
+      <li><b>Tabs</b> — one per connection; green dot = connected, grey = disconnected. The sidebar is shared across tabs.</li>
+      <li><b>Panes</b> — local always left, remote right. Both are the same component: sortable columns, breadcrumb path bar (clickable), per-pane hidden-files toggle (👁) and overflow menu (⋯). The remote pane adds Permissions and Owner columns. Drag rows between panes (or from Finder) to queue transfers.</li>
+      <li><b>Transfer queue</b> docks at the bottom, collapsible to a single summary row. Each row: direction, name, source → destination, progress, speed, ETA, pause/cancel. The "RESUMED" badge marks a transfer continued from a partial file.</li>
+      <li><b>Toolbar</b> — Upload/Download act on the selection; Tunnels and Terminal open screen 4 and the external terminal. The filter field filters the focused pane as you type.</li>
+      <li><b>Status bar</b> — connection state, endpoint, latency, active tunnel count.</li>
+      <li><b>Sync browsing (approved)</b> — the "🔗 Linked" toolbar toggle. When enabled, the current paths of both panes become anchor roots; entering or leaving a folder on one side mirrors on the other when a same-named folder exists there. If the folder is missing on the other side, that pane stays put and its path bar flashes briefly (the link is kept, not broken). Turning the toggle off returns both panes to independent navigation. Link state is per tab and shown in the status bar.</li>
+    </ol>
+  </div>
+</section>
+
+<!-- ============ 2. CONNECTION SHEET ============ -->
+<section class="screen" id="s-conn">
+  <h2>New / Edit connection sheet</h2>
+  <p class="sub">Slides down over the main window when creating or editing a connection. The same form serves all protocols; fields adapt to the protocol chosen.</p>
+
+  <div class="mock-wrap"><div class="window medium mock">
+    <div class="titlebar"><div class="lights"><span class="r"></span><span class="y"></span><span class="g"></span></div><div class="title">New Connection</div><div class="spacer"></div></div>
+    <div class="sheet-body">
+      <div class="frm">
+        <label>Name</label><input class="in" value="prod-web-01" readonly>
+        <label>Save in folder</label>
+        <div class="row-flex"><input class="in" value="Work" readonly style="width:220px"> <span style="font-size:11px;color:var(--faint)">▾</span></div>
+
+        <div class="divider"></div>
+
+        <label>Protocol</label>
+        <div class="seg"><span class="on">SFTP</span><span>FTP</span><span>FTPS</span><span>SCP</span></div>
+        <label>Server</label>
+        <div class="row-flex"><input class="in" value="203.0.113.14" readonly> <label style="text-align:left">Port</label> <input class="in short" value="22" readonly></div>
+        <label>Username</label><input class="in" value="deploy" readonly>
+
+        <label>Authentication</label>
+        <div class="seg"><span class="on">Password</span><span>SSH Key</span><span>SSH Agent</span></div>
+        <label>Password</label><input class="in" type="password" value="••••••••••" readonly>
+        <div class="hint">Stored in the <span class="kc">macOS Keychain</span> — never written to Ferry's files. Leave empty to be asked on connect.</div>
+
+        <div class="divider"></div>
+        <div class="disclosure"><span class="caret">▾</span> Advanced</div>
+        <label>Remote start path</label><input class="in" value="/var/www/html" readonly>
+        <label>Local start path</label><input class="in" value="~/Projects/website" readonly>
+        <label>Keep-alive</label>
+        <div class="check"><span class="box on"></span> Send keep-alive every 30 s and reconnect automatically</div>
+        <label>Tunnels</label>
+        <div class="row-flex"><span style="font-size:12.5px">2 saved port forwards</span> <button class="btn" style="padding:3px 10px;font-size:12px">Edit…</button></div>
+      </div>
+    </div>
+    <div class="sheet-foot">
+      <button class="btn">Test Connection</button>
+      <span style="align-self:center;font-size:12px;color:var(--ok);font-weight:600">✓ Succeeded (0.4 s)</span>
+      <div class="flex"></div>
+      <button class="btn">Cancel</button>
+      <button class="btn primary">Save</button>
+    </div>
+  </div></div>
+
+  <div class="notes">
+    <h3>Review notes — Connection sheet</h3>
+    <ol>
+      <li><b>Protocol segmented control</b> adapts the form: FTP/FTPS hide the auth-method row (password only) and swap port defaults (21/990); SCP shows the same auth options as SFTP.</li>
+      <li><b>Authentication</b> — Password (Keychain), SSH Key (file picker + optional passphrase, passphrase also in Keychain), or SSH Agent (Direct build only; hidden in App Store build).</li>
+      <li><b>Keychain hint</b> is always visible — the security story is a selling point, so we say it in the UI.</li>
+      <li><b>Test Connection</b> runs live and reports success/failure inline, including host-key acceptance (screen 3) if the host is unknown.</li>
+      <li><b>Advanced</b> is collapsed by default for a lightweight first-run experience.</li>
+      <li>An <b>Import…</b> button (bottom-left of the connection manager, not shown here) will pull from <code>~/.ssh/config</code> in v1, FileZilla/Cyberduck in v1.x.</li>
+    </ol>
+  </div>
+</section>
+
+<!-- ============ 3. HOST KEY PROMPT ============ -->
+<section class="screen" id="s-hostkey">
+  <h2>Host key verification</h2>
+  <p class="sub">Shown on first contact with an unknown server (trust-on-first-use), and — with much stronger warning styling — when a known server's key changes.</p>
+
+  <div class="mock-wrap"><div class="window dialog mock">
+    <div class="dlg-body">
+      <div class="dlg-icon">🔑</div>
+      <div>
+        <h3>Unknown server key for "prod-web-01"</h3>
+        <p>This is the first time Ferry connects to <b>203.0.113.14</b>. Verify the fingerprint against one you got from the server administrator before trusting it.</p>
+        <div class="fingerprint">ED25519 · SHA256:hQ4Yr9mfL2kX0aTz8Rp1uVwNc5eGdJb3sKfM7nZqYxU</div>
+        <div class="check"><span class="box on"></span> Remember this key (add to Ferry's known hosts)</div>
+      </div>
+    </div>
+    <div class="sheet-foot">
+      <button class="btn danger">Cancel</button>
+      <div class="flex"></div>
+      <button class="btn primary">Trust &amp; Connect</button>
+    </div>
+  </div></div>
+
+  <div style="height:26px"></div>
+
+  <div class="mock-wrap"><div class="window dialog mock">
+    <div class="dlg-body">
+      <div class="dlg-icon">⚠️</div>
+      <div>
+        <h3 style="color:var(--danger)">Server key has CHANGED for "prod-web-01"</h3>
+        <p>The key sent by <b>203.0.113.14</b> does not match the one Ferry has stored. This can mean the server was reinstalled — or that the connection is being intercepted. <b>Do not continue unless you know why the key changed.</b></p>
+        <div class="fingerprint">was&nbsp; SHA256:hQ4Yr9mfL2kX0aTz8Rp1uVwNc5eGdJb3sKfM7nZqYxU<br>now&nbsp; SHA256:Tk2Bv6wRq9sD4mYx1Lp7cJf0aNe8UhGz5oWiPdXrEeA</div>
+      </div>
+    </div>
+    <div class="sheet-foot">
+      <button class="btn primary">Disconnect (Recommended)</button>
+      <div class="flex"></div>
+      <button class="btn danger">Replace Key &amp; Connect…</button>
+    </div>
+  </div></div>
+
+  <div class="notes">
+    <h3>Review notes — Host key prompts</h3>
+    <ol>
+      <li><b>First contact (top)</b> — standard TOFU flow; "Remember" is on by default; fingerprint is selectable for out-of-band comparison.</li>
+      <li><b>Changed key (bottom)</b> — deliberately alarming; the safe action is the primary button, the dangerous one requires an extra confirmation ("…") and is styled as destructive.</li>
+      <li>Keys accepted here go to Ferry's own host-key store; we can also <b>read</b> the user's OpenSSH <code>known_hosts</code> to pre-trust hosts (never write to it).</li>
+    </ol>
+  </div>
+</section>
+
+<!-- ============ 4. TUNNEL MANAGER ============ -->
+<section class="screen" id="s-tunnels">
+  <h2>Tunnel manager</h2>
+  <p class="sub">Per-connection port forwards. Saved tunnels can auto-start on connect; the toggle starts/stops them live.</p>
+
+  <div class="mock-wrap"><div class="window medium mock">
+    <div class="titlebar"><div class="lights"><span class="r"></span><span class="y"></span><span class="g"></span></div><div class="title">Tunnels — prod-web-01</div><div class="spacer"></div></div>
+    <table class="tunnel-table">
+      <thead><tr><th>Active</th><th>Type</th><th>Listen</th><th>Destination</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="toggle on"></span></td>
+          <td><span class="pill local">LOCAL</span></td>
+          <td class="mono">localhost:5433</td>
+          <td class="mono">db.internal:5432</td>
+          <td><span class="tstatus">● forwarding · 3 conns</span></td>
+          <td><button class="btn" style="padding:3px 10px;font-size:12px">Edit</button></td>
+        </tr>
+        <tr>
+          <td><span class="toggle on"></span></td>
+          <td><span class="pill socks">SOCKS</span></td>
+          <td class="mono">localhost:1080</td>
+          <td class="mono">— (dynamic)</td>
+          <td><span class="tstatus">● forwarding</span></td>
+          <td><button class="btn" style="padding:3px 10px;font-size:12px">Edit</button></td>
+        </tr>
+        <tr>
+          <td><span class="toggle"></span></td>
+          <td><span class="pill remote">REMOTE</span></td>
+          <td class="mono">server:8080</td>
+          <td class="mono">localhost:3000</td>
+          <td><span class="tstatus off">stopped</span></td>
+          <td><button class="btn" style="padding:3px 10px;font-size:12px">Edit</button></td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="sheet-foot">
+      <button class="btn">＋ Add Tunnel</button>
+      <div class="flex"></div>
+      <div class="check"><span class="box on"></span> Start active tunnels automatically on connect</div>
+    </div>
+  </div></div>
+
+  <div class="notes">
+    <h3>Review notes — Tunnel manager</h3>
+    <ol>
+      <li>Three forward types: <b>Local</b> (local port → remote destination), <b>Remote</b> (remote port → local destination), <b>SOCKS</b> (dynamic proxy).</li>
+      <li>Tunnels are saved on the connection profile; toggles work live while connected, and "auto-start" brings them up with the session.</li>
+      <li>Status column shows live connection counts. Errors (port already in use, remote refusal) appear inline in that column in red.</li>
+      <li>Tunnels reuse the existing SSH session — no second login. Reached from the toolbar "Tunnels" button or the connection's context menu.</li>
+    </ol>
+  </div>
+</section>
+
+<!-- ============ 5. SETTINGS ============ -->
+<section class="screen" id="s-settings">
+  <h2>Settings — Transfers tab</h2>
+  <p class="sub">Standard macOS settings window with a tab strip. Transfers is the busiest tab; General, Keys, Terminal and Advanced follow the same layout language.</p>
+
+  <div class="mock-wrap"><div class="window medium mock">
+    <div class="titlebar"><div class="lights"><span class="r"></span><span class="y"></span><span class="g"></span></div><div class="title">Settings</div><div class="spacer"></div></div>
+    <div class="settings-tabs">
+      <div class="stab"><span class="sico">⚙️</span> General</div>
+      <div class="stab on"><span class="sico">⇅</span> Transfers</div>
+      <div class="stab"><span class="sico">🔑</span> Keys</div>
+      <div class="stab"><span class="sico">＞_</span> Terminal</div>
+      <div class="stab"><span class="sico">🧪</span> Advanced</div>
+    </div>
+    <div class="settings-body">
+      <div class="frm">
+        <label>Simultaneous transfers</label>
+        <div class="row-flex"><input class="in short" value="3" readonly><span style="font-size:12px;color:var(--faint)">per connection</span></div>
+
+        <label>When a transfer is interrupted</label>
+        <div class="seg"><span class="on">Resume automatically</span><span>Ask</span><span>Restart</span></div>
+        <div class="hint">Partial downloads are kept as <b>name.ferrypart</b> and continued from the last verified byte.</div>
+
+        <label>If the file already exists</label>
+        <div class="seg"><span>Overwrite</span><span class="on">Ask</span><span>Skip</span><span>Rename</span></div>
+
+        <label>Retry failed transfers</label>
+        <div class="row-flex"><input class="in short" value="3" readonly><span style="font-size:12px;color:var(--faint)">times, 5 s apart</span></div>
+
+        <div class="divider"></div>
+
+        <label>Bandwidth limit</label>
+        <div class="check"><span class="box"></span> Limit total throughput to <b>&nbsp;10 MB/s</b></div>
+        <label>After completing</label>
+        <div class="check"><span class="box on"></span> Show a notification when the queue finishes</div>
+        <label></label>
+        <div class="check"><span class="box"></span> Verify transfers with a checksum when the server supports it</div>
+      </div>
+    </div>
+    <div class="sheet-foot"><div class="flex"></div><span style="font-size:11.5px;color:var(--faint)">Changes apply immediately</span></div>
+  </div></div>
+
+  <div class="notes">
+    <h3>Review notes — Settings</h3>
+    <ol>
+      <li><b>Tabs planned:</b> General (default local folder, appearance, reopen behavior) · Transfers (shown) · Keys (SSH key list, generate/import, agent toggle) · Terminal (choose Terminal.app / iTerm2 / custom command) · Advanced (logging, known-hosts management, experimental flags).</li>
+      <li><b>Resume policy</b> defaults to automatic — resume is a headline feature, so the default shows it off.</li>
+      <li><b>Conflict policy</b> defaults to Ask, with a "apply to all" option in the conflict dialog itself (dialog to be mocked in M7 if you want it).</li>
+      <li>Bandwidth limit and checksum verification are v1.x features — included in the mockup so the layout has room, shipped disabled/hidden if the milestone slips.</li>
+    </ol>
+  </div>
+</section>
+
+<!-- ============ 6. APP ICON ============ -->
+<section class="screen" id="s-icon">
+  <h2>App icon — concept directions</h2>
+  <p class="sub">Four directions, each shown at Dock size (128 px) and Finder-list size (32 px) — an icon that dies at 32 px is the classic failure. Pick a direction now; the polished 1024 px production artwork (with proper lighting, texture and the full .icns size set) is scheduled for M17, and the chosen concept doubles as the interim development icon from M1.</p>
+
+  <div class="icon-grid">
+
+    <div class="icon-card">
+      <h3>A · The Ferry <span class="rec">RECOMMENDED</span></h3>
+      <div class="icon-sizes">
+        <div><div class="appicon sz128"><svg viewBox="0 0 120 120" role="img" aria-label="Ferry boat icon">
+          <defs><linearGradient id="seaA" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1a94b5"/><stop offset="1" stop-color="#0a4a68"/></linearGradient></defs>
+          <rect width="120" height="120" fill="url(#seaA)"/>
+          <rect x="44" y="32" width="32" height="12" rx="3" fill="#fff"/>
+          <rect x="36" y="47" width="48" height="15" rx="3" fill="#fff"/>
+          <circle cx="46" cy="54.5" r="3.2" fill="#0d6484"/><circle cx="60" cy="54.5" r="3.2" fill="#0d6484"/><circle cx="74" cy="54.5" r="3.2" fill="#0d6484"/>
+          <path d="M27 66 h66 l-11 17 h-44 z" fill="#fff"/>
+          <path d="M20 95 q8 -7 16 0 t16 0 t16 0 t16 0 t16 0" fill="none" stroke="#fff" stroke-width="4.5" stroke-linecap="round" opacity=".85"/>
+        </svg></div><div class="cap">128 px</div></div>
+        <div><div class="appicon sz32"><svg viewBox="0 0 120 120" aria-hidden="true">
+          <rect width="120" height="120" fill="url(#seaA)"/>
+          <rect x="44" y="32" width="32" height="12" rx="3" fill="#fff"/>
+          <rect x="36" y="47" width="48" height="15" rx="3" fill="#fff"/>
+          <path d="M27 66 h66 l-11 17 h-44 z" fill="#fff"/>
+          <path d="M20 95 q8 -7 16 0 t16 0 t16 0 t16 0 t16 0" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" opacity=".85"/>
+        </svg></div><div class="cap">32 px</div></div>
+      </div>
+      <p>A clean white ferry on the brand's sea-teal gradient. Literal, friendly, unmistakable in the Dock, and it survives 32 px with detail (windows) dropped automatically. Timeless rather than trendy.</p>
+    </div>
+
+    <div class="icon-card">
+      <h3>B · Cargo arrows</h3>
+      <div class="icon-sizes">
+        <div><div class="appicon sz128"><svg viewBox="0 0 120 120" role="img" aria-label="Ferry carrying transfer arrows">
+          <defs><linearGradient id="seaB" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#17a0b8"/><stop offset="1" stop-color="#094a63"/></linearGradient></defs>
+          <rect width="120" height="120" fill="url(#seaB)"/>
+          <rect x="38" y="30" width="44" height="32" rx="5" fill="#fff"/>
+          <path d="M51 54 V40 M51 40 l-5.5 6.5 M51 40 l5.5 6.5" fill="none" stroke="#0d6484" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M69 38 V52 M69 52 l-5.5 -6.5 M69 52 l5.5 -6.5" fill="none" stroke="#0d6484" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M27 68 h66 l-11 16 h-44 z" fill="#fff"/>
+          <path d="M20 96 q8 -7 16 0 t16 0 t16 0 t16 0 t16 0" fill="none" stroke="#fff" stroke-width="4.5" stroke-linecap="round" opacity=".85"/>
+        </svg></div><div class="cap">128 px</div></div>
+        <div><div class="appicon sz32"><svg viewBox="0 0 120 120" aria-hidden="true">
+          <rect width="120" height="120" fill="url(#seaB)"/>
+          <rect x="38" y="30" width="44" height="32" rx="5" fill="#fff"/>
+          <path d="M51 54 V40 M51 40 l-5.5 6.5 M51 40 l5.5 6.5" fill="none" stroke="#0d6484" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M69 38 V52 M69 52 l-5.5 -6.5 M69 52 l5.5 -6.5" fill="none" stroke="#0d6484" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M27 68 h66 l-11 16 h-44 z" fill="#fff"/>
+          <path d="M20 96 q8 -7 16 0 t16 0 t16 0 t16 0 t16 0" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" opacity=".85"/>
+        </svg></div><div class="cap">32 px</div></div>
+      </div>
+      <p>The ferry's cargo is an upload/download arrow pair — name and function in one mark. Slightly busier than A; the arrows are still legible at 32 px but with less air.</p>
+    </div>
+
+    <div class="icon-card">
+      <h3>C · Dual panes</h3>
+      <div class="icon-sizes">
+        <div><div class="appicon sz128"><svg viewBox="0 0 120 120" role="img" aria-label="Two panes with transfer arrows">
+          <defs><linearGradient id="seaC" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#16324a"/><stop offset="1" stop-color="#0b1c2c"/></linearGradient></defs>
+          <rect width="120" height="120" fill="url(#seaC)"/>
+          <rect x="20" y="30" width="28" height="60" rx="7" fill="none" stroke="#fff" stroke-width="5"/>
+          <rect x="72" y="30" width="28" height="60" rx="7" fill="none" stroke="#fff" stroke-width="5"/>
+          <path d="M46 50 h28 M74 50 l-7 -5 M74 50 l-7 5" fill="none" stroke="#35b3d4" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M74 72 h-28 M46 72 l7 -5 M46 72 l7 5" fill="none" stroke="#35b3d4" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg></div><div class="cap">128 px</div></div>
+        <div><div class="appicon sz32"><svg viewBox="0 0 120 120" aria-hidden="true">
+          <rect width="120" height="120" fill="url(#seaC)"/>
+          <rect x="20" y="30" width="28" height="60" rx="7" fill="none" stroke="#fff" stroke-width="6"/>
+          <rect x="72" y="30" width="28" height="60" rx="7" fill="none" stroke="#fff" stroke-width="6"/>
+          <path d="M46 50 h28 M74 50 l-7 -5 M74 50 l-7 5" fill="none" stroke="#35b3d4" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M74 72 h-28 M46 72 l7 -5 M46 72 l7 5" fill="none" stroke="#35b3d4" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg></div><div class="cap">32 px</div></div>
+      </div>
+      <p>Abstract and technical: the dual-pane layout itself, arrows crossing the gap, on deep navy. Reads as "pro developer tool"; gives up the nautical identity and the name connection.</p>
+    </div>
+
+    <div class="icon-card">
+      <h3>D · Life buoy</h3>
+      <div class="icon-sizes">
+        <div><div class="appicon sz128"><svg viewBox="0 0 120 120" role="img" aria-label="Life buoy icon">
+          <defs><linearGradient id="seaD" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1a94b5"/><stop offset="1" stop-color="#0a4a68"/></linearGradient></defs>
+          <rect width="120" height="120" fill="url(#seaD)"/>
+          <circle cx="60" cy="60" r="32" fill="none" stroke="#fff" stroke-width="15"/>
+          <circle cx="60" cy="60" r="32" fill="none" stroke="#f2643f" stroke-width="15" stroke-dasharray="25.13 25.13" stroke-dashoffset="12.6"/>
+          <circle cx="60" cy="60" r="32" fill="none" stroke="rgba(0,0,0,.12)" stroke-width="1" transform="translate(0,7)"/>
+        </svg></div><div class="cap">128 px</div></div>
+        <div><div class="appicon sz32"><svg viewBox="0 0 120 120" aria-hidden="true">
+          <rect width="120" height="120" fill="url(#seaD)"/>
+          <circle cx="60" cy="60" r="32" fill="none" stroke="#fff" stroke-width="15"/>
+          <circle cx="60" cy="60" r="32" fill="none" stroke="#f2643f" stroke-width="15" stroke-dasharray="25.13 25.13" stroke-dashoffset="12.6"/>
+        </svg></div><div class="cap">32 px</div></div>
+      </div>
+      <p>Pure nautical charm with a second accent (buoy orange) added to the palette. Very strong at every size, but says "help/rescue" more than "transfer" — better suited to a support page than the app itself.</p>
+    </div>
+
+  </div>
+
+  <div class="notes">
+    <h3>Review notes — App icon</h3>
+    <ol>
+      <li><b>Recommendation: A</b>, with B as runner-up if you want the function visible in the mark. C abandons the Ferry name story; D reads as a help/support symbol.</li>
+      <li>These are <b>direction concepts</b>, not final artwork. macOS expects a 1024 px master with the rounded-square shape drawn into the artwork (with standard margins) and an <code>.icns</code>/asset-catalog set down to 16 px — produced in M17, ideally with a designer pass.</li>
+      <li>The chosen concept ships as the development icon from M1 so test builds are recognizable in the Dock.</li>
+      <li>The icon's gradient becomes the brand accent already used across the mockups (sea-teal <code>#0d6e8c</code> light / <code>#35b3d4</code> dark); choosing C would shift the brand to navy + cyan.</li>
+    </ol>
+  </div>
+</section>
+
+</main>
+
+<script>
+  const btns = document.querySelectorAll('nav.switcher button');
+  btns.forEach(b => b.addEventListener('click', () => {
+    btns.forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    document.querySelectorAll('section.screen').forEach(s => s.classList.remove('visible'));
+    document.getElementById(b.dataset.target).classList.add('visible');
+    window.scrollTo({top: 0, behavior: 'instant'});
+  }));
+</script>

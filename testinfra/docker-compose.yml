@@ -1,0 +1,29 @@
+# Local test servers for Ferry's integration tests.
+# Start/stop with testinfra/start.sh and testinfra/stop.sh.
+# Credentials and ports are mirrored in FerryKit/Tests/FerryIntegrationTests/TestServers.swift.
+name: ferry-testinfra
+
+services:
+  sftp:
+    image: atmoz/sftp:alpine
+    container_name: ferry-test-sftp
+    ports:
+      - "127.0.0.1:2222:22"
+    # user:password:uid::writable-home-subdir
+    command: ferry:ferrypass:1001::upload
+    volumes:
+      - ./fixtures/seed:/home/ferry/upload/fixtures:ro
+
+  ftp:
+    image: delfer/alpine-ftp-server
+    container_name: ferry-test-ftp
+    ports:
+      - "127.0.0.1:2121:21"
+      - "127.0.0.1:21000-21010:21000-21010"
+    environment:
+      USERS: "ferry|ferrypass|/ftp/ferry"
+      ADDRESS: "127.0.0.1"
+      MIN_PORT: "21000"
+      MAX_PORT: "21010"
+    volumes:
+      - ./fixtures/seed:/ftp/ferry/fixtures:ro

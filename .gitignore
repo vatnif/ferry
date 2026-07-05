@@ -1,0 +1,24 @@
+# macOS
+.DS_Store
+
+# Xcode
+xcuserdata/
+DerivedData/
+build/
+*.xcresult
+
+# SwiftPM
+.build/
+.swiftpm/
+Package.resolved
+
+# Test infrastructure (generated at runtime, never commit)
+testinfra/ssh-host-keys/
+testinfra/.state/
+
+# Secrets — belt and braces; credentials live only in the macOS Keychain
+*.pem
+*.p12
+
+# Generated test fixture
+testinfra/fixtures/seed/medium-1mb.bin

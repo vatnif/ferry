@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="512" height="512" role="img" aria-label="Ferry app icon — concept A (approved 2026-07-05)">
+  <!-- Approved M0 icon concept A: white ferry on sea-teal gradient.
+       Rendered to the asset catalog by tools/generate-appicon.swift
+       (which also applies the macOS squircle + 80% grid placement). -->
+  <defs>
+    <linearGradient id="sea" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1A94B5"/>
+      <stop offset="1" stop-color="#0A4A68"/>
+    </linearGradient>
+  </defs>
+  <rect width="120" height="120" fill="url(#sea)"/>
+  <rect x="44" y="32" width="32" height="12" rx="3" fill="#fff"/>
+  <rect x="36" y="47" width="48" height="15" rx="3" fill="#fff"/>
+  <circle cx="46" cy="54.5" r="3.2" fill="#0D6484"/>
+  <circle cx="60" cy="54.5" r="3.2" fill="#0D6484"/>
+  <circle cx="74" cy="54.5" r="3.2" fill="#0D6484"/>
+  <path d="M27 66 h66 l-11 17 h-44 z" fill="#fff"/>
+  <path d="M20 95 q8 -7 16 0 t16 0 t16 0 t16 0 t16 0" fill="none" stroke="#fff" stroke-width="4.5" stroke-linecap="round" opacity=".85"/>
+</svg>

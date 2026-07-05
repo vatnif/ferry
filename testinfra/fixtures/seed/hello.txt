@@ -1,0 +1,2 @@
+Hello from Ferry's test fixtures.
+This file is seeded read-only into both test servers at fixtures/hello.txt.
