@@ -16,7 +16,7 @@
 | M6 | SFTP spike → SFTPSource (read-only) | done (committed 3c9567a) |
 | M7 | Dual-pane browser UI | done (committed c23cf04) |
 | M8 | TransferEngine + queue UI | done (committed b1c9394) |
-| M9 | Resume & robustness | **awaiting review** |
+| M9 | Resume & robustness | done (committed 388de0d) |
 | M10 | File operations | todo |
 | M11 | Key auth & host trust | todo |
 | M12 | FTP/FTPS via libcurl | todo |
@@ -169,11 +169,7 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
 
 ## Next steps
 
-1. User reviews M9: transfer a big file and pause/resume it (watch the RESUMED badge and
-   the `.ferrypart` appear/disappear); drag a folder between panes; trigger a conflict
-   batch (Replace All / Skip All); optionally stop the Docker container mid-transfer to
-   watch retry + "Reconnecting…" self-heal. On approval: commit.
-2. M10: file operations — rename, delete UI, chmod editor, Quick Look, Finder drag &
+1. M10: file operations — rename, delete UI, chmod editor, Quick Look, Finder drag &
    drop (SFTP mkdir already done in M9).
 
 ## Session log
@@ -186,4 +182,4 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
 - **2026-07-05 (cont.)** — M6 spike: Citadel 0.12.1 added (licenses recorded first), SFTPSource read-only implemented and validated against Docker sshd. Verdict: adopt Citadel, libssh2 fallback retired (ADR-011). Two fixes during spike: error normalization (raw Status thrown), @preconcurrency import for Swift 6. 69 tests green. M6 approved & committed (3c9567a).
 - **2026-07-05 (cont.)** — M7 built: BrowserSession/PaneModel (ADR-012), FileBrowserPane + BrowserView per mockup screen 1, connect lifecycle with password prompt, sync browsing (PathUtilities moved to FerryCore for unit-testability). 73 kit tests + 4 UI tests green incl. e2e connect-and-browse. M7 approved & committed (c23cf04).
 - **2026-07-05 (cont.)** — M8 built: TransferEngine + queue dock + SFTP uploads/delete + drag between panes. Debugging saga (all fixed, ADR-013): SFTP writes "hung" → root cause was Docker's root-owned mountpoint making /upload unwritable, masked by a happy-path-only test loop; hardened engine cancellation anyway (immediate cancelled state, force-close handle); fixed chunk-dropping stream buffering; fixed whole-row draggable breaking double-click. 84 kit + 4 UI tests green incl. e2e download through the queue. M8 approved & committed (b1c9394).
-- **2026-07-05 (cont.)** — M9 built: `.ferrypart` staging + resume, pause/resume, transient-error retry policy, lazy folder transfers (SFTP mkdir pulled forward), ConnectionSupervisor keep-alive/auto-reconnect, per-file conflict dialog with apply-to-all, reconnect status bar (ADR-014). Test saga: closing the local SSHClient mid-read fatalErrors NIOSSH → kill-mid-transfer tests drop the session server-side (`docker exec pkill`, matching OpenSSH ≥ 9.8 `sshd-session` naming) on a 32 MiB dd-seeded file; first run hung forever because `for await` deadline checks never fire on silent streams → test waits now race a timer. 112 kit + 4 UI tests green. M9 awaiting review.
+- **2026-07-05 (cont.)** — M9 built: `.ferrypart` staging + resume, pause/resume, transient-error retry policy, lazy folder transfers (SFTP mkdir pulled forward), ConnectionSupervisor keep-alive/auto-reconnect, per-file conflict dialog with apply-to-all, reconnect status bar (ADR-014). Test saga: closing the local SSHClient mid-read fatalErrors NIOSSH → kill-mid-transfer tests drop the session server-side (`docker exec pkill`, matching OpenSSH ≥ 9.8 `sshd-session` naming) on a 32 MiB dd-seeded file; first run hung forever because `for await` deadline checks never fire on silent streams → test waits now race a timer. 112 kit + 4 UI tests green. M9 approved & committed (388de0d).
