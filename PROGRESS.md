@@ -8,8 +8,8 @@
 | # | Milestone | State |
 |---|---|---|
 | M0 | UI mockups & approval | **done** (approved 2026-07-05, incl. icon concept A + sync browsing) |
-| M1 | Scaffolding, docs & test infra | **awaiting review** |
-| M2 | Domain models & profile store | todo |
+| M1 | Scaffolding, docs & test infra | done (committed 97fccf4) |
+| M2 | Domain models & profile store | **awaiting review** |
 | M3 | CredentialVault (Keychain) | todo |
 | M4 | Connection Manager UI | todo |
 | M5 | FileSystemSource protocol + LocalFileSource | todo |
@@ -29,7 +29,19 @@
 
 Backlog (post-v1): see `docs/ROADMAP.md`.
 
-## Current state of the code (after M1)
+## Current state of the code (after M2)
+
+- `FerryCore/Models`: `ConnectionProfile` (no secrets; port defaults per protocol),
+  `TransferProtocol` (sftp/ftp/ftps/scp), `AuthenticationMethod` (password/publicKey/agent),
+  `TunnelConfiguration` (schema fixed early for M14), `ProfileFolder` + `SidebarItem`
+  (recursive tree, clean JSON discriminator), `ConnectionLibrary` (queries + add/remove/
+  update/rename/move with cycle protection).
+- `FerryCore/Store/ConnectionStore`: stateless JSON persister — atomic writes, intermediate
+  dirs, ISO8601 dates, sortedKeys stability, schemaVersion probe with precise
+  newer-version error (ADR-009). Default path: `~/Library/Application Support/Ferry/connections.json`.
+- Tests: 24 total (16 unit + 8 integration incl. 6 real-filesystem persistence tests), all green.
+
+## Earlier state (after M1)
 
 - Xcode project `Ferry.xcodeproj` (hand-authored, objectVersion 77) with app target `Ferry` + `FerryUITests`; 4 build configurations (Debug/Release × Direct/AppStore) and 2 shared schemes (`Ferry-Direct`, `Ferry-AppStore`). Builds clean.
 - `FerryKit` local SwiftPM package holds all future core logic. Currently: `FerryVersion` placeholder + 1 unit test + 2 integration smoke tests (SSH banner / FTP greeting) — all passing.
@@ -44,9 +56,11 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
 
 ## Next steps
 
-1. User reviews M1 → on approval: initial git commit.
-2. M2: `ConnectionProfile`, `ProfileFolder` tree, `ConnectionStore` (JSON persistence, no secrets) + tests, per docs/DOMAIN.md.
+1. User reviews M2 → on approval: commit.
+2. M3: `CredentialVault` — Keychain wrapper (passwords + key passphrases keyed by profile
+   UUID, delete-with-profile), unit + real-Keychain integration tests, per docs/DOMAIN.md.
 
 ## Session log
 
-- **2026-07-05** — Project inception. Requirements gathered; plan approved (18 milestones). M0: mockups of 5 screens + icon concepts built and iterated (sync browsing added on user request); user approved mockups + icon A. M1: repo initialized, Xcode project + FerryKit package + test targets created, Docker test infra up, icon generated, all docs written. All suites green: 1 unit + 2 integration + 1 UI test (user enabled DevToolsSecurity). M1 awaiting review.
+- **2026-07-05** — Project inception. Requirements gathered; plan approved (18 milestones). M0: mockups of 5 screens + icon concepts built and iterated (sync browsing added on user request); user approved mockups + icon A. M1: repo initialized, Xcode project + FerryKit package + test targets created, Docker test infra up, icon generated, all docs written. All suites green: 1 unit + 2 integration + 1 UI test (user enabled DevToolsSecurity). M1 approved & committed (97fccf4).
+- **2026-07-05 (cont.)** — M2 built: domain models (profile/folder tree/tunnels/auth), ConnectionLibrary operations with cycle-protected move, ConnectionStore JSON persistence (ADR-009). 24 tests green (one test-side fix: stability check had regenerated UUIDs). App builds. M2 awaiting review.

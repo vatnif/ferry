@@ -41,3 +41,13 @@ implementation must match `docs/design/ferry-mockups.html` (CLAUDE.md rule 3).
 ## 2026-07-05 — ADR-008: Credentials in Keychain only; JSON profile store carries no secrets
 Profile store is versioned JSON in Application Support; secrets are Keychain generic
 password items keyed by profile UUID. Works identically sandboxed and unsandboxed.
+
+## 2026-07-05 — ADR-009: connections.json schema (v1)
+Recursive tree: `ConnectionLibrary{schemaVersion, items:[SidebarItem]}` where SidebarItem
+is `{"type":"folder"|"profile", ...}` via hand-written Codable (clean discriminator, no
+synthesized `_0` keys — pinned by test). Dates ISO8601 (whole seconds); output
+prettyPrinted+sortedKeys so identical content ⇒ identical bytes (backup/diff friendly).
+Atomic writes. Loading probes schemaVersion first: newer-than-supported fails with a
+precise error instead of decode garbage; older versions are the future migration hook.
+Enum raw values (`TransferProtocol`, tunnel kinds) are part of the schema — never rename
+without a migration.
