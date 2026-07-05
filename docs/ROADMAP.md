@@ -37,7 +37,8 @@ Workflow per milestone: implement → unit + integration tests pass → docs upd
 - **M14** `TunnelEngine` + tunnel manager UI (screen 4): local/remote/SOCKS, auto-start.
 - **M15** Open in Terminal (Direct only).
 - **M16** Tabs, settings (screen 5), dark-mode audit vs mockups, error-message pass,
-  acknowledgements screen (license notices).
+  acknowledgements screen (license notices), minimal in-app help (Help menu → user
+  guide incl. `.ferrypart`/resume explainer + keyboard-shortcut reference).
 
 ## Phase F — Ship
 - **M17** Packaging: Developer ID, notarization, DMG, Sparkle, production icon, release checklist.
@@ -53,3 +54,5 @@ Workflow per milestone: implement → unit + integration tests pass → docs upd
 6. Embedded terminal (SwiftTerm)
 7. WebDAV + S3 backends; remote↔remote transfers
 8. Menu-bar quick-upload droplet; `sftp://` URL handler; Shortcuts/AppleScript
+9. Expanded help: searchable/contextual (per-screen ? buttons), troubleshooting
+   guides (host keys, firewalls/passive FTP, permissions), localized

@@ -163,7 +163,7 @@ public actor SFTPSource: FileSystemSource {
         }
     }
 
-    // MARK: Write side (M8) — createDirectory/rename/setPermissions follow in M10
+    // MARK: Write side (M8) + mkdir (M9) — rename/setPermissions follow in M10
 
     public func openWrite(at path: String, offset: Int64) async throws -> any FileWriteHandle {
         guard offset >= 0 else { throw FileSystemSourceError.invalidOffset(offset) }

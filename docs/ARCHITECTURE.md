@@ -22,15 +22,17 @@ Ferry.app (SwiftUI, @MainActor)
 └── view models (@Observable, main-actor):
     ├── ConnectionManagerModel  library persistence, vault mediation,
     │                           connect lifecycle (ConnectionPhase state)
-    └── BrowserSession + PaneModel (M7)
+    └── BrowserSession + PaneModel (M7/M9)
         one session = two PaneModels over FileSystemSources; navigation with
         history, sync-browsing anchors/mirroring (PathUtilities in FerryCore),
-        active-pane tracking for the toolbar filter/nav
+        active-pane tracking for the toolbar filter/nav; owns the per-
+        connection TransferQueueModel + ConnectionSupervisor (health for the
+        status bar, pane reload after reconnect)
 
 FerryCore (FerryKit package)
 ├── FileSystemSource (protocol)          ← the heart; panes & engine are protocol-agnostic
 │   ├── LocalFileSource                  FileManager + security-scoped bookmarks
-│   ├── SFTPSource                       Citadel (M6 spike; fallback libssh2)
+│   ├── SFTPSource                       Citadel (ADR-011; libssh2 fallback retired)
 │   ├── FTPSource                        system libcurl (M12)
 │   └── SCPSource                        SSH exec channel (M13)
 ├── TransferEngine (actor, M8/M9)        FIFO queue, concurrency cap (3/connection),

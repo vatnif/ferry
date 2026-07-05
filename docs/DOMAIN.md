@@ -21,7 +21,9 @@ this document, not the other way round.*
   `password`, `keyPassphrase`; accessibility WhenUnlocked; login keychain — ADR-010).
   Implemented by `CredentialVault` (store = upsert, delete = idempotent).
 - Empty stored password ⇒ prompt at connect time, with "remember" opt-in.
-- Deleting a profile deletes its Keychain items and its `.ferrypart` leftovers.
+- Deleting a profile deletes its Keychain items. (`.ferrypart` leftovers are not tracked
+  per profile — they live wherever the user transfers to; stale ones are GC'd on
+  encounter after 30 days, ADR-014.)
 - Secrets never appear in: profile JSON, logs, error messages, crash reports, test fixtures.
 
 ## Connection lifecycle
