@@ -60,10 +60,12 @@ for changed-key-detection tests.
 - `FerryCoreTests` (unit): `FerryVersionTests`, `ConnectionProfileTests`,
   `ConnectionLibraryTests` (tree ops, Codable contracts), `CredentialVaultTests`
   (account-name contract).
-- `FerryIntegrationTests`: `TestServerReachabilityTests` (SSH banner + FTP greeting;
-  superseded by real protocol tests from M6/M12), `ConnectionStorePersistenceTests`
-  (real filesystem, temp dirs), `CredentialVaultKeychainTests` (REAL Keychain,
-  test-only service `com.gfragos.Ferry.tests`, self-cleaning tearDown).
+- `FerryIntegrationTests`: `TestServerReachabilityTests` (SSH banner + FTP greeting),
+  `ConnectionStorePersistenceTests` (real filesystem, temp dirs),
+  `CredentialVaultKeychainTests` (REAL Keychain, test-only service, self-cleaning),
+  `ReachabilityProbeTests`, `LocalFileSourceTests` + `SecurityScopedBookmarkStoreTests`
+  (real filesystem), `SFTPSourceTests` (M6: real SFTP against the Docker server —
+  auth, listing, stat, typed errors, byte-exact offset/multi-chunk downloads).
 - `FerryUITests/FerryUITests` — M4 smoke tests: launch + empty state, editor sheet
   open/cancel, create-connection end-to-end. **Isolation**: the app honors
   `FERRY_DATA_DIR` (connections.json location) and `FERRY_KEYCHAIN_SERVICE` env vars;

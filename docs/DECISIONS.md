@@ -60,3 +60,15 @@ runner) and ad-hoc dev builds. Accessibility: `kSecAttrAccessibleWhenUnlocked`. 
 format `"<profileUUID>/<role>"` and service `com.gfragos.Ferry` are persistence contracts
 (pinned by test). Revisit for the App Store build in M17 — switching stores will need a
 one-time migration that reads old items and rewrites them.
+
+## 2026-07-05 — ADR-011: SSH library spike verdict — Citadel (0.12.x) adopted
+The M6 spike against the Docker OpenSSH server succeeded on every criterion: password
+auth, directory listing with full attributes, stat, and chunked offset reads (byte-exact
+1 MiB download). Citadel 0.12.1 (MIT) over swift-nio-ssh (Apache-2.0) is now the SSH
+stack; the libssh2 fallback is retired to a contingency note in LICENSING.md.
+Notes: (a) Citadel's client types predate strict concurrency — imported with
+`@preconcurrency`; revisit when Citadel adopts Swift 6 Sendable. (b) Request-level SFTP
+failures throw the raw `SFTPMessage.Status` (which itself conforms to Error), not always
+`SFTPError.errorStatus` — `SFTPSource.mapError` normalizes both. (c) Host key validation
+is `.acceptAnything()` until M11's TOFU flow — tracked as a TODO in SFTPSource, must not
+ship past M11.

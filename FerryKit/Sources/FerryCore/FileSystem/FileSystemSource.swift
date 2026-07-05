@@ -53,5 +53,8 @@ public enum FileSystemSourceError: Error, Equatable {
     case alreadyExists(path: String)
     case permissionDenied(path: String)
     case invalidOffset(Int64)
+    /// The backend doesn't implement this operation yet (e.g. SFTP mutations
+    /// before M8/M10). The message names the operation and the milestone.
+    case unsupported(operation: String)
     case io(String)
 }

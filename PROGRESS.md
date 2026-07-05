@@ -12,8 +12,8 @@
 | M2 | Domain models & profile store | done (committed 18d38e5) |
 | M3 | CredentialVault (Keychain) | done (committed dff4ded) |
 | M4 | Connection Manager UI | done (committed 3d17f7c) |
-| M5 | FileSystemSource protocol + LocalFileSource | **awaiting review** |
-| M6 | SFTP spike → SFTPSource (read-only) | todo |
+| M5 | FileSystemSource protocol + LocalFileSource | done (committed 27e1dfe) |
+| M6 | SFTP spike → SFTPSource (read-only) | **awaiting review** |
 | M7 | Dual-pane browser UI | todo |
 | M8 | TransferEngine + queue UI | todo |
 | M9 | Resume & robustness | todo |
@@ -29,7 +29,21 @@
 
 Backlog (post-v1): see `docs/ROADMAP.md`.
 
-## Current state of the code (after M5)
+## Current state of the code (after M6)
+
+- **Citadel 0.12.1 adopted as the SSH stack** (ADR-011) — spike succeeded; first
+  third-party dependency, licenses recorded in LICENSING.md before adding.
+- `FerryCore/FileSystem/SFTPSource`: actor conforming to FileSystemSource. Read side
+  complete: connect (password auth; typed RemoteSourceError), homeDirectory (realpath),
+  list with attributes + owner/group from longname, stat, chunked offset openRead
+  (128 KiB, EOF = empty buffer). Mutations/openWrite throw `.unsupported(operation:)`
+  until M8/M10. Host keys: acceptAnything with TODO(M11) — must not ship past M11.
+- Error normalization: raw `SFTPMessage.Status` AND `SFTPError.errorStatus` both map to
+  typed FileSystemSourceError (noSuchFile→notFound, permissionDenied→permissionDenied).
+- Tests: 69 total, all green (10 SFTP integration tests against the Docker server incl.
+  wrong-password auth failure and byte-exact 1 MiB multi-chunk download).
+
+## Earlier state (after M5)
 
 - `FerryCore/FileSystem/`: `FileSystemSource` protocol (the core abstraction, ARCHITECTURE.md
   updated with the exact shape incl. the offset-based resume contract), `FileItem` +
@@ -97,11 +111,11 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
 
 ## Next steps
 
-1. User reviews M5 → on approval: commit.
-2. M6: SSH library spike — add Citadel (MIT, over swift-nio-ssh Apache-2.0) as the first
-   third-party dependency (record in LICENSING.md BEFORE adding, CLAUDE.md rule 4);
-   validate connect/auth/list/download against the Docker SSH server; pivot to libssh2
-   if it fails; read-only `SFTPSource` conformance + integration tests + ADR.
+1. User reviews M6 → on approval: commit.
+2. M7: dual-pane browser UI per mockup screen 1 — `FileBrowserView` used for both panes
+   (sortable columns, breadcrumbs, hidden toggle, filter), wired end-to-end: sidebar
+   connect → SFTPSource right pane, LocalFileSource left pane; sync-browsing toggle;
+   XCUITest smoke + integration walk-through. *Big review point.*
 
 ## Session log
 
@@ -109,4 +123,5 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
 - **2026-07-05 (cont.)** — M2 built: domain models (profile/folder tree/tunnels/auth), ConnectionLibrary operations with cycle-protected move, ConnectionStore JSON persistence (ADR-009). 24 tests green (one test-side fix: stability check had regenerated UUIDs). App builds. M2 approved & committed (18d38e5).
 - **2026-07-05 (cont.)** — M3 built: CredentialVault Keychain wrapper (ADR-010: login keychain so `swift test` works unsigned; revisit at M17 for App Store). 35 tests green incl. 8 real-Keychain integration tests. M3 approved & committed (dff4ded).
 - **2026-07-05 (cont.)** — M4 built: connection manager UI (sidebar tree, editor sheet, detail summary, folder prompts, drag-to-folder, Move-to menu), ConnectionManagerModel with vault-aware save/delete/duplicate, ReachabilityProbe + hierarchy queries in FerryCore. 40 kit tests + 3 UI tests green. M4 approved & committed (3d17f7c).
-- **2026-07-05 (cont.)** — M5 built: FileSystemSource protocol + FileItem/FilePermissions/FileWriteHandle, LocalFileSource (streaming I/O with resume offset contract), SecurityScopedBookmarkStore composed in. 59 tests green. M5 awaiting review.
+- **2026-07-05 (cont.)** — M5 built: FileSystemSource protocol + FileItem/FilePermissions/FileWriteHandle, LocalFileSource (streaming I/O with resume offset contract), SecurityScopedBookmarkStore composed in. 59 tests green. M5 approved & committed (27e1dfe).
+- **2026-07-05 (cont.)** — M6 spike: Citadel 0.12.1 added (licenses recorded first), SFTPSource read-only implemented and validated against Docker sshd. Verdict: adopt Citadel, libssh2 fallback retired (ADR-011). Two fixes during spike: error normalization (raw Status thrown), @preconcurrency import for Swift 6. 69 tests green. M6 awaiting review.

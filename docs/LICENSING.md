@@ -20,14 +20,20 @@ closed-source redistribution without copyleft obligations.
 | Dependency | License | Scope | Status |
 |---|---|---|---|
 | Apple SDKs (SwiftUI, Foundation, Security, …) | Apple SDK terms | app | in use (M1) |
-| — no third-party code is bundled yet — | | | |
+| Citadel (orlandos-nl/Citadel) | MIT | SSH/SFTP client | added M6 |
+| swift-nio-ssh (apple) | Apache-2.0 | SSH transport (via Citadel) | added M6 (transitive) |
+| swift-nio, swift-crypto, swift-atomics, swift-collections, swift-log (apple) | Apache-2.0 | via Citadel | added M6 (transitive) |
+| BigInt (attaswift) | MIT | via Citadel (RSA math) | added M6 (transitive) |
+
+Transitive inventory: `cd FerryKit && swift package show-dependencies` — re-check and
+update this table whenever `Package.swift` or pinned versions change. All names above
+must appear in the acknowledgements screen (M16).
 
 ### Planned (record here BEFORE adding)
 
 | Dependency | License | Purpose | When |
 |---|---|---|---|
-| Citadel + swift-nio-ssh (+ swift-nio, swift-crypto) | MIT / Apache-2.0 | SSH/SFTP/exec/tunnels | M6 spike |
-| libssh2 (fallback if Citadel fails spike) | BSD-3 | same | M6 |
+| libssh2 (fallback only if Citadel proves insufficient) | BSD-3 | SSH/SFTP | contingency |
 | System libcurl (`/usr/lib/libcurl.dylib`, ships with macOS) | curl (MIT-like) | FTP/FTPS | M12 |
 | Sparkle 2 | MIT | auto-update, Direct build only | M17 |
 | SwiftTerm | MIT | embedded terminal | post-v1 |
