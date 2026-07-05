@@ -64,4 +64,7 @@ for changed-key-detection tests.
   superseded by real protocol tests from M6/M12), `ConnectionStorePersistenceTests`
   (real filesystem, temp dirs), `CredentialVaultKeychainTests` (REAL Keychain,
   test-only service `com.gfragos.Ferry.tests`, self-cleaning tearDown).
-- `FerryUITests/FerryUITests` — app launches, placeholder window shows.
+- `FerryUITests/FerryUITests` — M4 smoke tests: launch + empty state, editor sheet
+  open/cancel, create-connection end-to-end. **Isolation**: the app honors
+  `FERRY_DATA_DIR` (connections.json location) and `FERRY_KEYCHAIN_SERVICE` env vars;
+  UI tests set both, so user data and the real Keychain service are never touched.

@@ -36,6 +36,36 @@ public extension ConnectionLibrary {
         Self.findItem(id: itemID, in: items) != nil
     }
 
+    /// The folder directly containing the item, or nil when the item sits at
+    /// the root (or doesn't exist — disambiguate with `contains(itemID:)`).
+    func parentFolderID(ofItem id: UUID) -> UUID? {
+        Self.findParent(of: id, in: items, currentParent: nil)
+    }
+
+    /// All folders, depth-first in display order — feeds the "Save in folder"
+    /// picker and "Move to" menus.
+    var allFolders: [ProfileFolder] {
+        Self.collectFolders(in: items)
+    }
+
+    private static func findParent(of id: UUID, in items: [SidebarItem], currentParent: UUID?) -> UUID? {
+        for item in items {
+            if item.id == id { return currentParent }
+            if case .folder(let folder) = item,
+               let found = findParent(of: id, in: folder.items, currentParent: folder.id) {
+                return found
+            }
+        }
+        return nil
+    }
+
+    private static func collectFolders(in items: [SidebarItem]) -> [ProfileFolder] {
+        items.flatMap { item -> [ProfileFolder] in
+            guard case .folder(let folder) = item else { return [] }
+            return [folder] + collectFolders(in: folder.items)
+        }
+    }
+
     private static func collectProfiles(in items: [SidebarItem]) -> [ConnectionProfile] {
         items.flatMap { item -> [ConnectionProfile] in
             switch item {
