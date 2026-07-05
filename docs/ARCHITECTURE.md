@@ -39,10 +39,16 @@ FerryCore (FerryKit package)
 
 ## Key design decisions
 
-- **`FileSystemSource` protocol** exposes `list/stat/readStream/writeStream/delete/rename/
-  mkdir/setPermissions` (exact shape defined in M5). Panes and the TransferEngine only see
-  this protocol, so WebDAV/S3 later are new conformances, not rewrites, and the local pane
-  is "just another source" (which also enables remote↔remote later).
+- **`FileSystemSource` protocol** (defined M5, `FerryCore/FileSystem/`): `homeDirectory`,
+  `list(directory:includeHidden:)`, `stat`, `createDirectory`, `delete` (recursive),
+  `rename`, `setPermissions`, and streaming I/O — `openRead(at:offset:)` returns an
+  `AsyncThrowingStream<Data,_>`, `openWrite(at:offset:)` returns a sequential
+  `FileWriteHandle`. **Offset contract** (the resume seam): read starts at byte `offset`;
+  write truncates the target to `offset` then appends (offset 0 = overwrite). Items are
+  `FileItem` (+ `FilePermissions` with octal/symbolic helpers); errors are the typed
+  `FileSystemSourceError`. Panes and the TransferEngine only see this protocol, so
+  WebDAV/S3 later are new conformances, not rewrites, and the local pane is "just another
+  source" (which also enables remote↔remote later).
 - **Session sharing**: `SSHSessionManager` owns one authenticated SSH connection per
   profile; SFTP channels, exec channels (SCP, terminal prep) and tunnels multiplex over it.
 - **Resume semantics** (details in DOMAIN.md): downloads write `name.ferrypart` and restart

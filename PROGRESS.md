@@ -11,8 +11,8 @@
 | M1 | Scaffolding, docs & test infra | done (committed 97fccf4) |
 | M2 | Domain models & profile store | done (committed 18d38e5) |
 | M3 | CredentialVault (Keychain) | done (committed dff4ded) |
-| M4 | Connection Manager UI | **awaiting review** |
-| M5 | FileSystemSource protocol + LocalFileSource | todo |
+| M4 | Connection Manager UI | done (committed 3d17f7c) |
+| M5 | FileSystemSource protocol + LocalFileSource | **awaiting review** |
 | M6 | SFTP spike → SFTPSource (read-only) | todo |
 | M7 | Dual-pane browser UI | todo |
 | M8 | TransferEngine + queue UI | todo |
@@ -29,7 +29,22 @@
 
 Backlog (post-v1): see `docs/ROADMAP.md`.
 
-## Current state of the code (after M4)
+## Current state of the code (after M5)
+
+- `FerryCore/FileSystem/`: `FileSystemSource` protocol (the core abstraction, ARCHITECTURE.md
+  updated with the exact shape incl. the offset-based resume contract), `FileItem` +
+  `FilePermissions` (octal/symbolic), `FileWriteHandle`, typed `FileSystemSourceError`.
+- `LocalFileSource`: full conformance over FileManager/FileHandle — listing with hidden
+  filter + owner/perms metadata, stat with symlink detection, mkdir (intermediates),
+  recursive delete, rename (refuses overwrite), chmod, chunked streaming read (256 KB,
+  offset-aware), sequential write handle honoring truncate-to-offset-then-append.
+- `SecurityScopedBookmarkStore`: persisted folder grants, deepest-match resolution,
+  stale-bookmark refresh, pass-through without grants; composed into LocalFileSource
+  (one code path for Direct and App Store builds).
+- Tests: 59 total, all green (new: 4 unit FilePermissions; 11 LocalFileSource + 4 bookmark
+  integration tests on the real filesystem).
+
+## Earlier state (after M4)
 
 - App UI (per DESIGN.md screens 1–2): `MainWindow` (NavigationSplitView),
   `SidebarView` (folder tree with disclosure state persisted, protocol badges, context
@@ -82,14 +97,16 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
 
 ## Next steps
 
-1. User reviews M4 (app is runnable — compare against docs/design/ferry-mockups.html) →
-   on approval: commit.
-2. M5: `FileSystemSource` protocol + `LocalFileSource` with security-scoped bookmark
-   handling; unit + filesystem integration tests.
+1. User reviews M5 → on approval: commit.
+2. M6: SSH library spike — add Citadel (MIT, over swift-nio-ssh Apache-2.0) as the first
+   third-party dependency (record in LICENSING.md BEFORE adding, CLAUDE.md rule 4);
+   validate connect/auth/list/download against the Docker SSH server; pivot to libssh2
+   if it fails; read-only `SFTPSource` conformance + integration tests + ADR.
 
 ## Session log
 
 - **2026-07-05** — Project inception. Requirements gathered; plan approved (18 milestones). M0: mockups of 5 screens + icon concepts built and iterated (sync browsing added on user request); user approved mockups + icon A. M1: repo initialized, Xcode project + FerryKit package + test targets created, Docker test infra up, icon generated, all docs written. All suites green: 1 unit + 2 integration + 1 UI test (user enabled DevToolsSecurity). M1 approved & committed (97fccf4).
 - **2026-07-05 (cont.)** — M2 built: domain models (profile/folder tree/tunnels/auth), ConnectionLibrary operations with cycle-protected move, ConnectionStore JSON persistence (ADR-009). 24 tests green (one test-side fix: stability check had regenerated UUIDs). App builds. M2 approved & committed (18d38e5).
 - **2026-07-05 (cont.)** — M3 built: CredentialVault Keychain wrapper (ADR-010: login keychain so `swift test` works unsigned; revisit at M17 for App Store). 35 tests green incl. 8 real-Keychain integration tests. M3 approved & committed (dff4ded).
-- **2026-07-05 (cont.)** — M4 built: connection manager UI (sidebar tree, editor sheet, detail summary, folder prompts, drag-to-folder, Move-to menu), ConnectionManagerModel with vault-aware save/delete/duplicate, ReachabilityProbe + hierarchy queries in FerryCore. 40 kit tests + 3 UI tests green. M4 awaiting review.
+- **2026-07-05 (cont.)** — M4 built: connection manager UI (sidebar tree, editor sheet, detail summary, folder prompts, drag-to-folder, Move-to menu), ConnectionManagerModel with vault-aware save/delete/duplicate, ReachabilityProbe + hierarchy queries in FerryCore. 40 kit tests + 3 UI tests green. M4 approved & committed (3d17f7c).
+- **2026-07-05 (cont.)** — M5 built: FileSystemSource protocol + FileItem/FilePermissions/FileWriteHandle, LocalFileSource (streaming I/O with resume offset contract), SecurityScopedBookmarkStore composed in. 59 tests green. M5 awaiting review.

@@ -86,8 +86,12 @@ this document, not the other way round.*
 
 ## Sandbox strategy (both distributions from day one)
 
-- All local-FS access flows through `LocalFileSource`, which manages security-scoped
-  bookmarks; in the Direct build the same code path simply finds everything accessible.
+- All local-FS access flows through `LocalFileSource`, whose every operation runs inside
+  `SecurityScopedBookmarkStore.withAccess(toPathContaining:)` — it starts/stops
+  security-scoped access for the deepest granted folder covering the path, and is a
+  pass-through when no grant matches (always true in the Direct build). Grants are
+  persisted bookmarks (JSON next to connections.json) registered when the user picks a
+  folder in an open panel; stale bookmarks self-refresh on resolve.
 - Capabilities that can't work sandboxed (ssh-agent, launch Terminal, Sparkle) are gated
   at seams with `#if APPSTORE` or runtime capability checks — degrade, don't crash.
 - Network: outbound client only (`com.apple.security.network.client`). Remote tunnels
