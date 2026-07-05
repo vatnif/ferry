@@ -15,7 +15,7 @@
 | M5 | FileSystemSource protocol + LocalFileSource | done (committed 27e1dfe) |
 | M6 | SFTP spike → SFTPSource (read-only) | done (committed 3c9567a) |
 | M7 | Dual-pane browser UI | done (committed c23cf04) |
-| M8 | TransferEngine + queue UI | **awaiting review** |
+| M8 | TransferEngine + queue UI | done (committed b1c9394) |
 | M9 | Resume & robustness | todo |
 | M10 | File operations | todo |
 | M11 | Key auth & host trust | todo |
