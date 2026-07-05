@@ -97,3 +97,46 @@ never use it for transfer data; and Docker mountpoints inside a container path a
 created root-owned, which made the SFTP upload dir unwritable (fixtures now mount at
 `/fixtures`, not inside `upload/`). Also: whole-row `.draggable` swallows double-clicks
 in SwiftUI Tables — the drag handle is the file icon only.
+
+## 2026-07-05 — ADR-014: Resume & robustness design (M9)
+**Resume.** Downloads always stage into `<destination>.ferrypart` and atomically rename
+into place on completion (an existing, already-confirmed-for-replacement destination is
+deleted just before the rename, since `rename` refuses overwrite by the M5 contract). A
+partial resumes only when valid: automatic mode, non-stale (≤ 30 days — encountering a
+stale partial IS the GC; openWrite truncates it away), and not larger than the source.
+Uploads have no staging; a smaller existing remote file is treated as this transfer's
+own interrupted partial and appended to (DOMAIN.md heuristic). Consequence: at staging
+time Ferry cannot distinguish an interrupted upload from an unrelated remote file, so a
+re-staged upload whose destination exists goes through the conflict Ask dialog; automatic
+upload resume happens on engine retries and the queue's Resume button.
+**Retry policy.** Failed items retry up to 3 attempts with 5 s spacing, resuming their
+own partial data — but only for transient errors (`.io`/unknown). Deterministic errors
+(notFound, permissionDenied, invalidOffset, …) fail immediately; retrying them wastes
+15 s to reach the same result (and would have slowed every unit test).
+**Pause.** `pause(id:)` follows the ADR-013 cancel discipline: publish `.paused` first,
+then cancel the task and free the slot. A paused snapshot is *frozen* — zombie updates
+from the interrupted task are ignored — and only `resume(id:)`/`cancel(id:)` transition
+it (via direct publish). Resume re-queues with automatic mode, so an interrupted Replace
+continues its own partial instead of starting over.
+**Folder transfers.** A directory item expands lazily when it reaches the front of the
+queue: create the destination directory (tolerating an existing one — a merge), list the
+source, enqueue one child item per entry (files before subdirectories). Pausing a
+directory row mid-enumeration and resuming re-enumerates; already-queued children may
+then be transferred twice — idempotent, just wasteful, accepted for M9.
+**Keep-alive/auto-reconnect.** `ConnectionSupervisor` actor: pings every 30 s
+(`realpath .`), reconnects with exponential backoff (1/2/4 s, 3 attempts), streams state
+to the UI (amber "Reconnecting…", red "Connection lost" + manual Reconnect). Both are
+gated on the profile's single keep-alive flag per DOMAIN.md. A transfer that exhausts
+its retries calls `noteFailure()` — transfer failures are the fastest drop detector.
+`SFTPSource` keeps its connect parameters in memory (never persisted/logged) and
+rebuilds its transport in place via `reestablish()`, so panes and queued transfers keep
+working on the same source object after recovery.
+**Test-infra learnings.** (a) NIOSSH `fatalError`s ("window adjust on channel in invalid
+state") if the local SSHClient is closed while reads are in flight — kill-mid-transfer
+tests must drop the connection server-side (`docker exec … pkill`), which is also the
+realistic failure. (b) OpenSSH ≥ 9.8 session processes are named `sshd-session`, not
+`sshd: user` — the pkill must match both. (c) `docker exec` costs ~300 ms, so the file
+being killed mid-transfer must be big enough (32 MiB, seeded server-side with `dd`) that
+the transfer is still running when the kill lands. (d) A `for await` deadline check never
+fires on a silent stream — test timeouts must race a timer task, not test dates on
+event arrival (the first M9 run hung forever on this).

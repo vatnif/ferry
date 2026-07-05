@@ -28,9 +28,13 @@ this document, not the other way round.*
 
 1. Resolve profile → 2. establish transport (TCP/TLS/SSH) → 3. **host trust check** (SSH:
    see below) → 4. authenticate → 5. open browsing channel, cd to start paths.
-- **Keep-alive**: when enabled, protocol-level no-ops every 30 s.
-- **Auto-reconnect**: on unexpected drop, retry with backoff (3 attempts) and restore the
-  panes' paths; in-flight transfers re-queue as resumable.
+- **Keep-alive**: when enabled, protocol-level no-ops every 30 s (SFTP: `realpath .`) —
+  `ConnectionSupervisor` (M9).
+- **Auto-reconnect**: on unexpected drop (failed ping, or a transfer that exhausted its
+  retries), reconnect with exponential backoff (1/2/4 s, 3 attempts) and reload the
+  panes in place; in-flight transfers resume via the engine's retry policy or the
+  queue's Resume button. All attempts failed ⇒ status bar shows "Connection lost" with
+  a manual Reconnect action. Keep-alive and auto-reconnect share the profile flag.
 - Disconnect on tab close; app quit warns if transfers are running.
 
 ## Host key trust (SSH) — TOFU
@@ -45,18 +49,29 @@ this document, not the other way round.*
 ## Transfers & queue (M8–M9)
 
 - Queue is global per app, FIFO within a connection, default **3 concurrent transfers per
-  connection** (setting). Directory transfers enumerate lazily and count as many items.
+  connection** (setting). Directory transfers enumerate lazily — a folder item expands
+  when it reaches the front of the queue (destination dir created, one queue item per
+  child) and counts as many items.
 - Each item: direction, source → destination, progress, speed (rolling average), ETA,
-  pause/cancel. Badges: QUEUED / UPLOADING / DOWNLOADING / RESUMED / ERROR.
+  pause/cancel. Badges: QUEUED / UPLOADING / DOWNLOADING / RESUMED / ERROR (+ DONE,
+  PAUSED, CANCELLED for the remaining states).
 - **Resume — downloads**: data streams to `<name>.ferrypart`; on resume, restart from its
   byte count (SFTP: seek/offset read; FTP: `REST`). On completion, atomically rename into
-  place. `.ferrypart` files older than 30 days are garbage-collected.
+  place. A partial resumes only if it is not stale and not larger than the source;
+  `.ferrypart` files older than 30 days are garbage-collected when encountered (ADR-014).
 - **Resume — uploads**: stat remote size; if smaller than local and resume is allowed,
-  continue from remote size (SFTP: append/offset write; FTP: `APPE`/`REST`).
+  continue from remote size (SFTP: append/offset write; FTP: `APPE`/`REST`). Applies on
+  engine retries and the queue's Resume button; a *re-staged* upload whose destination
+  exists is a conflict (Ferry cannot tell an interrupted upload from a foreign file).
+- **Pause**: stops the item, keeps partial data, badge PAUSED; Resume continues from the
+  partial (badge RESUMED). Cancelling keeps partial data for a later automatic resume.
 - **Conflict policy** (file exists): Overwrite / **Ask (default)** / Skip / Rename; the
-  ask-dialog offers "apply to all". Interrupted-transfer policy: **Resume automatically
-  (default)** / Ask / Restart.
-- Failed items retry 3× with 5 s spacing (setting) before showing ERROR.
+  ask-dialog walks conflicts per file with Replace / Replace All / Skip / Skip All
+  (Overwrite/Skip/Rename presets arrive with Settings, M16). Replace on a folder =
+  merge, overwriting same-named children. Interrupted-transfer policy: **Resume
+  automatically (default)** / Ask / Restart (setting arrives M16; default implemented).
+- Failed items retry 3× with 5 s spacing (setting) before showing ERROR — transient
+  (I/O) errors only; deterministic failures (missing file, permissions) fail immediately.
 - Post-transfer checksum verification (v1.x): only when server supports it; mismatch ⇒ ERROR.
 
 ## Dual-pane browsing

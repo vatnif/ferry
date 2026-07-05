@@ -124,12 +124,8 @@ final class SFTPSourceTests: XCTestCase {
     }
 
     func testMutationsReportUnsupportedUntilTheirMilestone() async throws {
-        // delete + openWrite became real in M8; these three land in M10.
-        await XCTAssertThrowsErrorAsync(try await self.source.createDirectory(at: "/upload/x")) {
-            guard case .unsupported = $0 as? FileSystemSourceError else {
-                return XCTFail("expected .unsupported, got \($0)")
-            }
-        }
+        // delete + openWrite became real in M8, createDirectory in M9
+        // (folder transfers); rename + setPermissions land in M10.
         await XCTAssertThrowsErrorAsync(
             try await self.source.rename(from: "/upload/a", to: "/upload/b")) {
             guard case .unsupported = $0 as? FileSystemSourceError else {

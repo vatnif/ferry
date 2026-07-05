@@ -23,9 +23,10 @@ Workflow per milestone: implement → unit + integration tests pass → docs upd
 
 ## Phase C — Transfers
 - **M8** `TransferEngine` + queue UI: progress, cancel, concurrency, drag between panes.
-- **M9** Resume (`.ferrypart`, offset/REST), auto-reconnect, keep-alive, retries —
-  kill-mid-transfer integration tests.
-- **M10** File ops: rename, delete, mkdir, chmod editor, Quick Look, Finder drag & drop.
+- **M9** Resume (`.ferrypart`, offset/REST), pause, auto-reconnect, keep-alive, retries,
+  folder transfers — kill-mid-transfer integration tests. (SFTP mkdir pulled forward
+  from M10 — folder uploads need it.)
+- **M10** File ops: rename, delete UI, chmod editor, Quick Look, Finder drag & drop.
 
 ## Phase D — Protocol breadth & SSH depth
 - **M11** Key auth, host-key TOFU UI (screen 3), known_hosts + `~/.ssh/config` import.

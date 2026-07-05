@@ -3,17 +3,27 @@ import XCTest
 
 /// In-memory FileSystemSource for engine tests: byte-exact, optionally slow
 /// (to observe concurrency), tracks the peak number of simultaneous writes.
+/// M9 additions: directories, rename/delete (for `.ferrypart` finalize),
+/// modification dates (partial GC), and failure injection (retry policy).
 final class InMemoryFileSource: FileSystemSource, @unchecked Sendable {
     let displayName = "memory"
     private let lock = NSLock()
     private var files: [String: Data]
+    private var directories: Set<String> = []
+    private var modificationDates: [String: Date] = [:]
     private var activeWrites = 0
     private(set) var peakConcurrentWrites = 0
     private(set) var writeStartOrder: [String] = []
     var writeDelayNanoseconds: UInt64 = 0
+    /// Next N openRead calls throw `.io` (transient, retryable).
+    var openReadFailuresRemaining = 0
+    /// One-shot: the next write handle throws `.io` once its byte count
+    /// would exceed this (data written so far stays — a real partial).
+    var failNextWriteAfterBytes: Int?
 
-    init(files: [String: Data] = [:]) {
+    init(files: [String: Data] = [:], directories: Set<String> = []) {
         self.files = files
+        self.directories = directories
     }
 
     func data(at path: String) -> Data? {
@@ -21,20 +31,104 @@ final class InMemoryFileSource: FileSystemSource, @unchecked Sendable {
         return files[path]
     }
 
+    func hasDirectory(_ path: String) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return directories.contains(path)
+    }
+
+    func setModificationDate(_ date: Date, at path: String) {
+        lock.lock(); defer { lock.unlock() }
+        modificationDates[path] = date
+    }
+
     func homeDirectory() async throws -> String { "/" }
-    func list(directory path: String, includeHidden: Bool) async throws -> [FileItem] { [] }
-    func createDirectory(at path: String) async throws {}
-    func delete(at path: String) async throws {}
-    func rename(from sourcePath: String, to destinationPath: String) async throws {}
     func setPermissions(_ permissions: FilePermissions, at path: String) async throws {}
 
+    /// NSLock scoping must stay in synchronous code (Swift 6 forbids
+    /// lock/unlock spanning suspension points).
+    private func synchronized<T>(_ body: () throws -> T) rethrows -> T {
+        lock.lock(); defer { lock.unlock() }
+        return try body()
+    }
+
+    func list(directory path: String, includeHidden: Bool) async throws -> [FileItem] {
+        try synchronized {
+        guard directories.contains(path) else {
+            throw FileSystemSourceError.notFound(path: path)
+        }
+        let prefix = path.hasSuffix("/") ? path : path + "/"
+        var items: [FileItem] = []
+        for (filePath, data) in files where filePath.hasPrefix(prefix)
+            && !filePath.dropFirst(prefix.count).contains("/") {
+            items.append(FileItem(name: String(filePath.dropFirst(prefix.count)),
+                                  path: filePath, isDirectory: false, size: Int64(data.count)))
+        }
+        for directory in directories where directory.hasPrefix(prefix)
+            && !directory.dropFirst(prefix.count).contains("/") {
+            items.append(FileItem(name: String(directory.dropFirst(prefix.count)),
+                                  path: directory, isDirectory: true))
+        }
+        return items
+        }
+    }
+
+    func createDirectory(at path: String) async throws {
+        try synchronized {
+            if directories.contains(path) || files[path] != nil {
+                throw FileSystemSourceError.alreadyExists(path: path)
+            }
+            directories.insert(path)
+        }
+    }
+
+    func delete(at path: String) async throws {
+        try synchronized {
+            if files.removeValue(forKey: path) != nil { return }
+            guard directories.contains(path) else {
+                throw FileSystemSourceError.notFound(path: path)
+            }
+            let prefix = path + "/"
+            directories = directories.filter { $0 != path && !$0.hasPrefix(prefix) }
+            files = files.filter { !$0.key.hasPrefix(prefix) }
+        }
+    }
+
+    func rename(from sourcePath: String, to destinationPath: String) async throws {
+        try synchronized {
+            guard let data = files[sourcePath] else {
+                throw FileSystemSourceError.notFound(path: sourcePath)
+            }
+            if files[destinationPath] != nil || directories.contains(destinationPath) {
+                throw FileSystemSourceError.alreadyExists(path: destinationPath)
+            }
+            files.removeValue(forKey: sourcePath)
+            files[destinationPath] = data
+            modificationDates[destinationPath] = modificationDates.removeValue(forKey: sourcePath)
+        }
+    }
+
     func stat(path: String) async throws -> FileItem {
-        guard let data = data(at: path) else { throw FileSystemSourceError.notFound(path: path) }
-        return FileItem(name: (path as NSString).lastPathComponent, path: path,
-                        isDirectory: false, size: Int64(data.count))
+        try synchronized {
+            if let data = files[path] {
+                return FileItem(name: (path as NSString).lastPathComponent, path: path,
+                                isDirectory: false, size: Int64(data.count),
+                                modifiedAt: modificationDates[path])
+            }
+            if directories.contains(path) {
+                return FileItem(name: (path as NSString).lastPathComponent, path: path,
+                                isDirectory: true)
+            }
+            throw FileSystemSourceError.notFound(path: path)
+        }
     }
 
     func openRead(at path: String, offset: Int64) async throws -> AsyncThrowingStream<Data, Error> {
+        try synchronized {
+            if openReadFailuresRemaining > 0 {
+                openReadFailuresRemaining -= 1
+                throw FileSystemSourceError.io("injected read failure")
+            }
+        }
         guard let data = data(at: path) else { throw FileSystemSourceError.notFound(path: path) }
         let payload = data.dropFirst(Int(offset))
         return AsyncThrowingStream { continuation in
@@ -52,8 +146,17 @@ final class InMemoryFileSource: FileSystemSource, @unchecked Sendable {
     }
 
     func openWrite(at path: String, offset: Int64) async throws -> any FileWriteHandle {
+        let failAfter: Int? = try synchronized {
+            if offset > 0, files[path] == nil {
+                throw FileSystemSourceError.notFound(path: path)
+            }
+            let value = failNextWriteAfterBytes
+            failNextWriteAfterBytes = nil
+            return value
+        }
         beginWrite(path: path, offset: offset)
-        return Handle(source: self, path: path, delay: writeDelayNanoseconds)
+        return Handle(source: self, path: path, delay: writeDelayNanoseconds,
+                      bytesWritten: Int(offset), failAfterBytes: failAfter)
     }
 
     private func beginWrite(path: String, offset: Int64) {
@@ -78,22 +181,48 @@ final class InMemoryFileSource: FileSystemSource, @unchecked Sendable {
         let source: InMemoryFileSource
         let path: String
         let delay: UInt64
-        var closed = false
+        let failAfterBytes: Int?
+        private let lock = NSLock()
+        private var bytesWritten: Int
+        private var closed = false
 
-        init(source: InMemoryFileSource, path: String, delay: UInt64) {
+        init(source: InMemoryFileSource, path: String, delay: UInt64,
+             bytesWritten: Int, failAfterBytes: Int?) {
             self.source = source
             self.path = path
             self.delay = delay
+            self.bytesWritten = bytesWritten
+            self.failAfterBytes = failAfterBytes
+        }
+
+        /// A closed handle refuses writes, like the real backends — this
+        /// is what stops a cancelled task's zombie write (ADR-013).
+        private func admitWrite(byteCount: Int) throws {
+            lock.lock(); defer { lock.unlock() }
+            guard !closed else {
+                throw FileSystemSourceError.io("write after close")
+            }
+            if let failAfterBytes, bytesWritten + byteCount > failAfterBytes {
+                throw FileSystemSourceError.io("injected write failure")
+            }
+            bytesWritten += byteCount
+        }
+
+        private func claimClose() -> Bool {
+            lock.lock(); defer { lock.unlock() }
+            if closed { return false }
+            closed = true
+            return true
         }
 
         func write(_ data: Data) async throws {
             if delay > 0 { try await Task.sleep(nanoseconds: delay) }
+            try admitWrite(byteCount: data.count)
             source.append(data, to: path)
         }
 
         func close() async throws {
-            guard !closed else { return }
-            closed = true
+            guard claimClose() else { return }
             source.writeFinished()
         }
     }
@@ -167,8 +296,12 @@ final class TransferEngineTests: XCTestCase {
                                  "cap of 2 must never be exceeded")
         // Dequeue order is FIFO, but the ≤2 concurrently-started tasks may
         // race to openWrite — so an item can start at most cap−1 positions
-        // away from its queue position, never more.
-        let startOrder = destination.writeStartOrder.map { ($0 as NSString).lastPathComponent }
+        // away from its queue position, never more. (Downloads write to
+        // `<name>.ferrypart` since M9 — strip the suffix before comparing.)
+        let startOrder = destination.writeStartOrder.map {
+            ($0 as NSString).lastPathComponent
+                .replacingOccurrences(of: TransferEngine.partialSuffix, with: "")
+        }
         XCTAssertEqual(Set(startOrder), Set(names))
         for (position, name) in startOrder.enumerated() {
             let queuePosition = names.firstIndex(of: name)!

@@ -33,9 +33,14 @@ FerryCore (FerryKit package)
 │   ├── SFTPSource                       Citadel (M6 spike; fallback libssh2)
 │   ├── FTPSource                        system libcurl (M12)
 │   └── SCPSource                        SSH exec channel (M13)
-├── TransferEngine (actor, M8)           FIFO queue, concurrency cap (3/connection),
+├── TransferEngine (actor, M8/M9)        FIFO queue, concurrency cap (3/connection),
 │                                        snapshot stream w/ replay, robust cancel
-│                                        (ADR-013); retry+resume land in M9
+│                                        (ADR-013); M9: .ferrypart staging + resume,
+│                                        pause/resume, transient-error retry (3×/5 s),
+│                                        lazy directory expansion (ADR-014)
+├── ConnectionSupervisor (actor, M9)     keep-alive ping (30 s) + auto-reconnect with
+│                                        backoff over a SupervisedConnection
+│                                        (ping/reestablish — SFTPSource conforms)
 ├── SSHSessionManager (actor)            one SSH session shared by SFTP + tunnels + exec
 ├── TunnelEngine                         local / remote / SOCKS forwards (M14)
 ├── ConnectionStore                      profiles + folder tree, JSON, NO secrets
@@ -59,8 +64,13 @@ FerryCore (FerryKit package)
   source" (which also enables remote↔remote later).
 - **Session sharing**: `SSHSessionManager` owns one authenticated SSH connection per
   profile; SFTP channels, exec channels (SCP, terminal prep) and tunnels multiplex over it.
-- **Resume semantics** (details in DOMAIN.md): downloads write `name.ferrypart` and restart
-  from its size (SFTP seek / FTP `REST`); uploads probe remote size and continue.
+- **Resume semantics** (implemented M9; details in DOMAIN.md + ADR-014): downloads write
+  `name.ferrypart` and restart from its size (SFTP seek / FTP `REST`), atomically renamed
+  into place on completion; uploads probe remote size and continue. The engine owns all
+  of it — backends only implement the M5 offset contract.
+- **Connection robustness** (M9): `ConnectionSupervisor` pings and reconnects any
+  `SupervisedConnection`; `SFTPSource.reestablish()` rebuilds its transport in place so
+  panes/transfers keep their source reference across drops.
 - **UI fidelity**: views implement `docs/DESIGN.md` / the approved mockups 1:1.
 
 ## Concurrency model (Swift 6, strict)

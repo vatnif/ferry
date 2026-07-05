@@ -193,7 +193,7 @@ struct FileBrowserPane: View {
             if item.isDirectory {
                 session.navigate(pane, to: item.path)
             } else {
-                model.infoMessage = "Opening and transferring files arrives with the transfer queue (Milestone 8) and Quick Look (Milestone 10)."
+                model.infoMessage = "Opening files with Quick Look arrives in Milestone 10 — use Upload/Download or drag to transfer."
             }
         }
     }

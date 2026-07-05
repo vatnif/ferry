@@ -2,7 +2,7 @@ import SwiftUI
 import FerryCore
 
 /// Transfer queue dock (DESIGN.md screen 1): collapsible, one row per item
-/// with progress, meta, badge, cancel. Pause arrives with resume in M9.
+/// with progress, meta, badge, pause/resume (M9) and cancel.
 struct TransferQueueView: View {
     let queue: TransferQueueModel
     @State private var collapsed = false
@@ -68,7 +68,7 @@ private struct QueueRowView: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: row.direction == .upload ? "arrow.up.circle" : "arrow.down.circle")
+            Image(systemName: rowIcon)
                 .foregroundStyle(Color.accentColor)
 
             VStack(alignment: .leading, spacing: 1) {
@@ -94,7 +94,29 @@ private struct QueueRowView: View {
 
             badge
 
-            if !row.phase.isFinished {
+            if row.canPause {
+                Button {
+                    queue.pause(id: row.id)
+                } label: {
+                    Image(systemName: "pause.circle.fill")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("Pause — partial data is kept and can be resumed")
+                .accessibilityIdentifier("queue.pause")
+            }
+            if row.canResume {
+                Button {
+                    queue.resume(id: row.id)
+                } label: {
+                    Image(systemName: "play.circle.fill")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.accentColor)
+                .help(row.phase == .paused ? "Resume" : "Retry")
+                .accessibilityIdentifier("queue.resume")
+            }
+            if row.canCancel {
                 Button {
                     queue.cancel(id: row.id)
                 } label: {
@@ -107,6 +129,11 @@ private struct QueueRowView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 5)
+    }
+
+    private var rowIcon: String {
+        if row.kind == .directory { return "folder" }
+        return row.direction == .upload ? "arrow.up.circle" : "arrow.down.circle"
     }
 
     private var badge: some View {
@@ -122,6 +149,7 @@ private struct QueueRowView: View {
         switch row.phase {
         case .queued: .secondary
         case .running: .accentColor
+        case .paused: .orange
         case .completed: .green
         case .failed: .red
         case .cancelled: .orange

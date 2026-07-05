@@ -112,11 +112,25 @@ final class PaneModel: Identifiable {
 /// navigation (with optional sync browsing), and connection metadata.
 @MainActor @Observable
 final class BrowserSession {
+    /// Status-bar projection of the ConnectionSupervisor state (M9).
+    enum Health: Equatable {
+        case connected
+        case reconnecting(attempt: Int)
+        case lost
+    }
+
     let profile: ConnectionProfile
     let local: PaneModel
     let remote: PaneModel
     let queue: TransferQueueModel
     private let sftp: SFTPSource
+    /// Keep-alive + auto-reconnect; nil when the profile's keep-alive is off
+    /// (DOMAIN.md ties both to the same flag).
+    private let supervisor: ConnectionSupervisor?
+    // nonisolated(unsafe): written once in start(), cancelled in disconnect().
+    nonisolated(unsafe) private var supervisorTask: Task<Void, Never>?
+
+    private(set) var health: Health = .connected
 
     /// Toolbar filter — applies to the focused (active) pane, per DESIGN.md.
     var filterText = ""
@@ -138,12 +152,21 @@ final class BrowserSession {
         self.sftp = sftp
         self.local = PaneModel(kind: .local, source: LocalFileSource(bookmarks: bookmarks))
         self.remote = PaneModel(kind: .remote, source: sftp)
+        self.supervisor = profile.keepAlive ? ConnectionSupervisor(connection: sftp) : nil
         // DOMAIN.md: default 3 concurrent transfers per connection.
         self.queue = TransferQueueModel(engine: TransferEngine(maxConcurrent: 3))
         queue.onCompleted = { [weak self] snapshot in
             guard let self else { return }
             let destination = snapshot.direction == .download ? self.local : self.remote
             Task { await destination.reload() }
+        }
+        // A transfer that exhausted its retries often means the connection
+        // dropped — let the supervisor check and reconnect (DOMAIN.md:
+        // in-flight transfers re-queue as resumable; the user retries the
+        // ERROR row once the link is back).
+        queue.onFailed = { [weak self] _ in
+            guard let supervisor = self?.supervisor else { return }
+            Task { await supervisor.noteFailure() }
         }
     }
 
@@ -169,9 +192,44 @@ final class BrowserSession {
         pingMilliseconds = Int((clock.now - started).components.attoseconds / 1_000_000_000_000_000)
 
         await local.load(localStart, recordHistory: false)
+
+        if let supervisor {
+            supervisorTask = Task { [weak self] in
+                for await state in await supervisor.events() {
+                    guard let self else { break }
+                    self.applyHealth(state)
+                }
+            }
+            await supervisor.start()
+        }
+    }
+
+    private func applyHealth(_ state: ConnectionSupervisor.State) {
+        let previous = health
+        switch state {
+        case .connected: health = .connected
+        case .reconnecting(let attempt): health = .reconnecting(attempt: attempt)
+        case .lost: health = .lost
+        }
+        // Recovered from a drop: the panes may be stale — reload in place
+        // (DOMAIN.md: restore the panes' paths).
+        if health == .connected, previous != .connected {
+            Task {
+                await remote.reload()
+                await local.reload()
+            }
+        }
+    }
+
+    /// Manual retry from the status bar once the link is declared lost.
+    func reconnectNow() {
+        guard let supervisor else { return }
+        Task { await supervisor.reconnectNow() }
     }
 
     func disconnect() async {
+        supervisorTask?.cancel()
+        await supervisor?.stop()
         await sftp.disconnect()
     }
 
@@ -237,43 +295,41 @@ final class BrowserSession {
         PathUtilities.join(base, relative)
     }
 
-    // MARK: Transfers (M8 — single files; folders and resume come in M9/M10)
-
-    struct StagingResult {
-        var skippedFolders = 0
-        var conflicts: [TransferRequest] = []
-    }
+    // MARK: Transfers (M8; folders + resume M9)
 
     /// Enqueues transfers of `items` from `pane` into the opposite pane's
-    /// current directory. Items whose destination already exists are NOT
-    /// enqueued — they're returned for the UI to confirm (DOMAIN.md conflict
-    /// policy default: Ask). Folders are skipped and counted (M9).
-    func stageTransfers(_ items: [FileItem], from pane: PaneModel) async -> StagingResult {
+    /// current directory. Folders enqueue as directory items (the engine
+    /// enumerates them lazily). Items whose destination already exists are
+    /// NOT enqueued — they're returned for the UI's per-file ask dialog
+    /// (DOMAIN.md conflict policy default: Ask). Non-conflicting items use
+    /// `.automatic` mode, so an interrupted download's `.ferrypart` resumes
+    /// without asking (interrupted policy default: resume automatically).
+    func stageTransfers(_ items: [FileItem], from pane: PaneModel) async -> [TransferRequest] {
         let destinationPane = pane.kind == .local ? remote : local
-        var result = StagingResult()
+        var conflicts: [TransferRequest] = []
         for item in items {
-            if item.isDirectory {
-                result.skippedFolders += 1
-                continue
-            }
             let request = TransferRequest(
                 direction: pane.kind == .local ? .upload : .download,
+                kind: item.isDirectory ? .directory : .file,
                 source: pane.source, sourcePath: item.path,
                 destination: destinationPane.source,
                 destinationPath: Self.join(destinationPane.path, item.name),
                 displayName: item.name)
             if (try? await destinationPane.source.stat(path: request.destinationPath)) != nil {
-                result.conflicts.append(request)
+                conflicts.append(request)
             } else {
                 queue.enqueue(request)
             }
         }
-        return result
+        return conflicts
     }
 
-    /// Second phase after the user confirmed replacement.
+    /// Second phase after the user chose Replace: restart mode overwrites
+    /// from byte 0 instead of resuming foreign partial data (for folders it
+    /// merge-overwrites same-named children).
     func enqueueReplacing(_ requests: [TransferRequest]) {
-        for request in requests {
+        for var request in requests {
+            request.mode = .restart
             queue.enqueue(request)
         }
     }

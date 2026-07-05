@@ -55,7 +55,27 @@ for changed-key-detection tests.
 - M12: FTP suite incl. `REST` resume against :2121
 - M14: `curl` through forwarded ports
 
-## Current suites (after M3 — 35 tests + 1 UI)
+## M9 additions (112 kit tests + 4 UI, all green)
+
+- `FerryCoreTests/TransferEngineResumeTests` (unit, InMemoryFileSource): `.ferrypart`
+  resume byte-exact, restart mode, stale/oversized partial discarded (GC), finalize
+  replaces confirmed destination, upload resume/restart, transient retry (succeeds on
+  attempt 3, exhausts, deterministic errors don't retry, retry resumes own partial),
+  manual resume of failed items, pause running/queued + resume byte-exact, cancel of
+  paused, lazy directory tree copy, folder merge preserving unrelated children.
+- `FerryCoreTests/ConnectionSupervisorTests` (unit, fake connection): keep-alive pings,
+  ping-failure → reconnect → recovery, backoff walks attempts then `.lost` + manual
+  reconnect, `noteFailure` immediate + deduplicated cycles.
+- `FerryIntegrationTests/SFTPRobustnessTests` (Docker SFTP): **kill mid-transfer**
+  (server-side `pkill` of the session; 32 MiB file seeded via `docker exec dd`) →
+  ERROR → reestablish + resume → md5-verified byte-exact, `.ferrypart` lifecycle;
+  retry policy self-heals across a reconnect; paused upload resumes from remote size;
+  folder upload/download round-trip; mkdir with intermediates; supervisor detects a
+  dropped link and reestablishes it. Caveats in ADR-014: never close the local
+  SSHClient mid-read (NIOSSH fatalError); test timeouts must race a timer, not check
+  deadlines on event arrival.
+
+## Suite inventory (M1–M8)
 
 - `FerryCoreTests` (unit): `FerryVersionTests`, `ConnectionProfileTests`,
   `ConnectionLibraryTests` (tree ops, Codable contracts), `CredentialVaultTests`

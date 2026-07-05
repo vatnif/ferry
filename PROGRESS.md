@@ -16,7 +16,7 @@
 | M6 | SFTP spike → SFTPSource (read-only) | done (committed 3c9567a) |
 | M7 | Dual-pane browser UI | done (committed c23cf04) |
 | M8 | TransferEngine + queue UI | done (committed b1c9394) |
-| M9 | Resume & robustness | todo |
+| M9 | Resume & robustness | **awaiting review** |
 | M10 | File operations | todo |
 | M11 | Key auth & host trust | todo |
 | M12 | FTP/FTPS via libcurl | todo |
@@ -29,7 +29,29 @@
 
 Backlog (post-v1): see `docs/ROADMAP.md`.
 
-## Current state of the code (after M8)
+## Current state of the code (after M9)
+
+- **Transfers are robust.** `TransferEngine` (ADR-014): downloads stage into
+  `<name>.ferrypart` and atomically rename on completion; valid partials resume
+  (stale > 30 days or oversized ⇒ discarded — that's the GC); uploads resume from a
+  smaller remote size. Transient failures retry 3× / 5 s resuming their own partial;
+  deterministic errors fail immediately. `pause`/`resume` (paused snapshots frozen
+  against zombie updates, ADR-013 discipline). Folder transfers expand lazily at the
+  queue front (SFTP `createDirectory` with intermediates pulled forward from M10).
+- **Connections self-heal.** `ConnectionSupervisor` actor: keep-alive ping every 30 s +
+  auto-reconnect with backoff (1/2/4 s, 3 attempts) over `SupervisedConnection`;
+  `SFTPSource.reestablish()` rebuilds the transport in place. Wired when the profile's
+  keep-alive flag is on; a transfer exhausting retries kicks `noteFailure()`.
+- App: queue rows gained pause/resume buttons + RESUMED/PAUSED badges (UPLOADING/
+  DOWNLOADING replace TRANSFERRING per mockup); per-file conflict alert with
+  Replace/Replace All/Skip/Skip All; folders now stage for real (skip notice removed);
+  status bar shows Reconnecting (amber) / Connection lost + Reconnect (red); panes
+  reload after recovery.
+- Tests: 112 kit tests + 4 XCUITests, all green — incl. the kill-mid-transfer suite
+  (server-side session kill, 32 MiB dd-seeded file, md5-verified resume) and supervisor
+  reconnect against the real Docker sshd. Test-infra learnings recorded in ADR-014.
+
+## Earlier state (after M8)
 
 - **Transfers work end-to-end.** `TransferEngine` (FerryCore actor): FIFO queue,
   3-concurrent cap per connection, snapshot stream with replay, robust cancellation
@@ -147,12 +169,12 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
 
 ## Next steps
 
-1. User reviews M8: connect to the Docker server, select files, Upload/Download or drag
-   between panes, watch the queue (progress/speed/ETA), cancel one, try a conflict.
-   On approval: commit.
-2. M9: resume & robustness — `.ferrypart` staging for downloads, resume offsets, pause
-   button, auto-reconnect, keep-alive, retry policy, folder transfers; kill-mid-transfer
-   integration tests.
+1. User reviews M9: transfer a big file and pause/resume it (watch the RESUMED badge and
+   the `.ferrypart` appear/disappear); drag a folder between panes; trigger a conflict
+   batch (Replace All / Skip All); optionally stop the Docker container mid-transfer to
+   watch retry + "Reconnecting…" self-heal. On approval: commit.
+2. M10: file operations — rename, delete UI, chmod editor, Quick Look, Finder drag &
+   drop (SFTP mkdir already done in M9).
 
 ## Session log
 
@@ -163,4 +185,5 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
 - **2026-07-05 (cont.)** — M5 built: FileSystemSource protocol + FileItem/FilePermissions/FileWriteHandle, LocalFileSource (streaming I/O with resume offset contract), SecurityScopedBookmarkStore composed in. 59 tests green. M5 approved & committed (27e1dfe).
 - **2026-07-05 (cont.)** — M6 spike: Citadel 0.12.1 added (licenses recorded first), SFTPSource read-only implemented and validated against Docker sshd. Verdict: adopt Citadel, libssh2 fallback retired (ADR-011). Two fixes during spike: error normalization (raw Status thrown), @preconcurrency import for Swift 6. 69 tests green. M6 approved & committed (3c9567a).
 - **2026-07-05 (cont.)** — M7 built: BrowserSession/PaneModel (ADR-012), FileBrowserPane + BrowserView per mockup screen 1, connect lifecycle with password prompt, sync browsing (PathUtilities moved to FerryCore for unit-testability). 73 kit tests + 4 UI tests green incl. e2e connect-and-browse. M7 approved & committed (c23cf04).
-- **2026-07-05 (cont.)** — M8 built: TransferEngine + queue dock + SFTP uploads/delete + drag between panes. Debugging saga (all fixed, ADR-013): SFTP writes "hung" → root cause was Docker's root-owned mountpoint making /upload unwritable, masked by a happy-path-only test loop; hardened engine cancellation anyway (immediate cancelled state, force-close handle); fixed chunk-dropping stream buffering; fixed whole-row draggable breaking double-click. 84 kit + 4 UI tests green incl. e2e download through the queue. M8 awaiting review.
+- **2026-07-05 (cont.)** — M8 built: TransferEngine + queue dock + SFTP uploads/delete + drag between panes. Debugging saga (all fixed, ADR-013): SFTP writes "hung" → root cause was Docker's root-owned mountpoint making /upload unwritable, masked by a happy-path-only test loop; hardened engine cancellation anyway (immediate cancelled state, force-close handle); fixed chunk-dropping stream buffering; fixed whole-row draggable breaking double-click. 84 kit + 4 UI tests green incl. e2e download through the queue. M8 approved & committed (b1c9394).
+- **2026-07-05 (cont.)** — M9 built: `.ferrypart` staging + resume, pause/resume, transient-error retry policy, lazy folder transfers (SFTP mkdir pulled forward), ConnectionSupervisor keep-alive/auto-reconnect, per-file conflict dialog with apply-to-all, reconnect status bar (ADR-014). Test saga: closing the local SSHClient mid-read fatalErrors NIOSSH → kill-mid-transfer tests drop the session server-side (`docker exec pkill`, matching OpenSSH ≥ 9.8 `sshd-session` naming) on a 32 MiB dd-seeded file; first run hung forever because `for await` deadline checks never fire on silent streams → test waits now race a timer. 112 kit + 4 UI tests green. M9 awaiting review.

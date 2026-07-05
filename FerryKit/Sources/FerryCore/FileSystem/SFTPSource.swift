@@ -9,23 +9,34 @@ public enum RemoteSourceError: Error, Equatable {
     case connectionFailed(String)
 }
 
-/// FileSystemSource over SFTP via Citadel (ADR-011). M6 scope is read-only:
-/// browse + download. Mutations and uploads land with the TransferEngine and
-/// file-operations milestones (M8/M10); until then they throw `.unsupported`.
+/// FileSystemSource over SFTP via Citadel (ADR-011). Read side since M6,
+/// writes since M8, mkdir + reconnect support since M9; rename/chmod land
+/// in M10 and throw `.unsupported` until then.
 ///
 /// Host keys are currently accepted blindly — M11 replaces the validator
 /// with the TOFU flow (HostKeyStore + prompt, DOMAIN.md → Host key trust).
 public actor SFTPSource: FileSystemSource {
+    /// Everything needed to rebuild the transport for auto-reconnect (M9).
+    /// Held in memory only — never logged or persisted (DOMAIN.md).
+    private struct Parameters {
+        var host: String
+        var port: Int
+        var username: String
+        var password: String
+    }
+
     public nonisolated let displayName: String
-    private let ssh: SSHClient
-    private let sftp: SFTPClient
+    private var ssh: SSHClient
+    private var sftp: SFTPClient
+    private let parameters: Parameters
 
     static let readChunkLength: UInt32 = 128 * 1024
 
-    private init(displayName: String, ssh: SSHClient, sftp: SFTPClient) {
+    private init(displayName: String, ssh: SSHClient, sftp: SFTPClient, parameters: Parameters) {
         self.displayName = displayName
         self.ssh = ssh
         self.sftp = sftp
+        self.parameters = parameters
     }
 
     /// Password-authenticated connect (key/agent auth arrives in M11).
@@ -34,12 +45,20 @@ public actor SFTPSource: FileSystemSource {
                                username: String,
                                password: String,
                                displayName: String? = nil) async throws -> SFTPSource {
+        let parameters = Parameters(host: host, port: port, username: username, password: password)
+        let (ssh, sftp) = try await establish(parameters)
+        return SFTPSource(displayName: displayName ?? host, ssh: ssh, sftp: sftp,
+                          parameters: parameters)
+    }
+
+    private static func establish(_ parameters: Parameters) async throws -> (SSHClient, SFTPClient) {
         let ssh: SSHClient
         do {
             ssh = try await SSHClient.connect(
-                host: host,
-                port: port,
-                authenticationMethod: .passwordBased(username: username, password: password),
+                host: parameters.host,
+                port: parameters.port,
+                authenticationMethod: .passwordBased(username: parameters.username,
+                                                     password: parameters.password),
                 hostKeyValidator: .acceptAnything(), // TODO(M11): TOFU via HostKeyStore
                 reconnect: .never)
         } catch is Citadel.AuthenticationFailed {
@@ -51,8 +70,7 @@ public actor SFTPSource: FileSystemSource {
         }
 
         do {
-            let sftp = try await ssh.openSFTP()
-            return SFTPSource(displayName: displayName ?? host, ssh: ssh, sftp: sftp)
+            return (ssh, try await ssh.openSFTP())
         } catch {
             try? await ssh.close()
             throw RemoteSourceError.connectionFailed(String(describing: error))
@@ -62,6 +80,24 @@ public actor SFTPSource: FileSystemSource {
     public func disconnect() async {
         try? await sftp.close()
         try? await ssh.close()
+    }
+
+    // MARK: SupervisedConnection (M9 keep-alive + auto-reconnect)
+
+    /// Protocol-level no-op proving the connection is alive.
+    public func ping() async throws {
+        _ = try await sftp.getRealPath(atPath: ".")
+    }
+
+    /// Tears down the dead transport and rebuilds it with the original
+    /// parameters. In-flight operations on the old channels fail; the
+    /// TransferEngine's retry policy resumes them on the new transport.
+    public func reestablish() async throws {
+        try? await sftp.close()
+        try? await ssh.close()
+        let (ssh, sftp) = try await Self.establish(parameters)
+        self.ssh = ssh
+        self.sftp = sftp
     }
 
     // MARK: Read operations (M6)
@@ -169,11 +205,25 @@ public actor SFTPSource: FileSystemSource {
         }
     }
 
-    // MARK: Mutations — deferred milestones
-
+    /// Creates intermediate directories as needed (protocol contract) —
+    /// SFTP mkdir itself is single-level, so missing ancestors are created
+    /// root-down. Pulled forward from M10 for M9 folder transfers.
     public func createDirectory(at path: String) async throws {
-        throw FileSystemSourceError.unsupported(operation: "SFTP createDirectory (M10)")
+        if (try? await stat(path: path)) != nil {
+            throw FileSystemSourceError.alreadyExists(path: path)
+        }
+        var current = ""
+        for component in path.split(separator: "/") {
+            current += "/" + component
+            if (try? await stat(path: current)) != nil { continue }
+            let directory = current
+            try await mapped(path: directory) {
+                try await self.sftp.createDirectory(atPath: directory)
+            }
+        }
     }
+
+    // MARK: Mutations — deferred milestones
 
     public func rename(from sourcePath: String, to destinationPath: String) async throws {
         throw FileSystemSourceError.unsupported(operation: "SFTP rename (M10)")
@@ -265,6 +315,7 @@ public actor SFTPSource: FileSystemSource {
     }
 
     private static func mapError(_ error: Error, path: String) -> Error {
+        if error is RemoteSourceError { return error }
         if let sourceError = error as? FileSystemSourceError { return sourceError }
         // Citadel throws the raw Status for request-level failures and wraps
         // it in SFTPError.errorStatus elsewhere — normalize both.
@@ -287,3 +338,6 @@ public actor SFTPSource: FileSystemSource {
         return FileSystemSourceError.io(String(describing: error))
     }
 }
+
+/// Keep-alive + auto-reconnect hooks (ConnectionSupervisor, M9).
+extension SFTPSource: SupervisedConnection {}

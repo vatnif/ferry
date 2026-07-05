@@ -9,8 +9,10 @@ struct BrowserView: View {
     let session: BrowserSession
 
     @State private var newFolderName: String?
+    /// Conflicts awaiting the user's per-file decision (DOMAIN.md: Ask is
+    /// the default exists-policy); the alert walks this list front to back,
+    /// with Replace All / Skip All applying to the rest.
     @State private var pendingConflicts: [TransferRequest] = []
-    @State private var skippedFolderCount = 0
 
     var body: some View {
         @Bindable var session = session
@@ -32,19 +34,23 @@ struct BrowserView: View {
             Divider()
             statusBar
         }
-        .alert("Replace existing files?", isPresented: conflictsPresented) {
-            Button("Cancel", role: .cancel) { pendingConflicts = [] }
+        .alert("“\(pendingConflicts.first?.displayName ?? "")” already exists", isPresented: conflictsPresented) {
             Button("Replace", role: .destructive) {
-                session.enqueueReplacing(pendingConflicts)
+                if let first = pendingConflicts.first { session.enqueueReplacing([first]) }
+                pendingConflicts.removeFirst()
+            }
+            if pendingConflicts.count > 1 {
+                Button("Replace All (\(pendingConflicts.count))", role: .destructive) {
+                    session.enqueueReplacing(pendingConflicts)
+                    pendingConflicts = []
+                }
+            }
+            Button("Skip") { pendingConflicts.removeFirst() }
+            Button(pendingConflicts.count > 1 ? "Skip All" : "Cancel", role: .cancel) {
                 pendingConflicts = []
             }
         } message: {
             Text(conflictMessage)
-        }
-        .alert("Folders skipped", isPresented: skippedPresented) {
-            Button("OK", role: .cancel) { skippedFolderCount = 0 }
-        } message: {
-            Text("Folder transfers arrive in Milestone 9 — \(skippedFolderCount) folder\(skippedFolderCount == 1 ? " was" : "s were") skipped.")
         }
         .toolbar { toolbarContent }
         .alert("New Folder", isPresented: newFolderPresented) {
@@ -137,12 +143,7 @@ struct BrowserView: View {
 
     private var statusBar: some View {
         HStack(spacing: 14) {
-            Label {
-                Text("Connected")
-            } icon: {
-                Circle().fill(.green).frame(width: 7, height: 7)
-            }
-            .accessibilityIdentifier("browser.status.connected")
+            healthIndicator
             Text("\(session.profile.name) · \(session.profile.username)@\(session.profile.host):\(String(session.profile.port)) · \(session.profile.scheme.displayName)")
                 .foregroundStyle(.secondary)
             if let ping = session.pingMilliseconds {
@@ -159,20 +160,51 @@ struct BrowserView: View {
         .background(.bar)
     }
 
+    /// Connection health (M9): green Connected / amber Reconnecting /
+    /// red Connection lost with a manual retry.
+    @ViewBuilder
+    private var healthIndicator: some View {
+        switch session.health {
+        case .connected:
+            Label {
+                Text("Connected")
+            } icon: {
+                Circle().fill(.green).frame(width: 7, height: 7)
+            }
+            .accessibilityIdentifier("browser.status.connected")
+        case .reconnecting(let attempt):
+            Label {
+                Text("Reconnecting (attempt \(attempt))…")
+            } icon: {
+                Circle().fill(.yellow).frame(width: 7, height: 7)
+            }
+            .accessibilityIdentifier("browser.status.reconnecting")
+        case .lost:
+            Label {
+                Text("Connection lost")
+            } icon: {
+                Circle().fill(.red).frame(width: 7, height: 7)
+            }
+            .accessibilityIdentifier("browser.status.lost")
+            Button("Reconnect") { session.reconnectNow() }
+                .buttonStyle(.link)
+                .font(.caption)
+        }
+    }
+
     // MARK: Transfers
 
     private var conflictsPresented: Binding<Bool> {
         Binding(get: { !pendingConflicts.isEmpty }, set: { if !$0 { pendingConflicts = [] } })
     }
 
-    private var skippedPresented: Binding<Bool> {
-        Binding(get: { skippedFolderCount > 0 }, set: { if !$0 { skippedFolderCount = 0 } })
-    }
-
     private var conflictMessage: String {
-        let names = pendingConflicts.prefix(5).map(\.displayName).joined(separator: ", ")
-        let extra = pendingConflicts.count > 5 ? " and \(pendingConflicts.count - 5) more" : ""
-        return "\(names)\(extra) already exist\(pendingConflicts.count == 1 ? "s" : "") at the destination. Replacing cannot be undone."
+        guard let first = pendingConflicts.first else { return "" }
+        let what = first.kind == .directory
+            ? "A folder with this name exists at \(first.destinationPath) — replacing merges its contents, overwriting same-named files."
+            : "Replacing overwrites \(first.destinationPath). This cannot be undone."
+        let remaining = pendingConflicts.count - 1
+        return remaining > 0 ? "\(what)\n\(remaining) more conflict\(remaining == 1 ? "" : "s") after this one." : what
     }
 
     private func transferSelection(from pane: PaneModel) {
@@ -183,9 +215,8 @@ struct BrowserView: View {
     func transfer(_ items: [FileItem], from pane: PaneModel) {
         guard !items.isEmpty else { return }
         Task {
-            let result = await session.stageTransfers(items, from: pane)
-            if !result.conflicts.isEmpty { pendingConflicts = result.conflicts }
-            if result.skippedFolders > 0 { skippedFolderCount = result.skippedFolders }
+            let conflicts = await session.stageTransfers(items, from: pane)
+            if !conflicts.isEmpty { pendingConflicts = conflicts }
         }
     }
 

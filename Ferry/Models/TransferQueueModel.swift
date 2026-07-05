@@ -11,15 +11,29 @@ final class TransferQueueModel {
         var name: String
         var detail: String
         var direction: TransferRequest.Direction
+        var kind: TransferRequest.Kind
         var phase: TransferSnapshot.Phase
         var fraction: Double?
         var metaText: String
         var badgeText: String
+
+        /// Pause applies to queued and running items; resume to paused and
+        /// failed ones (manual retry). Cancel covers everything unfinished.
+        var canPause: Bool { phase == .queued || phase == .running }
+        var canResume: Bool {
+            if phase == .paused { return true }
+            if case .failed = phase { return true }
+            return false
+        }
+        var canCancel: Bool { !phase.isFinished }
     }
 
     private(set) var rows: [Row] = []
     /// Called when an item completes so the destination pane can refresh.
     var onCompleted: ((TransferSnapshot) -> Void)?
+    /// Called when an item exhausts its retries — the session uses it to
+    /// kick the ConnectionSupervisor (the drop may be connection-wide).
+    var onFailed: ((TransferSnapshot) -> Void)?
 
     let engine: TransferEngine
     private var speedSamples: [UUID: (time: ContinuousClock.Instant, bytes: Int64, speed: Double)] = [:]
@@ -52,6 +66,14 @@ final class TransferQueueModel {
         Task { await engine.cancel(id: id) }
     }
 
+    func pause(id: UUID) {
+        Task { await engine.pause(id: id) }
+    }
+
+    func resume(id: UUID) {
+        Task { await engine.resume(id: id) }
+    }
+
     func clearFinished() {
         rows.removeAll { $0.phase.isFinished }
         Task { await engine.clearFinished() }
@@ -68,7 +90,10 @@ final class TransferQueueModel {
         if snapshot.phase == .completed, !wasFinished {
             onCompleted?(snapshot)
         }
-        if snapshot.phase.isFinished {
+        if case .failed = snapshot.phase, !wasFinished {
+            onFailed?(snapshot)
+        }
+        if snapshot.phase.isFinished || snapshot.phase == .paused {
             speedSamples.removeValue(forKey: snapshot.id)
         }
     }
@@ -85,17 +110,30 @@ final class TransferQueueModel {
                    name: snapshot.displayName,
                    detail: "\(snapshot.sourcePath)  →  \(snapshot.destinationPath)",
                    direction: snapshot.direction,
+                   kind: snapshot.kind,
                    phase: snapshot.phase,
                    fraction: fraction,
                    metaText: metaText(for: snapshot),
-                   badgeText: badgeText(for: snapshot.phase))
+                   badgeText: badgeText(for: snapshot))
     }
 
     private func metaText(for snapshot: TransferSnapshot) -> String {
+        if snapshot.kind == .directory {
+            switch snapshot.phase {
+            case .queued: return snapshot.attempt > 1 ? "retrying (attempt \(snapshot.attempt))" : "waiting"
+            case .running: return "adding contents to the queue…"
+            case .completed: return "contents queued"
+            case .failed(let message): return message
+            case .cancelled: return "cancelled"
+            case .paused: return "paused"
+            }
+        }
         let bytes = ByteCountFormatter.string(fromByteCount: snapshot.bytesTransferred, countStyle: .file)
         switch snapshot.phase {
         case .queued:
-            return "waiting"
+            return snapshot.attempt > 1 ? "retrying (attempt \(snapshot.attempt))" : "waiting"
+        case .paused:
+            return "paused at \(bytes)"
         case .running:
             let total = snapshot.totalBytes.map {
                 ByteCountFormatter.string(fromByteCount: $0, countStyle: .file)
@@ -138,10 +176,16 @@ final class TransferQueueModel {
         return speedSamples[snapshot.id]?.speed
     }
 
-    private func badgeText(for phase: TransferSnapshot.Phase) -> String {
-        switch phase {
+    /// Badge set per mockup: QUEUED / UPLOADING / DOWNLOADING / RESUMED /
+    /// ERROR (+ DONE, CANCELLED, PAUSED for the remaining states).
+    private func badgeText(for snapshot: TransferSnapshot) -> String {
+        switch snapshot.phase {
         case .queued: "QUEUED"
-        case .running: "TRANSFERRING"
+        case .running:
+            snapshot.resumedFromOffset != nil
+                ? "RESUMED"
+                : (snapshot.direction == .upload ? "UPLOADING" : "DOWNLOADING")
+        case .paused: "PAUSED"
         case .completed: "DONE"
         case .failed: "ERROR"
         case .cancelled: "CANCELLED"
