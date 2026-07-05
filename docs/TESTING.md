@@ -55,9 +55,13 @@ for changed-key-detection tests.
 - M12: FTP suite incl. `REST` resume against :2121
 - M14: `curl` through forwarded ports
 
-## Current suites (M1)
+## Current suites (after M3 — 35 tests + 1 UI)
 
-- `FerryCoreTests/FerryVersionTests` — placeholder unit test (semver validity).
-- `FerryIntegrationTests/TestServerReachabilityTests` — SSH banner + FTP greeting smoke
-  tests proving the infra works; superseded by real protocol tests from M6/M12.
+- `FerryCoreTests` (unit): `FerryVersionTests`, `ConnectionProfileTests`,
+  `ConnectionLibraryTests` (tree ops, Codable contracts), `CredentialVaultTests`
+  (account-name contract).
+- `FerryIntegrationTests`: `TestServerReachabilityTests` (SSH banner + FTP greeting;
+  superseded by real protocol tests from M6/M12), `ConnectionStorePersistenceTests`
+  (real filesystem, temp dirs), `CredentialVaultKeychainTests` (REAL Keychain,
+  test-only service `com.gfragos.Ferry.tests`, self-cleaning tearDown).
 - `FerryUITests/FerryUITests` — app launches, placeholder window shows.

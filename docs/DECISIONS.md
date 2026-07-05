@@ -51,3 +51,12 @@ Atomic writes. Loading probes schemaVersion first: newer-than-supported fails wi
 precise error instead of decode garbage; older versions are the future migration hook.
 Enum raw values (`TransferProtocol`, tunnel kinds) are part of the schema — never rename
 without a migration.
+
+## 2026-07-05 — ADR-010: Keychain via login keychain (not data-protection keychain)
+CredentialVault uses classic SecItem generic-password items in the login keychain, WITHOUT
+`kSecUseDataProtectionKeychain`. Rationale: the data-protection keychain requires a signed
+app with an application-identifier entitlement, which would break `swift test` (unsigned
+runner) and ad-hoc dev builds. Accessibility: `kSecAttrAccessibleWhenUnlocked`. Account
+format `"<profileUUID>/<role>"` and service `com.gfragos.Ferry` are persistence contracts
+(pinned by test). Revisit for the App Store build in M17 — switching stores will need a
+one-time migration that reads old items and rewrites them.

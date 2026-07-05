@@ -17,7 +17,9 @@ this document, not the other way round.*
 ## Credential policy (M3)
 
 - Passwords and key passphrases go to the **macOS Keychain** as app-specific generic
-  password items (service `com.gfragos.Ferry`, account = profile UUID + role).
+  password items (service `com.gfragos.Ferry`, account `"<profileUUID>/<role>"`, roles:
+  `password`, `keyPassphrase`; accessibility WhenUnlocked; login keychain — ADR-010).
+  Implemented by `CredentialVault` (store = upsert, delete = idempotent).
 - Empty stored password ⇒ prompt at connect time, with "remember" opt-in.
 - Deleting a profile deletes its Keychain items and its `.ferrypart` leftovers.
 - Secrets never appear in: profile JSON, logs, error messages, crash reports, test fixtures.
