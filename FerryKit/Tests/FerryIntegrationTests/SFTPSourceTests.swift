@@ -3,7 +3,7 @@ import XCTest
 
 /// M6 integration tests: SFTPSource against the real Docker SSH server
 /// (atmoz/sftp on 127.0.0.1:2222; chrooted home "/", writable "upload/",
-/// read-only fixtures at "/upload/fixtures" — docs/TESTING.md).
+/// read-only fixtures at "/fixtures" — docs/TESTING.md).
 final class SFTPSourceTests: XCTestCase {
     /// Must match testinfra/fixtures/seed/hello.txt exactly.
     private static let helloContents =
@@ -49,7 +49,7 @@ final class SFTPSourceTests: XCTestCase {
         XCTAssertTrue(upload.isDirectory)
         XCTAssertEqual(upload.path, "/upload")
 
-        let fixtures = try await source.list(directory: "/upload/fixtures", includeHidden: false)
+        let fixtures = try await source.list(directory: "/fixtures", includeHidden: false)
         let hello = try XCTUnwrap(fixtures.first { $0.name == "hello.txt" })
         XCTAssertFalse(hello.isDirectory)
         XCTAssertEqual(hello.size, Int64(Self.helloContents.utf8.count))
@@ -58,7 +58,7 @@ final class SFTPSourceTests: XCTestCase {
     }
 
     func testStatFile() async throws {
-        let item = try await source.stat(path: "/upload/fixtures/hello.txt")
+        let item = try await source.stat(path: "/fixtures/hello.txt")
         XCTAssertEqual(item.name, "hello.txt")
         XCTAssertFalse(item.isDirectory)
         XCTAssertEqual(item.size, Int64(Self.helloContents.utf8.count))
@@ -66,9 +66,9 @@ final class SFTPSourceTests: XCTestCase {
 
     func testListOnFileThrowsNotADirectory() async throws {
         await XCTAssertThrowsErrorAsync(
-            try await self.source.list(directory: "/upload/fixtures/hello.txt", includeHidden: true)) {
+            try await self.source.list(directory: "/fixtures/hello.txt", includeHidden: true)) {
             XCTAssertEqual($0 as? FileSystemSourceError,
-                           .notADirectory(path: "/upload/fixtures/hello.txt"))
+                           .notADirectory(path: "/fixtures/hello.txt"))
         }
     }
 
@@ -84,7 +84,7 @@ final class SFTPSourceTests: XCTestCase {
 
     func testDownloadWholeFile() async throws {
         var data = Data()
-        for try await chunk in try await source.openRead(at: "/upload/fixtures/hello.txt", offset: 0) {
+        for try await chunk in try await source.openRead(at: "/fixtures/hello.txt", offset: 0) {
             data += chunk
         }
         XCTAssertEqual(String(decoding: data, as: UTF8.self), Self.helloContents)
@@ -93,7 +93,7 @@ final class SFTPSourceTests: XCTestCase {
     func testDownloadFromOffset() async throws {
         let offset = 34 // start of the second line
         var data = Data()
-        for try await chunk in try await source.openRead(at: "/upload/fixtures/hello.txt",
+        for try await chunk in try await source.openRead(at: "/fixtures/hello.txt",
                                                          offset: Int64(offset)) {
             data += chunk
         }
@@ -115,7 +115,7 @@ final class SFTPSourceTests: XCTestCase {
         }
 
         var remote = Data()
-        for try await chunk in try await source.openRead(at: "/upload/fixtures/medium-1mb.bin",
+        for try await chunk in try await source.openRead(at: "/fixtures/medium-1mb.bin",
                                                          offset: 0) {
             remote += chunk
         }
@@ -124,13 +124,20 @@ final class SFTPSourceTests: XCTestCase {
     }
 
     func testMutationsReportUnsupportedUntilTheirMilestone() async throws {
-        await XCTAssertThrowsErrorAsync(try await self.source.delete(at: "/upload/x")) {
+        // delete + openWrite became real in M8; these three land in M10.
+        await XCTAssertThrowsErrorAsync(try await self.source.createDirectory(at: "/upload/x")) {
             guard case .unsupported = $0 as? FileSystemSourceError else {
                 return XCTFail("expected .unsupported, got \($0)")
             }
         }
         await XCTAssertThrowsErrorAsync(
-            try await self.source.openWrite(at: "/upload/x", offset: 0)) {
+            try await self.source.rename(from: "/upload/a", to: "/upload/b")) {
+            guard case .unsupported = $0 as? FileSystemSourceError else {
+                return XCTFail("expected .unsupported, got \($0)")
+            }
+        }
+        await XCTAssertThrowsErrorAsync(
+            try await self.source.setPermissions(FilePermissions(rawMode: 0o644), at: "/upload/x")) {
             guard case .unsupported = $0 as? FileSystemSourceError else {
                 return XCTFail("expected .unsupported, got \($0)")
             }

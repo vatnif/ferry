@@ -17,6 +17,8 @@ public protocol FileWriteHandle: Sendable {
 /// - `openRead(at:offset:)` starts streaming at byte `offset`.
 /// - `openWrite(at:offset:)` truncates the target to `offset` bytes, then
 ///   appends — offset 0 is a plain overwrite; offset == current size resumes.
+///   Resuming (offset > 0) into a missing file throws `.notFound`; an offset
+///   beyond the current size throws `.invalidOffset`.
 public protocol FileSystemSource: Sendable {
     /// Shown in the pane header (e.g. "This Mac", "prod-web-01").
     var displayName: String { get }

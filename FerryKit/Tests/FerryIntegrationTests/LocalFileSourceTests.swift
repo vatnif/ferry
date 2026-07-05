@@ -161,9 +161,9 @@ final class LocalFileSourceTests: XCTestCase {
     }
 
     func testWriteErrors() async throws {
-        // Nonzero offset into a nonexistent file makes no sense for resume.
+        // Resuming into a nonexistent file is notFound (unified with SFTP).
         await XCTAssertThrowsErrorAsync(try await source.openWrite(at: self.path("ghost"), offset: 7)) {
-            XCTAssertEqual($0 as? FileSystemSourceError, .invalidOffset(7))
+            XCTAssertEqual($0 as? FileSystemSourceError, .notFound(path: self.path("ghost")))
         }
         await XCTAssertThrowsErrorAsync(try await source.openRead(at: self.path("ghost"), offset: 0)) {
             XCTAssertEqual($0 as? FileSystemSourceError, .notFound(path: self.path("ghost")))

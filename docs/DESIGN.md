@@ -6,10 +6,13 @@ their written form. Any change requires user approval + an ADR. Approved 2026-07
 **Mockups**: open `docs/design/ferry-mockups.html` in a browser (6 tabs, light + dark).
 
 **Implementation status** (which mockup elements are live vs pending — keep current):
-- Screen 1: sidebar + editor (M4) and dual-pane browser with sync browsing (M7) are live.
-  Pending: transfer queue dock + Upload/Download actions (M8), file context menus/Quick
-  Look (M10), tabs (M16), tunnel count in status bar (M14), within-folder drag reorder
-  (M16). Status bar shows first-listing round-trip instead of continuous latency for now.
+- Screen 1: sidebar + editor (M4), dual-pane browser with sync browsing (M7), and the
+  transfer queue dock with Upload/Download + drag between panes (M8) are live. Notes:
+  drag handle is the file icon (whole-row drag breaks double-click, ADR-013); pause
+  button and folder transfers arrive with resume (M9); conflict dialog is a simple
+  Replace/Cancel until M9's apply-to-all. Pending: file context menus/Quick Look (M10),
+  tabs (M16), tunnel count in status bar (M14), within-folder drag reorder (M16).
+  Status bar shows first-listing round-trip instead of continuous latency for now.
 - Screen 2 (connection sheet): live since M4; "Test Connection" is a TCP probe until a
   protocol-level test replaces it; tunnels row is a placeholder until M14.
 - Screen 3 (host keys): pending M11. Screen 4 (tunnels): pending M14. Screen 5

@@ -9,18 +9,42 @@ struct BrowserView: View {
     let session: BrowserSession
 
     @State private var newFolderName: String?
+    @State private var pendingConflicts: [TransferRequest] = []
+    @State private var skippedFolderCount = 0
 
     var body: some View {
         @Bindable var session = session
         VStack(spacing: 0) {
             HSplitView {
-                FileBrowserPane(session: session, pane: session.local)
-                    .frame(minWidth: 300)
-                FileBrowserPane(session: session, pane: session.remote)
-                    .frame(minWidth: 300)
+                FileBrowserPane(session: session, pane: session.local) { items, sourcePane in
+                    transfer(items, from: sourcePane)
+                }
+                .frame(minWidth: 300)
+                FileBrowserPane(session: session, pane: session.remote) { items, sourcePane in
+                    transfer(items, from: sourcePane)
+                }
+                .frame(minWidth: 300)
+            }
+            if !session.queue.rows.isEmpty {
+                Divider()
+                TransferQueueView(queue: session.queue)
             }
             Divider()
             statusBar
+        }
+        .alert("Replace existing files?", isPresented: conflictsPresented) {
+            Button("Cancel", role: .cancel) { pendingConflicts = [] }
+            Button("Replace", role: .destructive) {
+                session.enqueueReplacing(pendingConflicts)
+                pendingConflicts = []
+            }
+        } message: {
+            Text(conflictMessage)
+        }
+        .alert("Folders skipped", isPresented: skippedPresented) {
+            Button("OK", role: .cancel) { skippedFolderCount = 0 }
+        } message: {
+            Text("Folder transfers arrive in Milestone 9 — \(skippedFolderCount) folder\(skippedFolderCount == 1 ? " was" : "s were") skipped.")
         }
         .toolbar { toolbarContent }
         .alert("New Folder", isPresented: newFolderPresented) {
@@ -52,15 +76,19 @@ struct BrowserView: View {
             .disabled(session.activePane.forwardStack.isEmpty)
 
             Button {
-                model.infoMessage = "Transfers arrive with the queue in Milestone 8."
+                transferSelection(from: session.local)
             } label: {
                 Label("Upload", systemImage: "arrow.up")
             }
+            .disabled(session.local.selection.isEmpty)
+            .accessibilityIdentifier("browser.upload")
             Button {
-                model.infoMessage = "Transfers arrive with the queue in Milestone 8."
+                transferSelection(from: session.remote)
             } label: {
                 Label("Download", systemImage: "arrow.down")
             }
+            .disabled(session.remote.selection.isEmpty)
+            .accessibilityIdentifier("browser.download")
 
             Button {
                 newFolderName = ""
@@ -129,6 +157,36 @@ struct BrowserView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
         .background(.bar)
+    }
+
+    // MARK: Transfers
+
+    private var conflictsPresented: Binding<Bool> {
+        Binding(get: { !pendingConflicts.isEmpty }, set: { if !$0 { pendingConflicts = [] } })
+    }
+
+    private var skippedPresented: Binding<Bool> {
+        Binding(get: { skippedFolderCount > 0 }, set: { if !$0 { skippedFolderCount = 0 } })
+    }
+
+    private var conflictMessage: String {
+        let names = pendingConflicts.prefix(5).map(\.displayName).joined(separator: ", ")
+        let extra = pendingConflicts.count > 5 ? " and \(pendingConflicts.count - 5) more" : ""
+        return "\(names)\(extra) already exist\(pendingConflicts.count == 1 ? "s" : "") at the destination. Replacing cannot be undone."
+    }
+
+    private func transferSelection(from pane: PaneModel) {
+        let items = pane.items.filter { pane.selection.contains($0.id) }
+        transfer(items, from: pane)
+    }
+
+    func transfer(_ items: [FileItem], from pane: PaneModel) {
+        guard !items.isEmpty else { return }
+        Task {
+            let result = await session.stageTransfers(items, from: pane)
+            if !result.conflicts.isEmpty { pendingConflicts = result.conflicts }
+            if result.skippedFolders > 0 { skippedFolderCount = result.skippedFolders }
+        }
     }
 
     // MARK: New folder

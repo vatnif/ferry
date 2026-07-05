@@ -39,6 +39,13 @@ struct FileBrowserPane: View {
     @Environment(ConnectionManagerModel.self) private var model
     let session: BrowserSession
     let pane: PaneModel
+    /// Items dragged from the OTHER pane were dropped here (M8 transfers).
+    var onDropItems: (([FileItem], PaneModel) -> Void)?
+
+    /// Drag payload: "ferryitem|<kind>|<d/f>|<path>".
+    static func dragPayload(for item: FileItem, in pane: PaneModel) -> String {
+        "ferryitem|\(pane.kind == .local ? "local" : "remote")|\(item.isDirectory ? "d" : "f")|\(item.path)"
+    }
 
     var body: some View {
         @Bindable var pane = pane
@@ -52,6 +59,9 @@ struct FileBrowserPane: View {
         .background(Color(nsColor: .textBackgroundColor))
         // Track the focused pane for the toolbar filter + nav buttons.
         .onTapGesture { session.activePaneKind = pane.kind }
+        .dropDestination(for: String.self) { payloads, _ in
+            handleDrop(payloads)
+        }
         .alert("Problem in this pane", isPresented: paneErrorPresented) {
             Button("OK", role: .cancel) { pane.errorMessage = nil }
         } message: {
@@ -135,8 +145,11 @@ struct FileBrowserPane: View {
         Table(filteredItems, selection: $pane.selection, sortOrder: $pane.sortOrder) {
             TableColumn("Name", value: \.name) { item in
                 HStack(spacing: 6) {
+                    // Drag handle is the icon only: a whole-row .draggable
+                    // swallows double-clicks and breaks folder navigation.
                     Image(systemName: item.iconName)
                         .foregroundStyle(item.isDirectory ? Color.accentColor : Color.secondary)
+                        .draggable(Self.dragPayload(for: item, in: pane))
                     Text(item.name)
                 }
                 .opacity(item.isHidden ? 0.55 : 1)
@@ -183,6 +196,23 @@ struct FileBrowserPane: View {
                 model.infoMessage = "Opening and transferring files arrives with the transfer queue (Milestone 8) and Quick Look (Milestone 10)."
             }
         }
+    }
+
+    /// Accepts drops originating from the opposite pane only.
+    private func handleDrop(_ payloads: [String]) -> Bool {
+        let otherKindTag = pane.kind == .local ? "remote" : "local"
+        let otherPane = pane.kind == .local ? session.remote : session.local
+        let items: [FileItem] = payloads.compactMap { payload in
+            let parts = payload.split(separator: "|", maxSplits: 3).map(String.init)
+            guard parts.count == 4, parts[0] == "ferryitem", parts[1] == otherKindTag else { return nil }
+            let path = parts[3]
+            return FileItem(name: (path as NSString).lastPathComponent,
+                            path: path,
+                            isDirectory: parts[2] == "d")
+        }
+        guard !items.isEmpty else { return false }
+        onDropItems?(items, otherPane)
+        return true
     }
 
     // MARK: Footer

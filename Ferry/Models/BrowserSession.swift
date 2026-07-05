@@ -115,6 +115,7 @@ final class BrowserSession {
     let profile: ConnectionProfile
     let local: PaneModel
     let remote: PaneModel
+    let queue: TransferQueueModel
     private let sftp: SFTPSource
 
     /// Toolbar filter — applies to the focused (active) pane, per DESIGN.md.
@@ -137,6 +138,13 @@ final class BrowserSession {
         self.sftp = sftp
         self.local = PaneModel(kind: .local, source: LocalFileSource(bookmarks: bookmarks))
         self.remote = PaneModel(kind: .remote, source: sftp)
+        // DOMAIN.md: default 3 concurrent transfers per connection.
+        self.queue = TransferQueueModel(engine: TransferEngine(maxConcurrent: 3))
+        queue.onCompleted = { [weak self] snapshot in
+            guard let self else { return }
+            let destination = snapshot.direction == .download ? self.local : self.remote
+            Task { await destination.reload() }
+        }
     }
 
     /// Loads both panes' start paths. Called once right after connect.
@@ -227,5 +235,46 @@ final class BrowserSession {
 
     static func join(_ base: String, _ relative: String) -> String {
         PathUtilities.join(base, relative)
+    }
+
+    // MARK: Transfers (M8 — single files; folders and resume come in M9/M10)
+
+    struct StagingResult {
+        var skippedFolders = 0
+        var conflicts: [TransferRequest] = []
+    }
+
+    /// Enqueues transfers of `items` from `pane` into the opposite pane's
+    /// current directory. Items whose destination already exists are NOT
+    /// enqueued — they're returned for the UI to confirm (DOMAIN.md conflict
+    /// policy default: Ask). Folders are skipped and counted (M9).
+    func stageTransfers(_ items: [FileItem], from pane: PaneModel) async -> StagingResult {
+        let destinationPane = pane.kind == .local ? remote : local
+        var result = StagingResult()
+        for item in items {
+            if item.isDirectory {
+                result.skippedFolders += 1
+                continue
+            }
+            let request = TransferRequest(
+                direction: pane.kind == .local ? .upload : .download,
+                source: pane.source, sourcePath: item.path,
+                destination: destinationPane.source,
+                destinationPath: Self.join(destinationPane.path, item.name),
+                displayName: item.name)
+            if (try? await destinationPane.source.stat(path: request.destinationPath)) != nil {
+                result.conflicts.append(request)
+            } else {
+                queue.enqueue(request)
+            }
+        }
+        return result
+    }
+
+    /// Second phase after the user confirmed replacement.
+    func enqueueReplacing(_ requests: [TransferRequest]) {
+        for request in requests {
+            queue.enqueue(request)
+        }
     }
 }

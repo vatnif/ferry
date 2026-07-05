@@ -85,6 +85,7 @@ struct ConnectionEditorSheet: View {
                               prompt: Text("server default"))
                     TextField("Local start path", text: $draft.localStartPath,
                               prompt: Text("home folder"))
+                        .accessibilityIdentifier("editor.localStart")
                     Toggle("Send keep-alive every 30 s and reconnect automatically",
                            isOn: $draft.keepAlive)
                     LabeledContent("Tunnels", value: "Configurable from Milestone 14")

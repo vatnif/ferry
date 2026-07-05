@@ -12,7 +12,9 @@ services:
     # user:password:uid::writable-home-subdir
     command: ferry:ferrypass:1001::upload
     volumes:
-      - ./fixtures/seed:/home/ferry/upload/fixtures:ro
+      # NOT inside upload/: Docker would create the mountpoint parent as
+      # root, making upload/ unwritable for the ferry user.
+      - ./fixtures/seed:/home/ferry/fixtures:ro
 
   ftp:
     image: delfer/alpine-ftp-server

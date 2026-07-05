@@ -101,7 +101,8 @@ public actor SFTPSource: FileSystemSource {
             try await self.sftp.openFile(filePath: path, flags: .read)
         }
 
-        return AsyncThrowingStream(Data.self, bufferingPolicy: .bufferingNewest(4)) { continuation in
+        // Unbounded buffering — see LocalFileSource.openRead rationale.
+        return AsyncThrowingStream(Data.self) { continuation in
             let task = Task {
                 var position = UInt64(offset)
                 do {
@@ -126,14 +127,52 @@ public actor SFTPSource: FileSystemSource {
         }
     }
 
+    // MARK: Write side (M8) — createDirectory/rename/setPermissions follow in M10
+
+    public func openWrite(at path: String, offset: Int64) async throws -> any FileWriteHandle {
+        guard offset >= 0 else { throw FileSystemSourceError.invalidOffset(offset) }
+
+        if offset == 0 {
+            let file = try await mapped(path: path) {
+                try await self.sftp.openFile(filePath: path, flags: [.write, .create, .truncate])
+            }
+            return SFTPFileWriteHandle(file: file, position: 0)
+        }
+
+        // Resume contract: target must exist (else notFound) with size ≥
+        // offset; shrink to offset (SFTP truncates via setstat), then append.
+        let attributes = try await mapped(path: path) { try await self.sftp.getAttributes(at: path) }
+        guard let size = attributes.size, size >= UInt64(offset) else {
+            throw FileSystemSourceError.invalidOffset(offset)
+        }
+        if size > UInt64(offset) {
+            try await mapped(path: path) {
+                try await self.sftp.setAttributes(at: path, to: .init(size: UInt64(offset)))
+            }
+        }
+        let file = try await mapped(path: path) {
+            try await self.sftp.openFile(filePath: path, flags: [.write])
+        }
+        return SFTPFileWriteHandle(file: file, position: UInt64(offset))
+    }
+
+    /// Files and directories; directories recursively (protocol contract).
+    public func delete(at path: String) async throws {
+        let item = try await stat(path: path)
+        if item.isDirectory {
+            for child in try await list(directory: path, includeHidden: true) {
+                try await delete(at: child.path)
+            }
+            try await mapped(path: path) { try await self.sftp.rmdir(at: path) }
+        } else {
+            try await mapped(path: path) { try await self.sftp.remove(at: path) }
+        }
+    }
+
     // MARK: Mutations — deferred milestones
 
     public func createDirectory(at path: String) async throws {
         throw FileSystemSourceError.unsupported(operation: "SFTP createDirectory (M10)")
-    }
-
-    public func delete(at path: String) async throws {
-        throw FileSystemSourceError.unsupported(operation: "SFTP delete (M10)")
     }
 
     public func rename(from sourcePath: String, to destinationPath: String) async throws {
@@ -144,11 +183,44 @@ public actor SFTPSource: FileSystemSource {
         throw FileSystemSourceError.unsupported(operation: "SFTP setPermissions (M10)")
     }
 
-    public func openWrite(at path: String, offset: Int64) async throws -> any FileWriteHandle {
-        throw FileSystemSourceError.unsupported(operation: "SFTP upload (M8)")
-    }
-
     // MARK: Internals
+
+    /// Sequential SFTP writer. @unchecked Sendable per the FileWriteHandle
+    /// contract (no concurrent use of one handle).
+    final class SFTPFileWriteHandle: FileWriteHandle, @unchecked Sendable {
+        private let file: SFTPFile
+        private let lock = NSLock()
+        private var position: UInt64
+        private var closed = false
+
+        init(file: SFTPFile, position: UInt64) {
+            self.file = file
+            self.position = position
+        }
+
+        func write(_ data: Data) async throws {
+            do {
+                try await file.write(ByteBuffer(bytes: data), at: position)
+                position += UInt64(data.count)
+            } catch {
+                throw FileSystemSourceError.io(String(describing: error))
+            }
+        }
+
+        /// May race between writer and the engine's cancellation handler —
+        /// first caller wins.
+        private func claimClose() -> Bool {
+            lock.lock(); defer { lock.unlock() }
+            if closed { return false }
+            closed = true
+            return true
+        }
+
+        func close() async throws {
+            guard claimClose() else { return }
+            try await file.close()
+        }
+    }
 
     private static func fileItem(name: String, fullPath: String,
                                  attributes: SFTPFileAttributes, longname: String?) -> FileItem {

@@ -84,3 +84,16 @@ toolbar filter and back/forward. Single session per window until tabs (M16);
 `ConnectionPhase` (idle/connecting/connected) drives the detail column. Connect is
 password-auth only until M11; missing stored password prompts with remember-in-Keychain
 opt-in per DOMAIN.md.
+
+## 2026-07-05 — ADR-013: TransferEngine cancellation must not trust backend awaits (M8)
+Design rule learned the hard way: a transfer task's awaits (e.g. Citadel SFTP writes) may
+not be cancellation-aware, so `TransferEngine.cancel` (a) publishes the cancelled state
+and frees the concurrency slot immediately, (b) cancels the task, and (c) a
+`withTaskCancellationHandler` force-closes the destination write handle so pending I/O
+resumes with an error instead of leaving a suspended zombie. Terminal snapshot phases are
+immutable (late zombie updates ignored); write-handle `close()` is claim-once
+thread-safe. Related M8 findings: AsyncStream `bufferingNewest` silently DROPS chunks —
+never use it for transfer data; and Docker mountpoints inside a container path are
+created root-owned, which made the SFTP upload dir unwritable (fixtures now mount at
+`/fixtures`, not inside `upload/`). Also: whole-row `.draggable` swallows double-clicks
+in SwiftUI Tables — the drag handle is the file icon only.

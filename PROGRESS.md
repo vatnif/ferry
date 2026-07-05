@@ -14,8 +14,8 @@
 | M4 | Connection Manager UI | done (committed 3d17f7c) |
 | M5 | FileSystemSource protocol + LocalFileSource | done (committed 27e1dfe) |
 | M6 | SFTP spike → SFTPSource (read-only) | done (committed 3c9567a) |
-| M7 | Dual-pane browser UI | **awaiting review** |
-| M8 | TransferEngine + queue UI | todo |
+| M7 | Dual-pane browser UI | done (committed c23cf04) |
+| M8 | TransferEngine + queue UI | **awaiting review** |
 | M9 | Resume & robustness | todo |
 | M10 | File operations | todo |
 | M11 | Key auth & host trust | todo |
@@ -29,7 +29,25 @@
 
 Backlog (post-v1): see `docs/ROADMAP.md`.
 
-## Current state of the code (after M7)
+## Current state of the code (after M8)
+
+- **Transfers work end-to-end.** `TransferEngine` (FerryCore actor): FIFO queue,
+  3-concurrent cap per connection, snapshot stream with replay, robust cancellation
+  (ADR-013 — publishes cancelled + frees slot immediately, force-closes the write handle).
+  `SFTPSource` gained `openWrite` (incl. truncate-to-offset resume contract) and
+  recursive `delete`.
+- App: `TransferQueueModel` (speed EMA + ETA) + `TransferQueueView` dock per mockup
+  (progress, badges, cancel, clear, collapse). Upload/Download toolbar buttons act on
+  selections; drag between panes (handle = file icon); per-batch Replace/Cancel conflict
+  dialog; folders skipped with notice (M9); destination pane auto-refreshes on completion.
+- M8 war stories (see ADR-013): Docker root-owned mountpoint made the SFTP upload dir
+  unwritable (fixtures moved to `/fixtures`); AsyncStream bufferingNewest dropped chunks;
+  whole-row `.draggable` broke double-click navigation; a happy-path-only test loop hid
+  the failure as a hang.
+- Tests: 84 kit tests + 4 XCUITests, all green — incl. the e2e UI flow that connects,
+  browses, downloads through the queue, and verifies the file on disk.
+
+## Earlier state (after M7)
 
 - **Ferry now connects and browses for real.** Detail column switches on
   `ConnectionPhase`: profile summary → connecting spinner → `BrowserView` (dual panes,
@@ -129,11 +147,12 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
 
 ## Next steps
 
-1. User reviews M7 — this is the plan's *big review point*: run the app, connect to the
-   Docker server (testinfra/start.sh; 127.0.0.1:2222, ferry/ferrypass) or a real one,
-   try sorting, breadcrumbs, hidden toggle, filter, sync browsing. On approval: commit.
-2. M8: TransferEngine (actor: queue, concurrency caps, progress) + queue dock UI +
-   SFTPSource.openWrite; drag between panes; byte-exact transfer integration tests.
+1. User reviews M8: connect to the Docker server, select files, Upload/Download or drag
+   between panes, watch the queue (progress/speed/ETA), cancel one, try a conflict.
+   On approval: commit.
+2. M9: resume & robustness — `.ferrypart` staging for downloads, resume offsets, pause
+   button, auto-reconnect, keep-alive, retry policy, folder transfers; kill-mid-transfer
+   integration tests.
 
 ## Session log
 
@@ -143,4 +162,5 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
 - **2026-07-05 (cont.)** — M4 built: connection manager UI (sidebar tree, editor sheet, detail summary, folder prompts, drag-to-folder, Move-to menu), ConnectionManagerModel with vault-aware save/delete/duplicate, ReachabilityProbe + hierarchy queries in FerryCore. 40 kit tests + 3 UI tests green. M4 approved & committed (3d17f7c).
 - **2026-07-05 (cont.)** — M5 built: FileSystemSource protocol + FileItem/FilePermissions/FileWriteHandle, LocalFileSource (streaming I/O with resume offset contract), SecurityScopedBookmarkStore composed in. 59 tests green. M5 approved & committed (27e1dfe).
 - **2026-07-05 (cont.)** — M6 spike: Citadel 0.12.1 added (licenses recorded first), SFTPSource read-only implemented and validated against Docker sshd. Verdict: adopt Citadel, libssh2 fallback retired (ADR-011). Two fixes during spike: error normalization (raw Status thrown), @preconcurrency import for Swift 6. 69 tests green. M6 approved & committed (3c9567a).
-- **2026-07-05 (cont.)** — M7 built: BrowserSession/PaneModel (ADR-012), FileBrowserPane + BrowserView per mockup screen 1, connect lifecycle with password prompt, sync browsing (PathUtilities moved to FerryCore for unit-testability). 73 kit tests + 4 UI tests green incl. e2e connect-and-browse. Docs pass: ARCHITECTURE, DESIGN (implementation-status section added), DECISIONS, TESTING, PROGRESS. M7 awaiting review.
+- **2026-07-05 (cont.)** — M7 built: BrowserSession/PaneModel (ADR-012), FileBrowserPane + BrowserView per mockup screen 1, connect lifecycle with password prompt, sync browsing (PathUtilities moved to FerryCore for unit-testability). 73 kit tests + 4 UI tests green incl. e2e connect-and-browse. M7 approved & committed (c23cf04).
+- **2026-07-05 (cont.)** — M8 built: TransferEngine + queue dock + SFTP uploads/delete + drag between panes. Debugging saga (all fixed, ADR-013): SFTP writes "hung" → root cause was Docker's root-owned mountpoint making /upload unwritable, masked by a happy-path-only test loop; hardened engine cancellation anyway (immediate cancelled state, force-close handle); fixed chunk-dropping stream buffering; fixed whole-row draggable breaking double-click. 84 kit + 4 UI tests green incl. e2e download through the queue. M8 awaiting review.

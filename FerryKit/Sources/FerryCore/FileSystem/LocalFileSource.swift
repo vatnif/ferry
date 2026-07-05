@@ -112,8 +112,11 @@ public struct LocalFileSource: FileSystemSource {
             throw FileSystemSourceError.invalidOffset(offset)
         }
 
+        // Unbounded buffering: dropping chunks (bufferingNewest) would corrupt
+        // transfers. Memory is bounded in practice by the reader thread pacing
+        // below; proper backpressure is an M9 concern.
         let chunkSize = Self.readChunkSize
-        return AsyncThrowingStream(Data.self, bufferingPolicy: .bufferingNewest(4)) { continuation in
+        return AsyncThrowingStream(Data.self) { continuation in
             let reader = Thread {
                 do {
                     while true {
@@ -137,7 +140,9 @@ public struct LocalFileSource: FileSystemSource {
         guard offset >= 0 else { throw FileSystemSourceError.invalidOffset(offset) }
         return try withAccess(path) {
             if !FileManager.default.fileExists(atPath: path) {
-                guard offset == 0 else { throw FileSystemSourceError.invalidOffset(offset) }
+                // Resuming (offset > 0) into a missing file: notFound, matching
+                // SFTPSource — the caller falls back to a fresh transfer.
+                guard offset == 0 else { throw FileSystemSourceError.notFound(path: path) }
                 guard FileManager.default.createFile(atPath: path, contents: nil) else {
                     throw FileSystemSourceError.permissionDenied(path: path)
                 }
@@ -196,6 +201,7 @@ public struct LocalFileSource: FileSystemSource {
 /// FileWriteHandle contract guarantees no concurrent use of one handle.
 final class LocalFileWriteHandle: FileWriteHandle, @unchecked Sendable {
     private let handle: FileHandle
+    private let lock = NSLock()
     private var closed = false
 
     init(handle: FileHandle) {
@@ -210,13 +216,21 @@ final class LocalFileWriteHandle: FileWriteHandle, @unchecked Sendable {
         }
     }
 
-    func close() async throws {
-        guard !closed else { return }
+    /// close() may race between the writer and the engine's cancellation
+    /// handler — first caller wins, the rest are no-ops.
+    private func claimClose() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        if closed { return false }
         closed = true
+        return true
+    }
+
+    func close() async throws {
+        guard claimClose() else { return }
         try handle.close()
     }
 
     deinit {
-        if !closed { try? handle.close() }
+        if claimClose() { try? handle.close() }
     }
 }

@@ -33,7 +33,9 @@ FerryCore (FerryKit package)
 │   ├── SFTPSource                       Citadel (M6 spike; fallback libssh2)
 │   ├── FTPSource                        system libcurl (M12)
 │   └── SCPSource                        SSH exec channel (M13)
-├── TransferEngine (actor)               queue, concurrency caps, retry, resume
+├── TransferEngine (actor, M8)           FIFO queue, concurrency cap (3/connection),
+│                                        snapshot stream w/ replay, robust cancel
+│                                        (ADR-013); retry+resume land in M9
 ├── SSHSessionManager (actor)            one SSH session shared by SFTP + tunnels + exec
 ├── TunnelEngine                         local / remote / SOCKS forwards (M14)
 ├── ConnectionStore                      profiles + folder tree, JSON, NO secrets

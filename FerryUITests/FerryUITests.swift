@@ -49,15 +49,19 @@ final class FerryUITests: XCTestCase {
         }
     }
 
-    /// M7 end-to-end walk-through: create a connection to the Docker SFTP
-    /// server entirely through the UI, connect with the password prompt,
-    /// and verify both panes browse.
+    /// End-to-end walk-through (M7 + M8): create a connection to the Docker
+    /// SFTP server through the UI, connect with the password prompt, browse,
+    /// download a file through the transfer queue, and disconnect.
     @MainActor
-    func testConnectAndBrowseAgainstTestServer() throws {
+    func testConnectBrowseAndDownloadAgainstTestServer() throws {
         try XCTSkipUnless(sftpServerUp, "SFTP test server not running — testinfra/start.sh")
         let app = launchIsolatedApp()
+        let downloadDir = NSTemporaryDirectory() + "ferry-uitests-dl-\(UUID().uuidString)"
+        try FileManager.default.createDirectory(atPath: downloadDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(atPath: downloadDir) }
 
-        // Create the connection (password left empty → prompt at connect).
+        // Create the connection (password left empty → prompt at connect;
+        // local pane starts in our temp dir so the download is observable).
         app.buttons["sidebar.newConnection"].click()
         let nameField = app.textFields["editor.name"]
         XCTAssertTrue(nameField.waitForExistence(timeout: 5))
@@ -70,6 +74,8 @@ final class FerryUITests: XCTestCase {
         portField.typeText("2222")
         let userField = app.textFields["editor.username"]
         userField.click(); userField.typeText("ferry")
+        let localStartField = app.textFields["editor.localStart"]
+        localStartField.click(); localStartField.typeText(downloadDir)
         app.buttons["editor.save"].click()
 
         // Connect → password prompt appears; type the password.
@@ -81,12 +87,31 @@ final class FerryUITests: XCTestCase {
         passwordField.click(); passwordField.typeText("ferrypass")
         app.buttons["passwordPrompt.connect"].click()
 
-        // Connected: status bar + remote listing shows the server's "upload"
-        // dir; the local pane shows the user's home content.
+        // Connected: status bar + remote listing shows the server's dirs.
         XCTAssertTrue(app.staticTexts["browser.status.connected"].waitForExistence(timeout: 15))
         XCTAssertTrue(app.staticTexts["upload"].waitForExistence(timeout: 10),
                       "remote pane should list the SFTP server's upload directory")
-        XCTAssertTrue(app.buttons["browser.disconnect"].exists)
+
+        // M8: navigate into fixtures, select hello.txt, download via the queue.
+        let fixturesRow = app.staticTexts["fixtures"].firstMatch
+        XCTAssertTrue(fixturesRow.waitForExistence(timeout: 10))
+        fixturesRow.doubleClick()
+        var remoteFile = app.staticTexts["hello.txt"].firstMatch
+        if !remoteFile.waitForExistence(timeout: 8) {
+            // The table can relayout mid-click right after connect — retry once.
+            app.staticTexts["fixtures"].firstMatch.doubleClick()
+            remoteFile = app.staticTexts["hello.txt"].firstMatch
+            XCTAssertTrue(remoteFile.waitForExistence(timeout: 10))
+        }
+        remoteFile.click()
+        let downloadButton = app.buttons["browser.download"]
+        XCTAssertTrue(downloadButton.isEnabled)
+        downloadButton.click()
+
+        XCTAssertTrue(app.staticTexts["DONE"].firstMatch.waitForExistence(timeout: 15),
+                      "queue dock should show the completed download")
+        let landed = FileManager.default.fileExists(atPath: downloadDir + "/hello.txt")
+        XCTAssertTrue(landed, "downloaded file must exist in the local start dir")
 
         // Disconnect returns to the summary.
         app.buttons["browser.disconnect"].click()
