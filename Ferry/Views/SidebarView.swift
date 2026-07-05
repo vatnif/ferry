@@ -31,9 +31,9 @@ struct SidebarView: View {
         .contextMenu(forSelectionType: UUID.self) { ids in
             if let id = ids.first { SidebarItemMenu(itemID: id) }
         } primaryAction: { ids in
-            // Double-click a profile ⇒ connect (stub until M7).
+            // Double-click a profile ⇒ connect.
             if let id = ids.first, model.library.profile(withID: id) != nil {
-                model.infoMessage = "Connecting and the dual-pane browser arrive in Milestone 7."
+                model.connect(profileID: id)
             }
         }
         .toolbar {

@@ -33,6 +33,66 @@ final class FerryUITests: XCTestCase {
         XCTAssertFalse(nameField.waitForExistence(timeout: 2))
     }
 
+    /// True when the Docker SFTP test server answers on 2222.
+    private var sftpServerUp: Bool {
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        guard fd >= 0 else { return false }
+        defer { close(fd) }
+        var addr = sockaddr_in()
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = UInt16(2222).bigEndian
+        addr.sin_addr.s_addr = inet_addr("127.0.0.1")
+        return withUnsafePointer(to: &addr) { ptr in
+            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) == 0
+            }
+        }
+    }
+
+    /// M7 end-to-end walk-through: create a connection to the Docker SFTP
+    /// server entirely through the UI, connect with the password prompt,
+    /// and verify both panes browse.
+    @MainActor
+    func testConnectAndBrowseAgainstTestServer() throws {
+        try XCTSkipUnless(sftpServerUp, "SFTP test server not running — testinfra/start.sh")
+        let app = launchIsolatedApp()
+
+        // Create the connection (password left empty → prompt at connect).
+        app.buttons["sidebar.newConnection"].click()
+        let nameField = app.textFields["editor.name"]
+        XCTAssertTrue(nameField.waitForExistence(timeout: 5))
+        nameField.click(); nameField.typeText("docker-sftp")
+        let hostField = app.textFields["editor.host"]
+        hostField.click(); hostField.typeText("127.0.0.1")
+        let portField = app.textFields["editor.port"]
+        portField.click()
+        portField.typeKey("a", modifierFlags: .command)
+        portField.typeText("2222")
+        let userField = app.textFields["editor.username"]
+        userField.click(); userField.typeText("ferry")
+        app.buttons["editor.save"].click()
+
+        // Connect → password prompt appears; type the password.
+        let connectButton = app.buttons["detail.connect"]
+        XCTAssertTrue(connectButton.waitForExistence(timeout: 5))
+        connectButton.click()
+        let passwordField = app.secureTextFields["passwordPrompt.password"]
+        XCTAssertTrue(passwordField.waitForExistence(timeout: 5))
+        passwordField.click(); passwordField.typeText("ferrypass")
+        app.buttons["passwordPrompt.connect"].click()
+
+        // Connected: status bar + remote listing shows the server's "upload"
+        // dir; the local pane shows the user's home content.
+        XCTAssertTrue(app.staticTexts["browser.status.connected"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts["upload"].waitForExistence(timeout: 10),
+                      "remote pane should list the SFTP server's upload directory")
+        XCTAssertTrue(app.buttons["browser.disconnect"].exists)
+
+        // Disconnect returns to the summary.
+        app.buttons["browser.disconnect"].click()
+        XCTAssertTrue(connectButton.waitForExistence(timeout: 5))
+    }
+
     @MainActor
     func testCreateConnectionShowsInSidebarAndDetail() throws {
         let app = launchIsolatedApp()

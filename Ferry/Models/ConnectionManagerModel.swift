@@ -11,6 +11,10 @@ final class ConnectionManagerModel {
 
     /// Non-nil presents the editor sheet.
     var editorContext: EditorContext?
+    /// Non-nil presents the connect-time password prompt (no stored secret).
+    var passwordPrompt: PasswordPrompt?
+    /// Live connection state shown in the detail column.
+    var connectionPhase: ConnectionPhase = .idle
     /// Non-nil presents the folder-name alert (create or rename).
     var folderPrompt: FolderPrompt?
     /// Non-nil presents an error alert.
@@ -37,6 +41,27 @@ final class ConnectionManagerModel {
         /// Parent for creation ("New Folder Here").
         var parentFolderID: UUID?
         var name: String = ""
+    }
+
+    struct PasswordPrompt: Identifiable {
+        let id = UUID()
+        var profileID: UUID
+        var profileName: String
+    }
+
+    enum ConnectionPhase {
+        case idle
+        case connecting(profileName: String)
+        case connected(BrowserSession)
+
+        var session: BrowserSession? {
+            if case .connected(let session) = self { return session }
+            return nil
+        }
+        var isConnecting: Bool {
+            if case .connecting = self { return true }
+            return false
+        }
     }
 
     init() {
@@ -180,5 +205,70 @@ final class ConnectionManagerModel {
         } else {
             try vault.store(secret, role: role, profileID: profileID)
         }
+    }
+
+    // MARK: Connecting (M7 — SFTP with password auth; key/agent land in M11)
+
+    /// Entry point from the sidebar double-click and the detail Connect
+    /// button. Resolves the secret (prompting when none is stored) and
+    /// establishes the session.
+    func connect(profileID: UUID) {
+        guard let profile = library.profile(withID: profileID) else { return }
+        guard profile.scheme == .sftp else {
+            infoMessage = "\(profile.scheme.displayName) connections arrive in \(profile.scheme == .scp ? "Milestone 13" : "Milestone 12")."
+            return
+        }
+        guard case .password = profile.authMethod else {
+            infoMessage = "SSH key and agent authentication arrive in Milestone 11. Edit the connection to use password authentication for now."
+            return
+        }
+        let stored = (try? vault.retrieve(role: .password, profileID: profile.id)) ?? nil
+        if let stored {
+            startConnection(profile: profile, password: stored)
+        } else {
+            passwordPrompt = PasswordPrompt(profileID: profile.id, profileName: profile.name)
+        }
+    }
+
+    /// Continuation of `connect` after the user typed a password.
+    func connectWithTypedPassword(_ password: String, profileID: UUID, remember: Bool) {
+        guard let profile = library.profile(withID: profileID) else { return }
+        if remember {
+            try? vault.store(password, role: .password, profileID: profile.id)
+        }
+        startConnection(profile: profile, password: password)
+    }
+
+    private func startConnection(profile: ConnectionProfile, password: String) {
+        connectionPhase = .connecting(profileName: profile.name)
+        Task {
+            do {
+                let sftp = try await SFTPSource.connect(host: profile.host,
+                                                        port: profile.port,
+                                                        username: profile.username,
+                                                        password: password,
+                                                        displayName: profile.name)
+                let session = BrowserSession(profile: profile, sftp: sftp, bookmarks: nil)
+                await session.start()
+                connectionPhase = .connected(session)
+            } catch let error as RemoteSourceError {
+                connectionPhase = .idle
+                switch error {
+                case .authenticationFailed:
+                    errorMessage = "The server rejected the login for \(profile.username)@\(profile.host). Check the username and password."
+                case .connectionFailed(let detail):
+                    errorMessage = "Could not connect to \(profile.host):\(String(profile.port)) — \(detail)"
+                }
+            } catch {
+                connectionPhase = .idle
+                errorMessage = "Could not connect: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func disconnect() {
+        guard let session = connectionPhase.session else { return }
+        connectionPhase = .idle
+        Task { await session.disconnect() }
     }
 }

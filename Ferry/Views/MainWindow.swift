@@ -23,6 +23,9 @@ struct MainWindow: View {
         } message: { prompt in
             Text(prompt.renameFolderID == nil ? "Name the new folder." : "Enter a new name for the folder.")
         }
+        .sheet(item: $model.passwordPrompt) { prompt in
+            PasswordPromptSheet(prompt: prompt)
+        }
         .alert("Something went wrong", isPresented: errorPresented) {
             Button("OK", role: .cancel) { model.errorMessage = nil }
         } message: {
@@ -45,6 +48,43 @@ struct MainWindow: View {
 
     private var folderPromptPresented: Binding<Bool> {
         Binding(get: { model.folderPrompt != nil }, set: { if !$0 { model.folderPrompt = nil } })
+    }
+}
+
+/// Connect-time password prompt (profile has no stored secret — DOMAIN.md
+/// credential policy: empty stored password ⇒ ask, with remember opt-in).
+private struct PasswordPromptSheet: View {
+    @Environment(ConnectionManagerModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    let prompt: ConnectionManagerModel.PasswordPrompt
+    @State private var password = ""
+    @State private var remember = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Password for “\(prompt.profileName)”")
+                .font(.headline)
+            SecureField("Password", text: $password)
+                .accessibilityIdentifier("passwordPrompt.password")
+            Toggle("Remember in my Keychain", isOn: $remember)
+                .font(.callout)
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button("Connect") {
+                    dismiss()
+                    model.connectWithTypedPassword(password,
+                                                   profileID: prompt.profileID,
+                                                   remember: remember)
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(password.isEmpty)
+                .accessibilityIdentifier("passwordPrompt.connect")
+            }
+        }
+        .padding(20)
+        .frame(width: 360)
     }
 }
 

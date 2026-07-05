@@ -14,12 +14,18 @@ Rule of thumb: if it can be tested without a window, it lives in FerryKit.
 
 ```
 Ferry.app (SwiftUI, @MainActor)
-├── ConnectionManagerView      sidebar: folder tree, profiles, CRUD, drag-reorder
-├── BrowserWindow              tabs; per tab: dual pane + queue + status bar
-│   ├── FileBrowserView ×2     same component for local & remote panes
-│   └── TransferQueueView
-├── TunnelManagerView, SettingsScene, HostKeyPromptSheet
-└── view models (ObservableObject/@Observable, main-actor)
+├── SidebarView (M4)           folder tree, profiles, CRUD, drag-to-folder
+├── ConnectionEditorSheet (M4) protocol-adaptive form + Test Connection
+├── BrowserView (M7)           dual pane + toolbar + status bar (tabs: M16)
+│   └── FileBrowserPane ×2     same component for local & remote panes
+├── TransferQueueView (M8), TunnelManagerView (M14), Settings (M16)
+└── view models (@Observable, main-actor):
+    ├── ConnectionManagerModel  library persistence, vault mediation,
+    │                           connect lifecycle (ConnectionPhase state)
+    └── BrowserSession + PaneModel (M7)
+        one session = two PaneModels over FileSystemSources; navigation with
+        history, sync-browsing anchors/mirroring (PathUtilities in FerryCore),
+        active-pane tracking for the toolbar filter/nav
 
 FerryCore (FerryKit package)
 ├── FileSystemSource (protocol)          ← the heart; panes & engine are protocol-agnostic

@@ -72,3 +72,15 @@ failures throw the raw `SFTPMessage.Status` (which itself conforms to Error), no
 `SFTPError.errorStatus` — `SFTPSource.mapError` normalizes both. (c) Host key validation
 is `.acceptAnything()` until M11's TOFU flow — tracked as a TODO in SFTPSource, must not
 ship past M11.
+
+## 2026-07-05 — ADR-012: Browser session architecture (M7)
+One `BrowserSession` per live connection holds two `PaneModel`s (local/remote) over
+`FileSystemSource`s — panes are fully symmetric. All user navigation funnels through
+`BrowserSession.navigate/goBack/goForward` so sync browsing can mirror it: anchors
+captured when the link is enabled, relative paths recomputed via `PathUtilities`
+(FerryCore, unit-tested), missing counterpart ⇒ flash + stay, navigation outside the
+anchor ⇒ silently unmirrored, link kept. "Active pane" (last clicked) receives the
+toolbar filter and back/forward. Single session per window until tabs (M16);
+`ConnectionPhase` (idle/connecting/connected) drives the detail column. Connect is
+password-auth only until M11; missing stored password prompts with remember-in-Keychain
+opt-in per DOMAIN.md.

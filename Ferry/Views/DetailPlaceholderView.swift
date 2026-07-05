@@ -7,13 +7,24 @@ struct DetailPlaceholderView: View {
     @Environment(ConnectionManagerModel.self) private var model
 
     var body: some View {
-        if let id = model.selectedItemID, let profile = model.library.profile(withID: id) {
-            ProfileSummaryView(profile: profile)
-        } else {
-            ContentUnavailableView {
-                Label("No Connection Selected", systemImage: "sailboat")
-            } description: {
-                Text("Select a connection in the sidebar, or create one with the + button.\nThe dual-pane browser arrives in Milestone 7.")
+        switch model.connectionPhase {
+        case .connected(let session):
+            BrowserView(session: session)
+        case .connecting(let name):
+            VStack(spacing: 12) {
+                ProgressView()
+                Text("Connecting to \(name)…").foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        case .idle:
+            if let id = model.selectedItemID, let profile = model.library.profile(withID: id) {
+                ProfileSummaryView(profile: profile)
+            } else {
+                ContentUnavailableView {
+                    Label("No Connection Selected", systemImage: "sailboat")
+                } description: {
+                    Text("Select a connection in the sidebar, or create one with the + button. Double-click a connection to connect.")
+                }
             }
         }
     }
@@ -51,7 +62,7 @@ private struct ProfileSummaryView: View {
             HStack {
                 Button("Edit…") { model.editorContext = .init(profileID: profile.id) }
                 Button("Connect") {
-                    model.infoMessage = "Connecting and the dual-pane browser arrive in Milestone 7."
+                    model.connect(profileID: profile.id)
                 }
                 .keyboardShortcut(.defaultAction)
                 .accessibilityIdentifier("detail.connect")

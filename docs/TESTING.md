@@ -66,7 +66,10 @@ for changed-key-detection tests.
   `ReachabilityProbeTests`, `LocalFileSourceTests` + `SecurityScopedBookmarkStoreTests`
   (real filesystem), `SFTPSourceTests` (M6: real SFTP against the Docker server —
   auth, listing, stat, typed errors, byte-exact offset/multi-chunk downloads).
-- `FerryUITests/FerryUITests` — M4 smoke tests: launch + empty state, editor sheet
-  open/cancel, create-connection end-to-end. **Isolation**: the app honors
-  `FERRY_DATA_DIR` (connections.json location) and `FERRY_KEYCHAIN_SERVICE` env vars;
-  UI tests set both, so user data and the real Keychain service are never touched.
+- `FerryUITests/FerryUITests` — launch + empty state, editor sheet open/cancel,
+  create-connection flow (M4), and the M7 end-to-end walk-through: create a connection
+  to the Docker SFTP server through the UI, connect via the password prompt, verify the
+  remote pane lists the server, disconnect (skips itself when the server is down).
+  **Isolation**: the app honors `FERRY_DATA_DIR` (connections.json location) and
+  `FERRY_KEYCHAIN_SERVICE` env vars; UI tests set both, so user data and the real
+  Keychain service are never touched.

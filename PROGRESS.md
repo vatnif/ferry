@@ -13,8 +13,8 @@
 | M3 | CredentialVault (Keychain) | done (committed dff4ded) |
 | M4 | Connection Manager UI | done (committed 3d17f7c) |
 | M5 | FileSystemSource protocol + LocalFileSource | done (committed 27e1dfe) |
-| M6 | SFTP spike → SFTPSource (read-only) | **awaiting review** |
-| M7 | Dual-pane browser UI | todo |
+| M6 | SFTP spike → SFTPSource (read-only) | done (committed 3c9567a) |
+| M7 | Dual-pane browser UI | **awaiting review** |
 | M8 | TransferEngine + queue UI | todo |
 | M9 | Resume & robustness | todo |
 | M10 | File operations | todo |
@@ -29,7 +29,25 @@
 
 Backlog (post-v1): see `docs/ROADMAP.md`.
 
-## Current state of the code (after M6)
+## Current state of the code (after M7)
+
+- **Ferry now connects and browses for real.** Detail column switches on
+  `ConnectionPhase`: profile summary → connecting spinner → `BrowserView` (dual panes,
+  toolbar, status bar). Connect via double-click or button; password from Keychain or a
+  prompt sheet with remember opt-in; typed errors for auth vs unreachable.
+- `BrowserSession` + `PaneModel` (ADR-012): symmetric panes over FileSystemSources —
+  sortable Table (dirs first; Name/Size/Modified/Kind-or-Perms/Owner), clickable
+  breadcrumbs, per-pane hidden toggle + error alerts, back/forward history, double-click
+  navigation, New Folder (works local; remote reports unsupported until M10), Refresh,
+  toolbar filter on the active pane, Disconnect. **Sync browsing** per DESIGN.md: linked
+  toggle, anchor mirroring (PathUtilities, unit-tested), flash-and-stay on missing
+  counterpart.
+- Upload/Download buttons present but inform "M8"; queue dock, tabs, Quick Look pending
+  (see DESIGN.md → Implementation status).
+- Tests: 73 in FerryKit + 4 XCUITests, all green — incl. the M7 e2e walk-through
+  (create → connect via password prompt → browse the Docker server → disconnect).
+
+## Earlier state (after M6)
 
 - **Citadel 0.12.1 adopted as the SSH stack** (ADR-011) — spike succeeded; first
   third-party dependency, licenses recorded in LICENSING.md before adding.
@@ -111,11 +129,11 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
 
 ## Next steps
 
-1. User reviews M6 → on approval: commit.
-2. M7: dual-pane browser UI per mockup screen 1 — `FileBrowserView` used for both panes
-   (sortable columns, breadcrumbs, hidden toggle, filter), wired end-to-end: sidebar
-   connect → SFTPSource right pane, LocalFileSource left pane; sync-browsing toggle;
-   XCUITest smoke + integration walk-through. *Big review point.*
+1. User reviews M7 — this is the plan's *big review point*: run the app, connect to the
+   Docker server (testinfra/start.sh; 127.0.0.1:2222, ferry/ferrypass) or a real one,
+   try sorting, breadcrumbs, hidden toggle, filter, sync browsing. On approval: commit.
+2. M8: TransferEngine (actor: queue, concurrency caps, progress) + queue dock UI +
+   SFTPSource.openWrite; drag between panes; byte-exact transfer integration tests.
 
 ## Session log
 
@@ -124,4 +142,5 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
 - **2026-07-05 (cont.)** — M3 built: CredentialVault Keychain wrapper (ADR-010: login keychain so `swift test` works unsigned; revisit at M17 for App Store). 35 tests green incl. 8 real-Keychain integration tests. M3 approved & committed (dff4ded).
 - **2026-07-05 (cont.)** — M4 built: connection manager UI (sidebar tree, editor sheet, detail summary, folder prompts, drag-to-folder, Move-to menu), ConnectionManagerModel with vault-aware save/delete/duplicate, ReachabilityProbe + hierarchy queries in FerryCore. 40 kit tests + 3 UI tests green. M4 approved & committed (3d17f7c).
 - **2026-07-05 (cont.)** — M5 built: FileSystemSource protocol + FileItem/FilePermissions/FileWriteHandle, LocalFileSource (streaming I/O with resume offset contract), SecurityScopedBookmarkStore composed in. 59 tests green. M5 approved & committed (27e1dfe).
-- **2026-07-05 (cont.)** — M6 spike: Citadel 0.12.1 added (licenses recorded first), SFTPSource read-only implemented and validated against Docker sshd. Verdict: adopt Citadel, libssh2 fallback retired (ADR-011). Two fixes during spike: error normalization (raw Status thrown), @preconcurrency import for Swift 6. 69 tests green. M6 awaiting review.
+- **2026-07-05 (cont.)** — M6 spike: Citadel 0.12.1 added (licenses recorded first), SFTPSource read-only implemented and validated against Docker sshd. Verdict: adopt Citadel, libssh2 fallback retired (ADR-011). Two fixes during spike: error normalization (raw Status thrown), @preconcurrency import for Swift 6. 69 tests green. M6 approved & committed (3c9567a).
+- **2026-07-05 (cont.)** — M7 built: BrowserSession/PaneModel (ADR-012), FileBrowserPane + BrowserView per mockup screen 1, connect lifecycle with password prompt, sync browsing (PathUtilities moved to FerryCore for unit-testability). 73 kit tests + 4 UI tests green incl. e2e connect-and-browse. Docs pass: ARCHITECTURE, DESIGN (implementation-status section added), DECISIONS, TESTING, PROGRESS. M7 awaiting review.
