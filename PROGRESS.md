@@ -19,7 +19,7 @@
 | M9 | Resume & robustness | done (committed 388de0d) |
 | M10 | File operations | done (committed 9cfe66a) |
 | M11 | Key auth & host trust | done (checkpoint A ffd7233, checkpoint B a008639) |
-| M12 | FTP/FTPS via libcurl | done |
+| M12 | FTP/FTPS via libcurl | done (committed 7223169) |
 | M13 | SCP | todo |
 | M14 | Tunneling | todo |
 | M15 | Open in Terminal | todo |
@@ -29,7 +29,7 @@
 
 Backlog (post-v1): see `docs/ROADMAP.md`.
 
-## Current state of the code (M12 — done)
+## Current state of the code (M12 — done, committed 7223169)
 
 - **FTP and FTPS work end-to-end** over the **system libcurl** — nothing bundled (ADR-019).
   New FerryCore `FTPSource` (actor, `FileSystemSource` + `SupervisedConnection`) covers the
@@ -65,7 +65,7 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
 - Self-review applied 4 fixes (dead-connection low-speed timeout, upload read-callback
   zero-length guard, CR/LF control-channel-injection rejection in quote commands, per-chunk
   thread churn → serial queue). Cert-trust prompt deferred to backlog (user sign-off
-  2026-07-18). **M12 approved & committed.**
+  2026-07-18). **M12 approved & committed (7223169).**
 
 ## Earlier state (M11 — done, committed a008639)
 
