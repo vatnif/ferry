@@ -19,7 +19,7 @@
 | M9 | Resume & robustness | done (committed 388de0d) |
 | M10 | File operations | done (committed 9cfe66a) |
 | M11 | Key auth & host trust | done (checkpoint A ffd7233, checkpoint B a008639) |
-| M12 | FTP/FTPS via libcurl | todo |
+| M12 | FTP/FTPS via libcurl | done |
 | M13 | SCP | todo |
 | M14 | Tunneling | todo |
 | M15 | Open in Terminal | todo |
@@ -29,7 +29,45 @@
 
 Backlog (post-v1): see `docs/ROADMAP.md`.
 
-## Current state of the code (M11 — done, committed a008639)
+## Current state of the code (M12 — done)
+
+- **FTP and FTPS work end-to-end** over the **system libcurl** — nothing bundled (ADR-019).
+  New FerryCore `FTPSource` (actor, `FileSystemSource` + `SupervisedConnection`) covers the
+  full surface: home (`PWD`), list (Unix `LIST` → `FTPListParser`), stat (parent-listing
+  match), chunked offset download (`REST`), sequential upload with resume (`APPE`),
+  mkdir+intermediates (`MKD`), recursive delete (`DELE`/`RMD`), rename refuse-clobber
+  (`RNFR`/`RNTO`), chmod (`SITE CHMOD`), ping/reestablish.
+- **libcurl binding** via a tiny C target **`CFTP`** that exposes libcurl's *variadic*
+  `setopt`/`getinfo` as typed functions (Swift can't call C variadics) + callback setters.
+  `FTPSource` runs every blocking `curl_easy_perform` on a **detached thread** (the actor's
+  executor is never blocked); C write/read/header callbacks are `@convention(c)` closures
+  bridging via `Unmanaged` context. **No persistent session** — each op drives its own easy
+  handle (own control+data connection), so concurrent transfers are trivially correct.
+- **FTPS**: explicit `AUTH TLS` (`CURLUSESSL_ALL`) and implicit (`ftps://`). The app derives
+  the mode from scheme+port (`.ftps` on 990 = implicit, else explicit). Certificates verify
+  against the system trust store by default; a **cert-trust prompt** for self-signed/private-
+  CA servers is deferred to the backlog (clear `.tlsFailed` error for now) — mirrors the M11
+  ssh-agent split. `allowInvalidCertificate` exists in FerryCore for the test server only.
+- **App**: `BrowserSession` generalized from concrete `SFTPSource` to
+  `any FileSystemSource & SupervisedConnection` (which gained `disconnect()`); both backends
+  conform, SCP will slot in the same way. `ConnectionManagerModel.connect` builds an
+  `FTPSource` for `.ftp`/`.ftps` (password auth, prompt when none, TLS/auth error messages);
+  the editor already offered FTP/FTPS + password-only auth. Both flavors build (Direct +
+  App Store — libcurl is a system dylib, sandbox-safe).
+- **Test infra**: a **second** vsftpd service (`ftps`, :2990, self-signed cert) added —
+  a TLS vsftpd forces SSL so it can't also serve the plaintext `ftp` (:2121). Its config
+  sets `require_ssl_reuse=NO` (TLS 1.3 / SecureTransport can't resume the data channel).
+  **Re-run `testinfra/start.sh` after pulling** to generate the cert + start the container.
+- Tests: **188 kit tests + 8 XCUITests, all green** (+33 kit / +1 UI over M11) — LIST-parser
+  unit vectors; a full FTP op suite + engine round-trip + 5-way concurrent uploads against
+  the Docker FTP server; explicit-FTPS connect/list/download/upload/round-trip over TLS; and
+  a UI e2e that connects to the FTP server and downloads through the queue.
+- Self-review applied 4 fixes (dead-connection low-speed timeout, upload read-callback
+  zero-length guard, CR/LF control-channel-injection rejection in quote commands, per-chunk
+  thread churn → serial queue). Cert-trust prompt deferred to backlog (user sign-off
+  2026-07-18). **M12 approved & committed.**
+
+## Earlier state (M11 — done, committed a008639)
 
 - **`~/.ssh/known_hosts` is now read as pre-trust** (ADR-018). New read-only FerryCore
   `KnownHostsFile` parses plaintext **and** hashed (HMAC-SHA1) entries; `SFTPSource.connect`
@@ -248,13 +286,32 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
 
 ## Next steps
 
-1. **M12 — FTP/FTPS via libcurl**: next milestone (system libcurl, nothing bundled — ADR-003).
-2. Backlog: remote→Finder file-promise drag (`NSFilePromiseProvider`, M10); route `~/.ssh`
-   pre-trust/import reads through the bookmark store for the App Store sandbox (deferred to
-   M17 packaging, ADR-018).
+1. **Review M12**, then commit on approval.
+2. **M13 — SCP** over an SSH exec channel (reuses the M11 SSH stack; `SCPSource` slots into
+   the generalized `BrowserSession` like `FTPSource` did).
+3. Backlog: FTPS **certificate-trust prompt** (TLS analogue of host-key TOFU, for self-
+   signed/private-CA servers — deferred from M12, ADR-019); FTP connection pooling
+   (`CURLSH`) to avoid a login per op; per-file `MDTM` for precise FTP mtimes; remote→Finder
+   file-promise drag (`NSFilePromiseProvider`, M10); route `~/.ssh` reads through the
+   bookmark store for the App Store sandbox (M17, ADR-018).
 
 ## Session log
 
+- **2026-07-18** — M12 built (FTP/FTPS via system libcurl, ADR-019). New `CFTP` C target
+  wraps libcurl's variadic `setopt`/`getinfo` (Swift can't call C variadics) + callback
+  setters; `FTPSource` (actor) implements the whole `FileSystemSource`+`SupervisedConnection`
+  surface with **per-operation easy handles** (no persistent session → concurrent transfers
+  are trivially safe), running every blocking `curl_easy_perform` on a detached thread and
+  bridging download (push→`AsyncThrowingStream`) and upload (push→pull, bounded-buffer
+  backpressure) via `@convention(c)` callbacks. Absolute paths via libcurl's `%2F` root
+  anchor; home via `PWD`; stat via parent listing; `FTPListParser` for Unix `LIST` (pure,
+  unit-tested). FTPS explicit/implicit (`CURLUSESSL_ALL` / `ftps://`), system-trust
+  verification, cert-trust prompt deferred to backlog. `BrowserSession` generalized to
+  `any FileSystemSource & SupervisedConnection` (added `disconnect()`); app connects
+  `.ftp`/`.ftps` with password auth + TLS/auth error mapping. Test infra gained a second
+  TLS vsftpd (`ftps`:2990, self-signed cert, `require_ssl_reuse=NO`). 188 kit + 8 UI tests
+  green (+33/+1); both flavors build. Self-review applied 4 hardening fixes; cert-trust
+  prompt deferred to backlog (user sign-off). **M12 approved & committed.**
 - **2026-07-05** — Project inception. Requirements gathered; plan approved (18 milestones). M0: mockups of 5 screens + icon concepts built and iterated (sync browsing added on user request); user approved mockups + icon A. M1: repo initialized, Xcode project + FerryKit package + test targets created, Docker test infra up, icon generated, all docs written. All suites green: 1 unit + 2 integration + 1 UI test (user enabled DevToolsSecurity). M1 approved & committed (97fccf4).
 - **2026-07-05 (cont.)** — M2 built: domain models (profile/folder tree/tunnels/auth), ConnectionLibrary operations with cycle-protected move, ConnectionStore JSON persistence (ADR-009). 24 tests green (one test-side fix: stability check had regenerated UUIDs). App builds. M2 approved & committed (18d38e5).
 - **2026-07-05 (cont.)** — M3 built: CredentialVault Keychain wrapper (ADR-010: login keychain so `swift test` works unsigned; revisit at M17 for App Store). 35 tests green incl. 8 real-Keychain integration tests. M3 approved & committed (dff4ded).

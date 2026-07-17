@@ -10,6 +10,10 @@ public protocol SupervisedConnection: Sendable {
     /// Tears down and rebuilds the underlying transport with the original
     /// parameters. After it returns, the connection object is usable again.
     func reestablish() async throws
+    /// Closes the connection for good (on tab close / app quit). Lets a browser
+    /// session tear down its remote source through the protocol, without
+    /// knowing whether it's SFTP or FTP.
+    func disconnect() async
 }
 
 /// Keep-alive + auto-reconnect (DOMAIN.md → Connection lifecycle): pings

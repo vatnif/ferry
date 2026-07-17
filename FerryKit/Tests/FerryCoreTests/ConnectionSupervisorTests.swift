@@ -44,6 +44,13 @@ final class FakeConnection: SupervisedConnection, @unchecked Sendable {
     func reestablish() async throws {
         if !recordReestablish() { throw FileSystemSourceError.io("still down") }
     }
+
+    private(set) var disconnectCount = 0
+    private func recordDisconnect() {
+        lock.lock(); defer { lock.unlock() }
+        disconnectCount += 1
+    }
+    func disconnect() async { recordDisconnect() }
 }
 
 final class ConnectionSupervisorTests: XCTestCase {

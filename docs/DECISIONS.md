@@ -262,3 +262,76 @@ alert (distinct from the "Not yet available" stub-feature alert).
 doesn't apply (TOFU behaves as before) and import reports nothing found. Routing `~/.ssh`
 access through the bookmark store in the App Store build is deferred to the broader sandbox
 work (M17).
+
+## 2026-07-18 — ADR-019: FTP/FTPS via system libcurl (M12)
+**Library.** FTP/FTPS is implemented over the **system libcurl** (`/usr/lib/libcurl`,
+curl license — MIT-like), nothing bundled (ADR-003). macOS ships a capable libcurl
+(8.7.1, `ftp ftps` + SSL). This closes the FTP half of the protocol matrix without a new
+third-party dependency or a notarization/App-Store concern (system dylib).
+**C binding.** A tiny SwiftPM C target **`CFTP`** wraps libcurl. Its only reason to exist:
+`curl_easy_setopt`/`curl_easy_getinfo` are **C variadic** functions, which Swift cannot
+call — so `CFTP` exposes typed, non-variadic `ferry_setopt_long/string/off/slist`,
+callback setters (`ferry_set_write_cb`/`read`/`header`), and a few macro/enum values
+(`CURL_ERROR_SIZE`, `CURLUSESSL_ALL`, `CURL_READFUNC_ABORT`, `curl_global_init`) as
+functions. Everything else in libcurl (init/perform/cleanup/slist/strerror) is a normal
+function Swift imports directly. `CFTP` links `curl` via `.linkedLibrary("curl")`;
+FerryCore depends on it. `FTPSource` uses `@convention(c)` closures (no captures) for the
+write/read/header callbacks, bridging to Swift context via `Unmanaged` `void*` userdata.
+**No persistent session (per-operation handles).** FTP's control connection can't
+multiplex, so unlike `SFTPSource` there is **no long-lived session object** — every
+operation drives its own libcurl "easy" handle (its own control + data connection). This
+makes concurrent transfers (3/connection) trivially correct: each runs on its own handle
+and its own detached thread, with zero shared mutable curl state. The cost is a login per
+operation; acceptable for v1. Connection pooling via a `CURLSH` share handle is a backlog
+optimization. libcurl's blocking `curl_easy_perform` **always** runs on a detached
+`Thread` so the actor's cooperative executor is never blocked; upload backpressure
+(`FTPUploadHandle`) offloads its blocking wait to a thread too.
+**Streaming bridges.** Download is push→push: libcurl's write callback (on the perform
+thread) yields into an `AsyncThrowingStream` (unbounded, like the other backends);
+cancellation returns a short count to abort. Upload is push→pull: the engine's
+`write`/`close` feed a bounded (512 KiB) `NSCondition`-guarded buffer that libcurl's read
+callback drains — this is the backpressure that stops a fast local read from ballooning
+memory ahead of a slow upload. `close()` = EOF (flush remaining, then the read callback
+returns 0); a transfer error unblocks a stalled writer.
+**Absolute paths.** libcurl treats a URL path as *relative to the login directory*; the
+documented way to anchor at the server root — where Ferry's absolute paths live — is to
+encode the leading slash as `%2F`. So `FTPSource` builds `ftp://host:port/%2F<encoded
+path>` (segments percent-encoded, `/` kept). `homeDirectory` parses the `257 "<path>"`
+reply to a `PWD` quote command from the control channel (for FTP, libcurl routes control
+responses to the header callback). There is **no `stat` in FTP**, so `FTPSource.stat`
+lists the parent directory and matches by name (root is synthesized); the `LIST` line
+carries type/size/perms/owner — everything `FileItem` needs.
+**LIST parsing.** The fragile seam of any FTP client. `FTPListParser` parses the Unix
+`ls -l` dialect (vsftpd/proftpd/pure-ftpd) into `FileItem`s — pure and unit-tested against
+pinned samples (dirs, symlinks `name -> target`, names with spaces, setuid/setgid/sticky
+bits, `total N` headers). Dates are **best-effort**: `LIST` timestamps are server-local, at
+minute (recent) or year (old) resolution with no offset, so `modifiedAt` is approximate
+(precise times would need per-file `MDTM` — backlog). Raw MS-DOS listings are not parsed
+(the servers Ferry targets emit Unix).
+**Mutations.** `MKD`/`DELE`/`RMD`/`RNFR`+`RNTO`/`SITE CHMOD` via `CURLOPT_QUOTE`;
+`createDirectory` creates intermediates root-down and `rename` refuses to clobber, both
+matching the SFTP contract. Resume: download uses `CURLOPT_RESUME_FROM_LARGE` (`REST`),
+upload uses `CURLOPT_APPEND` (`APPE`) — since FTP can't truncate, upload resume **requires
+the remote size to equal the offset** (the engine always computes offset = remote size, so
+this holds), else `.invalidOffset`. `CURLOPT_FTP_SKIP_PASV_IP` reuses the control IP (NAT/
+Docker advertise unroutable PASV addresses).
+**FTPS / TLS.** Three postures (`FTPSecurity`): `.none`, `.explicit` (`AUTH TLS` via
+`CURLUSESSL_ALL`, the modern default), `.implicit` (`ftps://` scheme, TLS from byte one).
+The app derives the posture from scheme + port: `.ftps` on **990 = implicit**, any other
+port = **explicit** (990 is the IANA implicit-FTPS port; a documented heuristic that needs
+no model/UI change). Certificates are verified against the **system trust store by
+default** (`allowInvalidCertificate` exists in FerryCore for the self-signed test server
+only). A certificate-**trust prompt** (the TLS analogue of host-key TOFU, for self-signed/
+private-CA FTPS servers) is deliberately **out of M12 scope** — the app surfaces a clear
+`.tlsFailed` error and it is a backlog item, mirroring how ssh-agent was split off in M11.
+**App layering.** `BrowserSession` was generalized from a concrete `SFTPSource` to
+`any FileSystemSource & SupervisedConnection`, and `SupervisedConnection` gained
+`disconnect()`, so the session is backend-agnostic. `SFTPSource` and `FTPSource` both
+conform; SCP (M13) will slot in the same way.
+**Test infra.** A **second** vsftpd service (`ftps`, :2990) with a self-signed cert added
+to docker-compose — TLS-enabled vsftpd forces SSL for logins, so it can't also serve the
+plaintext `ftp` (:2121) service. Its config sets `require_ssl_reuse=NO`: vsftpd defaults to
+requiring the data channel to resume the control channel's TLS session, which TLS 1.3 and
+macOS's SecureTransport libcurl don't do — turning it off makes the server lenient like a
+well-configured real FTPS server. Cert generated by `start.sh` into `fixtures/certs`
+(gitignored). **Re-run `testinfra/start.sh` after pulling M12.**

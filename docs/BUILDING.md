@@ -9,6 +9,10 @@
 - **Docker Desktop** (or compatible) for integration tests only.
 - No other tooling: no Homebrew, no XcodeGen — the project file is maintained by hand
   (see ARCHITECTURE.md → Xcode project mechanics).
+- **No bundled native libraries.** FTP/FTPS links the **system libcurl** (`-lcurl`, via
+  the `CFTP` SwiftPM target — ADR-019); it resolves against the SDK's `libcurl.tbd` at
+  link time and macOS's `/usr/lib/libcurl` at runtime. Nothing to install; works in both
+  the Direct and sandboxed App Store builds (libcurl is a system dylib).
 
 ## Build & run
 

@@ -325,8 +325,8 @@ final class ConnectionManagerModel {
     /// the session, driving the host-key trust flow on the way.
     func connect(profileID: UUID) {
         guard let profile = library.profile(withID: profileID) else { return }
-        guard profile.scheme == .sftp else {
-            infoMessage = "\(profile.scheme.displayName) connections arrive in \(profile.scheme == .scp ? "Milestone 13" : "Milestone 12")."
+        guard profile.scheme != .scp else {
+            infoMessage = "SCP connections arrive in Milestone 13."
             return
         }
 
@@ -413,6 +413,16 @@ final class ConnectionManagerModel {
     private func startConnection(profile: ConnectionProfile, credential: SSHAuthCredential,
                                  sessionTrusted: HostKeyInfo? = nil) {
         connectionPhase = .connecting(profileName: profile.name)
+        switch profile.scheme {
+        case .ftp, .ftps:
+            startFTPConnection(profile: profile, credential: credential)
+        case .sftp, .scp:
+            startSFTPConnection(profile: profile, credential: credential, sessionTrusted: sessionTrusted)
+        }
+    }
+
+    private func startSFTPConnection(profile: ConnectionProfile, credential: SSHAuthCredential,
+                                     sessionTrusted: HostKeyInfo?) {
         Task {
             do {
                 let sftp = try await SFTPSource.connect(host: profile.host,
@@ -423,7 +433,7 @@ final class ConnectionManagerModel {
                                                         systemKnownHosts: systemKnownHosts,
                                                         sessionTrusted: sessionTrusted,
                                                         displayName: profile.name)
-                let session = BrowserSession(profile: profile, sftp: sftp, bookmarks: nil)
+                let session = BrowserSession(profile: profile, remote: sftp, bookmarks: nil)
                 await session.start()
                 connectionPhase = .connected(session)
             } catch let error as RemoteSourceError {
@@ -434,6 +444,56 @@ final class ConnectionManagerModel {
                 connectionPhase = .idle
                 errorMessage = "Could not connect: \(error.localizedDescription)"
             }
+        }
+    }
+
+    /// FTP / FTPS connect (M12). Password auth only; TLS posture is derived
+    /// from the scheme + port: `.ftps` on 990 is implicit, otherwise explicit
+    /// AUTH TLS (ADR-019). Certificates are verified against the system trust
+    /// store (no self-signed override in the UI yet — a cert-trust prompt is a
+    /// backlog item).
+    private func startFTPConnection(profile: ConnectionProfile, credential: SSHAuthCredential) {
+        guard case .password(let password) = credential else {
+            connectionPhase = .idle
+            errorMessage = "FTP connections authenticate with a password."
+            return
+        }
+        let security: FTPSecurity
+        switch profile.scheme {
+        case .ftps: security = profile.port == 990 ? .implicit : .explicit
+        default: security = .none
+        }
+        Task {
+            do {
+                let ftp = try await FTPSource.connect(host: profile.host,
+                                                      port: profile.port,
+                                                      username: profile.username,
+                                                      password: password,
+                                                      security: security,
+                                                      displayName: profile.name)
+                let session = BrowserSession(profile: profile, remote: ftp, bookmarks: nil)
+                await session.start()
+                connectionPhase = .connected(session)
+            } catch let error as RemoteSourceError {
+                handleFTPConnectError(error, profile: profile)
+            } catch {
+                connectionPhase = .idle
+                errorMessage = "Could not connect: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func handleFTPConnectError(_ error: RemoteSourceError, profile: ConnectionProfile) {
+        connectionPhase = .idle
+        switch error {
+        case .authenticationFailed:
+            errorMessage = "The server rejected the login for \(profile.username)@\(profile.host). Check the username and password."
+        case .connectionFailed(let detail):
+            errorMessage = "Could not connect to \(profile.host):\(String(profile.port)) — \(detail)"
+        case .tlsFailed(let detail):
+            errorMessage = "The secure (TLS) connection to \(profile.host) failed: \(detail). The server's certificate may be untrusted, or the TLS mode (implicit vs. explicit) may not match the port."
+        case .hostKeyUnknown, .hostKeyChanged:
+            errorMessage = "Unexpected host-key error on an FTP connection."
         }
     }
 
@@ -452,6 +512,9 @@ final class ConnectionManagerModel {
         case .hostKeyChanged(let stored, let offered):
             hostKeyPrompt = HostKeyPrompt(profile: profile, offered: offered,
                                           stored: stored, credential: credential)
+        case .tlsFailed(let detail):
+            // TLS is an FTPS concern; an SSH connect shouldn't produce it.
+            errorMessage = "Unexpected TLS error connecting to \(profile.host): \(detail)"
         }
     }
 

@@ -8,8 +8,12 @@ enum TestServers {
     static let host = "127.0.0.1"
     static let sftpPort: UInt16 = 2222
     static let ftpPort: UInt16 = 2121
+    static let ftpsPort: UInt16 = 2990
     static let username = "ferry"
     static let password = "ferrypass"
+    /// The FTP servers' login directory (delfer/alpine-ftp-server). Fixtures are
+    /// mounted read-only at `<ftpHome>/fixtures`; the home itself is writable.
+    static let ftpHome = "/ftp/ferry"
 
     /// A throwaway HostKeyStore backed by a unique temp file, so a test's TOFU
     /// decisions never touch the real store or leak between tests.
@@ -101,6 +105,43 @@ enum TestServers {
         for _ in 0..<10 {
             do {
                 return try await attempt()
+            } catch let error as RemoteSourceError {
+                if case .connectionFailed = error {
+                    lastError = error
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                    continue
+                }
+                throw error
+            }
+        }
+        throw lastError ?? RemoteSourceError.connectionFailed("exhausted retries")
+    }
+
+    /// Connects to the plaintext FTP test server (:2121). Retries a transient
+    /// connection failure a few times — vsftpd can briefly drop while the
+    /// container settles — but never retries auth failures.
+    static func connectFTP() async throws -> FTPSource {
+        try await connectFTP(port: Int(ftpPort), security: .none)
+    }
+
+    /// Connects to the explicit-FTPS test server (:2990) with certificate
+    /// verification off (the test cert is self-signed — ADR-019).
+    static func connectFTPS() async throws -> FTPSource {
+        try await connectFTP(port: Int(ftpsPort), security: .explicit,
+                             allowInvalidCertificate: true)
+    }
+
+    static func connectFTP(port: Int, security: FTPSecurity,
+                           allowInvalidCertificate: Bool = false,
+                           username: String = TestServers.username,
+                           password: String = TestServers.password) async throws -> FTPSource {
+        var lastError: Error?
+        for _ in 0..<5 {
+            do {
+                return try await FTPSource.connect(host: host, port: port,
+                                                   username: username, password: password,
+                                                   security: security,
+                                                   allowInvalidCertificate: allowInvalidCertificate)
             } catch let error as RemoteSourceError {
                 if case .connectionFailed = error {
                     lastError = error

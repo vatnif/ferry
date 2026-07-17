@@ -200,7 +200,9 @@ final class BrowserSession {
     let local: PaneModel
     let remote: PaneModel
     let queue: TransferQueueModel
-    private let sftp: SFTPSource
+    /// The live remote connection (SFTP or FTP/FTPS) — held via the composed
+    /// protocol so the session is backend-agnostic (M12).
+    private let remoteConnection: any FileSystemSource & SupervisedConnection
     /// Keep-alive + auto-reconnect; nil when the profile's keep-alive is off
     /// (DOMAIN.md ties both to the same flag).
     private let supervisor: ConnectionSupervisor?
@@ -224,12 +226,14 @@ final class BrowserSession {
 
     var activePane: PaneModel { activePaneKind == .local ? local : remote }
 
-    init(profile: ConnectionProfile, sftp: SFTPSource, bookmarks: SecurityScopedBookmarkStore?) {
+    init(profile: ConnectionProfile,
+         remote: any FileSystemSource & SupervisedConnection,
+         bookmarks: SecurityScopedBookmarkStore?) {
         self.profile = profile
-        self.sftp = sftp
+        self.remoteConnection = remote
         self.local = PaneModel(kind: .local, source: LocalFileSource(bookmarks: bookmarks))
-        self.remote = PaneModel(kind: .remote, source: sftp)
-        self.supervisor = profile.keepAlive ? ConnectionSupervisor(connection: sftp) : nil
+        self.remote = PaneModel(kind: .remote, source: remote)
+        self.supervisor = profile.keepAlive ? ConnectionSupervisor(connection: remote) : nil
         // DOMAIN.md: default 3 concurrent transfers per connection.
         self.queue = TransferQueueModel(engine: TransferEngine(maxConcurrent: 3))
         queue.onCompleted = { [weak self] snapshot in
@@ -307,7 +311,7 @@ final class BrowserSession {
     func disconnect() async {
         supervisorTask?.cancel()
         await supervisor?.stop()
-        await sftp.disconnect()
+        await remoteConnection.disconnect()
     }
 
     func setLinked(_ on: Bool) {

@@ -34,7 +34,9 @@ FerryCore (FerryKit package)
 │   ├── LocalFileSource                  FileManager + security-scoped bookmarks
 │   ├── SFTPSource                       Citadel (ADR-011); TOFU host-key verify +
 │   │                                    password/key auth (M11, ADR-016/017)
-│   ├── FTPSource                        system libcurl (M12)
+│   ├── FTPSource                        system libcurl via the CFTP shim (M12,
+│   │                                    ADR-019); FTP + explicit/implicit FTPS,
+│   │                                    per-operation easy handles (no session)
 │   └── SCPSource                        SSH exec channel (M13)
 ├── TransferEngine (actor, M8/M9)        FIFO queue, concurrency cap (3/connection),
 │                                        snapshot stream w/ replay, robust cancel
@@ -54,7 +56,12 @@ FerryCore (FerryKit package)
 │                                        keys mid-handshake), SSHKeyLoader (ed25519/RSA
 │                                        OpenSSH keys + passphrase) — ADR-016/017
 ├── SSHConfigImporter                    ~/.ssh/config, known_hosts (read-only) (M11-B)
+├── FTPListParser                         Unix `ls -l` LIST → FileItem (pure, M12)
 └── FerryVersion, Logging
+
+CFTP (separate SwiftPM C target)          thin non-variadic shim over the system
+                                          libcurl so Swift can call setopt/getinfo;
+                                          links `curl`. FerryCore depends on it (M12).
 ```
 
 ## Key design decisions
@@ -86,6 +93,10 @@ FerryCore (FerryKit package)
 - Long-lived mutable state (sessions, queue) lives in **actors** (`TransferEngine`,
   `SSHSessionManager`). Value types (`ConnectionProfile`, `FileItem`) are `Sendable`.
 - No completion handlers in new code; `async/await` + `AsyncSequence` for progress streams.
+- Blocking C calls (libcurl's `curl_easy_perform`, M12) never run on the cooperative
+  executor: `FTPSource` dispatches every perform onto a detached `Thread` and bridges back
+  via a continuation / `AsyncThrowingStream`. C callbacks use `@convention(c)` closures with
+  `Unmanaged` context pointers; their boxes are the only shared state and are self-locked.
 
 ## Build configurations
 

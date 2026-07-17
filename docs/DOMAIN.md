@@ -75,6 +75,31 @@ this document, not the other way round.*
   the user pick which parsed hosts to add. Read freely in the Direct build; degrades to
   "nothing to import" when `~/.ssh` is outside the App Store sandbox.
 
+## FTP / FTPS specifics (M12, ADR-019)
+
+- **Transport**: system libcurl (nothing bundled). FTP has **no persistent session** in
+  Ferry — each operation opens its own control+data connection (a login per op), which is
+  why concurrent transfers are naturally safe. Keep-alive/auto-reconnect still apply: a
+  "ping" is a fresh `PWD` probe.
+- **Home directory** comes from the server's `PWD` reply (`257 "<path>"`), not a fixed
+  root. Absolute paths are anchored at the server root via libcurl's `%2F` leading-slash
+  encoding.
+- **Listing** parses the server's Unix `ls -l` `LIST` output (vsftpd/proftpd/pure-ftpd
+  dialect). Modified times are **approximate** — `LIST` gives server-local, minute-or-year
+  resolution with no time zone; Ferry shows a best-effort date and may show none if the
+  line is unparseable. There is no `stat` in FTP: an item's metadata comes from its parent
+  directory's listing.
+- **File ops**: rename (`RNFR`/`RNTO`, refuses to clobber), delete (`DELE`/recursive
+  `RMD`), mkdir with intermediates (`MKD`), permissions (`SITE CHMOD` — a de-facto standard;
+  servers without it report the command unsupported). No host-key trust (that's SSH-only).
+- **TLS modes**: plain FTP, **explicit FTPS** (`AUTH TLS`, the default for the `ftps`
+  scheme on any port but 990), and **implicit FTPS** (`ftps://`, assumed on port 990).
+  Certificates are verified against the system trust store. A self-signed / private-CA
+  server currently fails with a clear TLS error — a certificate-trust prompt (the analogue
+  of host-key TOFU) is a post-v1 backlog item.
+- **Resume**: downloads `REST` from the `.ferrypart` size; uploads `APPE` from the remote
+  size (FTP can't truncate, so upload resume requires the remote size to equal the offset).
+
 ## Transfers & queue (M8–M9)
 
 - Queue is global per app, FIFO within a connection, default **3 concurrent transfers per

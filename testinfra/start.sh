@@ -19,10 +19,20 @@ if [ ! -f fixtures/keys/id_ed25519 ]; then
   echo "generated fixtures/keys/id_ed25519 (test client key)"
 fi
 
+# Self-signed certificate for the explicit-FTPS test server (M12). Generated,
+# never committed (see .gitignore). Tests connect with cert verification off.
+if [ ! -f fixtures/certs/ftps.key ]; then
+  mkdir -p fixtures/certs
+  openssl req -x509 -newkey rsa:2048 -nodes \
+    -keyout fixtures/certs/ftps.key -out fixtures/certs/ftps.crt \
+    -days 3650 -subj "/CN=127.0.0.1" >/dev/null 2>&1
+  echo "generated fixtures/certs/ftps.{crt,key} (self-signed test cert)"
+fi
+
 docker compose up -d
 
 echo "waiting for servers..."
-for port in 2222 2121; do
+for port in 2222 2121 2990; do
   tries=0
   until nc -z 127.0.0.1 "$port" 2>/dev/null; do
     tries=$((tries + 1))
@@ -35,4 +45,4 @@ for port in 2222 2121; do
   done
   echo "  port $port up"
 done
-echo "test servers ready: SFTP on 2222, FTP on 2121 (user: ferry / ferrypass)"
+echo "test servers ready: SFTP on 2222, FTP on 2121, FTPS on 2990 (user: ferry / ferrypass)"

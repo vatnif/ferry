@@ -18,8 +18,13 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-crypto.git", "3.0.0"..<"4.0.0")
     ],
     targets: [
+        // Thin C shim over the system libcurl (curl license — nothing bundled,
+        // ADR-003/ADR-019). Exposes libcurl's variadic setopt/getinfo as
+        // concrete functions Swift can call; links `/usr/lib/libcurl`.
+        .target(name: "CFTP", linkerSettings: [.linkedLibrary("curl")]),
         .target(name: "FerryCore",
-                dependencies: [.product(name: "Citadel", package: "Citadel"),
+                dependencies: ["CFTP",
+                               .product(name: "Citadel", package: "Citadel"),
                                .product(name: "Crypto", package: "swift-crypto")]),
         .testTarget(name: "FerryCoreTests", dependencies: ["FerryCore"]),
         // Integration tests talk to the local Docker test servers (testinfra/).

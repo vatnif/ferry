@@ -311,4 +311,93 @@ final class FerryUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Imported"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["imported-box"].firstMatch.waitForExistence(timeout: 5))
     }
+
+    /// True when the Docker plaintext FTP test server answers on 2121.
+    private var ftpServerUp: Bool {
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        guard fd >= 0 else { return false }
+        defer { close(fd) }
+        var addr = sockaddr_in()
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = UInt16(2121).bigEndian
+        addr.sin_addr.s_addr = inet_addr("127.0.0.1")
+        return withUnsafePointer(to: &addr) { ptr in
+            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) == 0
+            }
+        }
+    }
+
+    /// Selects a protocol segment in the editor's segmented control (exposed as
+    /// a radio button on macOS, with a plain-button fallback).
+    @MainActor
+    private func selectProtocol(_ app: XCUIApplication, _ label: String) {
+        let radio = app.radioButtons[label]
+        if radio.waitForExistence(timeout: 3) { radio.click(); return }
+        let button = app.buttons[label]
+        if button.waitForExistence(timeout: 3) { button.click() }
+    }
+
+    /// M12 end-to-end: create an FTP connection to the Docker FTP server, pick
+    /// the FTP protocol, connect with the password prompt (no host-key TOFU for
+    /// FTP), browse into fixtures, download a file through the queue, disconnect.
+    @MainActor
+    func testConnectBrowseAndDownloadAgainstFTPServer() throws {
+        try XCTSkipUnless(ftpServerUp, "FTP test server not running — testinfra/start.sh")
+        let app = launchIsolatedApp()
+        let downloadDir = NSTemporaryDirectory() + "ferry-uitests-ftp-\(UUID().uuidString)"
+        try FileManager.default.createDirectory(atPath: downloadDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(atPath: downloadDir) }
+
+        app.buttons["sidebar.newConnection"].click()
+        let nameField = app.textFields["editor.name"]
+        XCTAssertTrue(nameField.waitForExistence(timeout: 5))
+        nameField.click(); nameField.typeText("docker-ftp")
+
+        selectProtocol(app, "FTP")
+
+        let hostField = app.textFields["editor.host"]
+        hostField.click(); hostField.typeText("127.0.0.1")
+        let portField = app.textFields["editor.port"]
+        portField.click(); portField.typeKey("a", modifierFlags: .command); portField.typeText("2121")
+        let userField = app.textFields["editor.username"]
+        userField.click(); userField.typeText("ferry")
+        let localStartField = app.textFields["editor.localStart"]
+        localStartField.click(); localStartField.typeText(downloadDir)
+        app.buttons["editor.save"].click()
+
+        let connectButton = app.buttons["detail.connect"]
+        XCTAssertTrue(connectButton.waitForExistence(timeout: 5))
+        connectButton.click()
+        let passwordField = app.secureTextFields["passwordPrompt.password"]
+        XCTAssertTrue(passwordField.waitForExistence(timeout: 5))
+        passwordField.click(); passwordField.typeText("ferrypass")
+        app.buttons["passwordPrompt.connect"].click()
+
+        // Connected: the remote pane lists the FTP home (/ftp/ferry → fixtures).
+        XCTAssertTrue(app.staticTexts["browser.status.connected"].waitForExistence(timeout: 15))
+        let fixturesRow = app.staticTexts["fixtures"].firstMatch
+        XCTAssertTrue(fixturesRow.waitForExistence(timeout: 10),
+                      "remote pane should list the FTP server's fixtures directory")
+        fixturesRow.doubleClick()
+
+        var remoteFile = app.staticTexts["hello.txt"].firstMatch
+        if !remoteFile.waitForExistence(timeout: 8) {
+            app.staticTexts["fixtures"].firstMatch.doubleClick()
+            remoteFile = app.staticTexts["hello.txt"].firstMatch
+            XCTAssertTrue(remoteFile.waitForExistence(timeout: 10))
+        }
+        remoteFile.click()
+        let downloadButton = app.buttons["browser.download"]
+        XCTAssertTrue(downloadButton.isEnabled)
+        downloadButton.click()
+
+        XCTAssertTrue(app.staticTexts["DONE"].firstMatch.waitForExistence(timeout: 20),
+                      "queue dock should show the completed download")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: downloadDir + "/hello.txt"),
+                      "downloaded file must exist in the local start dir")
+
+        app.buttons["browser.disconnect"].click()
+        XCTAssertTrue(connectButton.waitForExistence(timeout: 5))
+    }
 }

@@ -25,6 +25,10 @@ public enum RemoteSourceError: Error, Equatable {
     /// trusts for this endpoint — a possible MITM. The app shows the changed-key
     /// alarm; there is no silent-accept path.
     case hostKeyChanged(stored: [HostKeyInfo], offered: HostKeyInfo)
+    /// The TLS handshake failed — bad/expired/untrusted certificate, or a
+    /// protocol/version mismatch (FTPS, M12). The associated text is a
+    /// human-readable reason for the error alert.
+    case tlsFailed(String)
 }
 
 /// FileSystemSource over SFTP via Citadel (ADR-011). Read side since M6,

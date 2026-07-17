@@ -25,6 +25,7 @@ closed-source redistribution without copyleft obligations.
 | swift-crypto (apple) | Apache-2.0 | host-key SHA256 fingerprints + private-key types (SHA256/Curve25519/RSA) | **promoted to direct M11** (was transitive since M6) |
 | swift-nio, swift-atomics, swift-collections, swift-log (apple) | Apache-2.0 | via Citadel | added M6 (transitive) |
 | BigInt (attaswift) | MIT | via Citadel (RSA math) | added M6 (transitive) |
+| System libcurl (`/usr/lib/libcurl`, ships with macOS) | curl (MIT-like) | FTP/FTPS backend | **in use M12** (linked `-lcurl` via the `CFTP` shim; nothing bundled — ADR-019) |
 
 Transitive inventory: `cd FerryKit && swift package show-dependencies` — re-check and
 update this table whenever `Package.swift` or pinned versions change. All names above
@@ -35,7 +36,6 @@ must appear in the acknowledgements screen (M16).
 | Dependency | License | Purpose | When |
 |---|---|---|---|
 | libssh2 (fallback only if Citadel proves insufficient) | BSD-3 | SSH/SFTP | contingency |
-| System libcurl (`/usr/lib/libcurl.dylib`, ships with macOS) | curl (MIT-like) | FTP/FTPS | M12 |
 | Sparkle 2 | MIT | auto-update, Direct build only | M17 |
 | SwiftTerm | MIT | embedded terminal | post-v1 |
 
