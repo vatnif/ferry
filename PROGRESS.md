@@ -18,7 +18,7 @@
 | M8 | TransferEngine + queue UI | done (committed b1c9394) |
 | M9 | Resume & robustness | done (committed 388de0d) |
 | M10 | File operations | done (committed 9cfe66a) |
-| M11 | Key auth & host trust | checkpoint A done (committed ffd7233); **checkpoint B awaiting review** (known_hosts pre-trust + ssh/config import) |
+| M11 | Key auth & host trust | done (checkpoint A ffd7233, checkpoint B a008639) |
 | M12 | FTP/FTPS via libcurl | todo |
 | M13 | SCP | todo |
 | M14 | Tunneling | todo |
@@ -29,7 +29,7 @@
 
 Backlog (post-v1): see `docs/ROADMAP.md`.
 
-## Current state of the code (M11 checkpoint B — awaiting review)
+## Current state of the code (M11 — done, committed a008639)
 
 - **`~/.ssh/known_hosts` is now read as pre-trust** (ADR-018). New read-only FerryCore
   `KnownHostsFile` parses plaintext **and** hashed (HMAC-SHA1) entries; `SFTPSource.connect`
@@ -55,7 +55,7 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
   ssh_config field mapping + wildcard/`Match` skipping, a real-server pre-trust connect (no
   TOFU prompt) + conflicting-key CHANGED detection, and a UI walk-through of the config
   import.
-- **M11 is now feature-complete** pending this review.
+- **M11 is complete** — approved & committed (a008639).
 
 ## Earlier state (M11 checkpoint A — committed ffd7233)
 
@@ -248,10 +248,8 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
 
 ## Next steps
 
-1. **Review M11 checkpoint B** (known_hosts pre-trust + ssh/config import) → commit on
-   approval. That closes M11 entirely.
-2. **M12 — FTP/FTPS via libcurl**: next milestone (system libcurl, nothing bundled — ADR-003).
-3. Backlog: remote→Finder file-promise drag (`NSFilePromiseProvider`, M10); route `~/.ssh`
+1. **M12 — FTP/FTPS via libcurl**: next milestone (system libcurl, nothing bundled — ADR-003).
+2. Backlog: remote→Finder file-promise drag (`NSFilePromiseProvider`, M10); route `~/.ssh`
    pre-trust/import reads through the bookmark store for the App Store sandbox (deferred to
    M17 packaging, ADR-018).
 
@@ -276,7 +274,7 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
   to empty in the App Store sandbox. 155 kit + 7 UI tests green (+20/+1). Both flavors build.
   Code review applied two fixes (imported profiles default the username to the local login
   name à la OpenSSH; changed-key alarm de-dups stored fingerprints). Security review: clean.
-  **Awaiting review — closes M11 on approval.**
+- **M11 is complete** (approved & committed a008639).
 - **2026-07-17** — M11 checkpoint A built (key auth + host-key TOFU): removed the
   `acceptAnything()` host-key placeholder (M6 shipping blocker closed). New FerryCore `SSH/`
   module — `HostKeyInfo`/`HostKeyStore`/`TOFUHostKeyValidator`/`SSHKeyLoader`; `SFTPSource`
