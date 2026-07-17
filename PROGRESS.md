@@ -17,7 +17,7 @@
 | M7 | Dual-pane browser UI | done (committed c23cf04) |
 | M8 | TransferEngine + queue UI | done (committed b1c9394) |
 | M9 | Resume & robustness | done (committed 388de0d) |
-| M10 | File operations | **awaiting review** |
+| M10 | File operations | done (committed 9cfe66a) |
 | M11 | Key auth & host trust | todo |
 | M12 | FTP/FTPS via libcurl | todo |
 | M13 | SCP | todo |
@@ -193,11 +193,10 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
 
 ## Next steps
 
-1. M10 review → commit once approved.
-2. M11: key auth + host-key TOFU UI (screen 3), known_hosts + `~/.ssh/config` import.
+1. M11: key auth + host-key TOFU UI (screen 3), known_hosts + `~/.ssh/config` import.
    Note: `SFTPSource` still uses `hostKeyValidator: .acceptAnything()` (TODO in the
    source) — M11 must replace it before shipping.
-3. Backlog surfaced in M10: remote→Finder file-promise drag (`NSFilePromiseProvider`).
+2. Backlog surfaced in M10: remote→Finder file-promise drag (`NSFilePromiseProvider`).
 
 ## Session log
 
@@ -218,5 +217,5 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
   promise drag backlogged. Test notes: alert TextFields don't expose identifiers (type into
   the auto-focused field); alert buttons live under `windows`, not `dialogs` (Touch Bar dup);
   the context Delete uses "Delete…" to stay unique vs AppKit's Edit▸Delete. 114 kit + 5
-  XCUITests green. Awaiting review.
+  XCUITests green. M10 approved & committed (9cfe66a).
 - **2026-07-05 (cont.)** — M9 built: `.ferrypart` staging + resume, pause/resume, transient-error retry policy, lazy folder transfers (SFTP mkdir pulled forward), ConnectionSupervisor keep-alive/auto-reconnect, per-file conflict dialog with apply-to-all, reconnect status bar (ADR-014). Test saga: closing the local SSHClient mid-read fatalErrors NIOSSH → kill-mid-transfer tests drop the session server-side (`docker exec pkill`, matching OpenSSH ≥ 9.8 `sshd-session` naming) on a 32 MiB dd-seeded file; first run hung forever because `for await` deadline checks never fire on silent streams → test waits now race a timer. 112 kit + 4 UI tests green. M9 approved & committed (388de0d).
