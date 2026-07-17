@@ -11,10 +11,7 @@ final class SFTPTransferTests: XCTestCase {
 
     override func setUp() async throws {
         _ = try TestServers.requireGreeting(port: TestServers.sftpPort, serverName: "SFTP")
-        source = try await SFTPSource.connect(host: TestServers.host,
-                                              port: Int(TestServers.sftpPort),
-                                              username: TestServers.username,
-                                              password: TestServers.password)
+        source = try await TestServers.connectSFTP()
         localDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("ferry-transfers-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: localDir, withIntermediateDirectories: true)

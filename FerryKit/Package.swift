@@ -10,11 +10,17 @@ let package = Package(
     dependencies: [
         // SSH/SFTP client (MIT, over swift-nio-ssh Apache-2.0) — ADR-003/ADR-011,
         // licenses recorded in docs/LICENSING.md.
-        .package(url: "https://github.com/orlandos-nl/Citadel.git", from: "0.8.0")
+        .package(url: "https://github.com/orlandos-nl/Citadel.git", from: "0.8.0"),
+        // Apple swift-crypto (Apache-2.0) — already in the graph transitively via
+        // Citadel; made a direct dependency at M11 so host-key fingerprints (SHA256)
+        // and private-key parsing name the SAME Curve25519/RSA types Citadel's
+        // OpenSSH initializers extend (Crypto, not CryptoKit). ADR-017, LICENSING.md.
+        .package(url: "https://github.com/apple/swift-crypto.git", "3.0.0"..<"4.0.0")
     ],
     targets: [
         .target(name: "FerryCore",
-                dependencies: [.product(name: "Citadel", package: "Citadel")]),
+                dependencies: [.product(name: "Citadel", package: "Citadel"),
+                               .product(name: "Crypto", package: "swift-crypto")]),
         .testTarget(name: "FerryCoreTests", dependencies: ["FerryCore"]),
         // Integration tests talk to the local Docker test servers (testinfra/).
         // They skip themselves when the servers are down, unless

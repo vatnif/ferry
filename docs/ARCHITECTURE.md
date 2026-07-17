@@ -32,7 +32,8 @@ Ferry.app (SwiftUI, @MainActor)
 FerryCore (FerryKit package)
 ├── FileSystemSource (protocol)          ← the heart; panes & engine are protocol-agnostic
 │   ├── LocalFileSource                  FileManager + security-scoped bookmarks
-│   ├── SFTPSource                       Citadel (ADR-011; libssh2 fallback retired)
+│   ├── SFTPSource                       Citadel (ADR-011); TOFU host-key verify +
+│   │                                    password/key auth (M11, ADR-016/017)
 │   ├── FTPSource                        system libcurl (M12)
 │   └── SCPSource                        SSH exec channel (M13)
 ├── TransferEngine (actor, M8/M9)        FIFO queue, concurrency cap (3/connection),
@@ -47,8 +48,12 @@ FerryCore (FerryKit package)
 ├── TunnelEngine                         local / remote / SOCKS forwards (M14)
 ├── ConnectionStore                      profiles + folder tree, JSON, NO secrets
 ├── CredentialVault                      Keychain wrapper (M3)
-├── HostKeyStore                         Ferry known-hosts + TOFU decisions (M11)
-├── SSHConfigImporter                    ~/.ssh/config, known_hosts (read-only) (M11)
+├── SSH/ (M11)                           HostKeyStore (Ferry known_hosts, plaintext),
+│                                        HostKeyInfo (algo + SHA256 fingerprint + OpenSSH
+│                                        line), TOFUHostKeyValidator (rejects untrusted
+│                                        keys mid-handshake), SSHKeyLoader (ed25519/RSA
+│                                        OpenSSH keys + passphrase) — ADR-016/017
+├── SSHConfigImporter                    ~/.ssh/config, known_hosts (read-only) (M11-B)
 └── FerryVersion, Logging
 ```
 

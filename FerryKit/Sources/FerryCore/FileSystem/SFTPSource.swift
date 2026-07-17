@@ -1,28 +1,54 @@
 @preconcurrency import Citadel
 import Foundation
 import NIOCore
+import NIOSSH
+
+/// How an SSH session authenticates. A Sendable value the app builds and hands
+/// to `SFTPSource.connect`: the app owns file access (sandbox / security-scoped
+/// bookmarks) and reads the key bytes; FerryCore owns parsing (SSHKeyLoader).
+/// Key material is held in memory only — never logged or persisted (DOMAIN.md).
+public enum SSHAuthCredential: Sendable {
+    case password(String)
+    case privateKey(pem: Data, passphrase: String?)
+}
 
 /// Errors surfaced while establishing a remote session (before the
 /// FileSystemSource contract applies).
 public enum RemoteSourceError: Error, Equatable {
     case authenticationFailed
     case connectionFailed(String)
+    /// First contact: the server offered a host key Ferry has never seen for
+    /// this endpoint. The app shows the TOFU prompt (screen 3), and on approval
+    /// trusts the key and retries — DOMAIN.md → Host key trust.
+    case hostKeyUnknown(HostKeyInfo)
+    /// The server offered a host key that differs from every key Ferry already
+    /// trusts for this endpoint — a possible MITM. The app shows the changed-key
+    /// alarm; there is no silent-accept path.
+    case hostKeyChanged(stored: [HostKeyInfo], offered: HostKeyInfo)
 }
 
 /// FileSystemSource over SFTP via Citadel (ADR-011). Read side since M6,
 /// writes since M8, mkdir + reconnect support since M9, rename + chmod
 /// since M10 — the full mutation surface is now live.
 ///
-/// Host keys are currently accepted blindly — M11 replaces the validator
-/// with the TOFU flow (HostKeyStore + prompt, DOMAIN.md → Host key trust).
+/// Host keys are verified TOFU since M11: `connect` validates against the
+/// HostKeyStore and throws `hostKeyUnknown`/`hostKeyChanged` for the app to
+/// resolve (DOMAIN.md → Host key trust). Password + SSH-key auth (ed25519/RSA).
 public actor SFTPSource: FileSystemSource {
     /// Everything needed to rebuild the transport for auto-reconnect (M9).
-    /// Held in memory only — never logged or persisted (DOMAIN.md).
+    /// Held in memory only — never logged or persisted (DOMAIN.md). Includes
+    /// the credential (incl. key material) and the trust store, so a silent
+    /// reconnect re-validates the host key exactly as the first connect did.
     private struct Parameters {
         var host: String
         var port: Int
         var username: String
-        var password: String
+        var credential: SSHAuthCredential
+        var hostKeyStore: HostKeyStore
+        /// A key trusted for this session only (the user declined "remember").
+        /// Merged into the validator's trusted set and kept so a mid-session
+        /// reconnect still succeeds, but never written to the store.
+        var sessionTrusted: HostKeyInfo?
     }
 
     public nonisolated let displayName: String
@@ -39,34 +65,63 @@ public actor SFTPSource: FileSystemSource {
         self.parameters = parameters
     }
 
-    /// Password-authenticated connect (key/agent auth arrives in M11).
+    /// Establishes an SFTP session with TOFU host-key verification.
+    ///
+    /// Throws `RemoteSourceError.hostKeyUnknown`/`.hostKeyChanged` when the
+    /// offered host key isn't trusted (the app resolves trust and retries),
+    /// `.authenticationFailed` on bad credentials, `SSHKeyLoadError` when a key
+    /// file can't be parsed (e.g. a passphrase is needed), and
+    /// `.connectionFailed` otherwise.
+    /// - Parameter sessionTrusted: a host key to trust for this session only
+    ///   (the user declined "remember this key"); not persisted, but honored on
+    ///   an in-session reconnect.
     public static func connect(host: String,
                                port: Int = 22,
                                username: String,
-                               password: String,
+                               credential: SSHAuthCredential,
+                               hostKeyStore: HostKeyStore,
+                               sessionTrusted: HostKeyInfo? = nil,
                                displayName: String? = nil) async throws -> SFTPSource {
-        let parameters = Parameters(host: host, port: port, username: username, password: password)
+        let parameters = Parameters(host: host, port: port, username: username,
+                                    credential: credential, hostKeyStore: hostKeyStore,
+                                    sessionTrusted: sessionTrusted)
         let (ssh, sftp) = try await establish(parameters)
         return SFTPSource(displayName: displayName ?? host, ssh: ssh, sftp: sftp,
                           parameters: parameters)
     }
 
     private static func establish(_ parameters: Parameters) async throws -> (SSHClient, SFTPClient) {
+        var trusted = (try? parameters.hostKeyStore.trustedKeys(host: parameters.host,
+                                                                port: parameters.port)) ?? []
+        if let sessionTrusted = parameters.sessionTrusted,
+           let key = try? NIOSSHPublicKey(openSSHPublicKey: sessionTrusted.openSSH) {
+            trusted.insert(key)
+        }
+        let validator = TOFUHostKeyValidator(trusted: trusted)
+        // Key parsing errors (incl. passphraseRequired) propagate untouched so
+        // the app can prompt — they must not be swallowed as connection errors.
+        let authMethod = try makeAuthMethod(parameters)
+
         let ssh: SSHClient
         do {
             ssh = try await SSHClient.connect(
                 host: parameters.host,
                 port: parameters.port,
-                authenticationMethod: .passwordBased(username: parameters.username,
-                                                     password: parameters.password),
-                hostKeyValidator: .acceptAnything(), // TODO(M11): TOFU via HostKeyStore
+                authenticationMethod: authMethod,
+                hostKeyValidator: .custom(validator),
                 reconnect: .never)
-        } catch is Citadel.AuthenticationFailed {
-            throw RemoteSourceError.authenticationFailed
-        } catch SSHClientError.allAuthenticationOptionsFailed {
-            throw RemoteSourceError.authenticationFailed
         } catch {
-            throw RemoteSourceError.connectionFailed(String(describing: error))
+            // A rejected, untrusted host key is the reason for the failure —
+            // classify it as unknown (first contact) vs. changed (MITM risk).
+            if validator.rejectedUntrustedKey, let offered = validator.offeredKey {
+                let offeredInfo = HostKeyInfo(publicKey: offered)
+                let stored = (try? parameters.hostKeyStore.storedInfos(host: parameters.host,
+                                                                       port: parameters.port)) ?? []
+                throw stored.isEmpty
+                    ? RemoteSourceError.hostKeyUnknown(offeredInfo)
+                    : RemoteSourceError.hostKeyChanged(stored: stored, offered: offeredInfo)
+            }
+            throw Self.mapConnectError(error)
         }
 
         do {
@@ -75,6 +130,22 @@ public actor SFTPSource: FileSystemSource {
             try? await ssh.close()
             throw RemoteSourceError.connectionFailed(String(describing: error))
         }
+    }
+
+    private static func makeAuthMethod(_ parameters: Parameters) throws -> SSHAuthenticationMethod {
+        switch parameters.credential {
+        case .password(let password):
+            return .passwordBased(username: parameters.username, password: password)
+        case .privateKey(let pem, let passphrase):
+            return try SSHKeyLoader.authenticationMethod(username: parameters.username,
+                                                         pem: pem, passphrase: passphrase)
+        }
+    }
+
+    private static func mapConnectError(_ error: Error) -> RemoteSourceError {
+        if error is Citadel.AuthenticationFailed { return .authenticationFailed }
+        if case SSHClientError.allAuthenticationOptionsFailed = error { return .authenticationFailed }
+        return .connectionFailed(String(describing: error))
     }
 
     public func disconnect() async {

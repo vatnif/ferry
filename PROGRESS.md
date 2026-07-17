@@ -18,7 +18,7 @@
 | M8 | TransferEngine + queue UI | done (committed b1c9394) |
 | M9 | Resume & robustness | done (committed 388de0d) |
 | M10 | File operations | done (committed 9cfe66a) |
-| M11 | Key auth & host trust | todo |
+| M11 | Key auth & host trust | **in progress** — checkpoint A (key auth + TOFU) awaiting review; checkpoint B (known_hosts pre-trust + ssh/config import) todo |
 | M12 | FTP/FTPS via libcurl | todo |
 | M13 | SCP | todo |
 | M14 | Tunneling | todo |
@@ -29,7 +29,34 @@
 
 Backlog (post-v1): see `docs/ROADMAP.md`.
 
-## Current state of the code (after M10)
+## Current state of the code (M11 checkpoint A — awaiting review)
+
+- **The `acceptAnything()` host-key placeholder is gone** — the shipping blocker flagged
+  since M6 is closed. `SFTPSource.connect` now takes an `SSHAuthCredential` (password or
+  private key) + a `HostKeyStore`, verifies the host key TOFU, and throws
+  `hostKeyUnknown`/`hostKeyChanged` for the app to resolve (ADR-016). A `sessionTrusted`
+  key supports "trust for this session only" (remember off) and survives auto-reconnect.
+- **New FerryCore `SSH/` module**: `HostKeyInfo` (algorithm + OpenSSH SHA256 fingerprint +
+  storage line, via swift-crypto — now a direct dependency), `HostKeyStore` (plaintext
+  known_hosts persister, FERRY_DATA_DIR-aware), `TOFUHostKeyValidator` (rejects untrusted
+  keys mid-handshake and captures the offered one), `SSHKeyLoader` (OpenSSH ed25519/RSA
+  keys, encrypted or not; ECDSA + legacy PEM rejected with clear errors — ADR-017).
+- **App**: `ConnectionManagerModel` drives the whole flow — key-file read + passphrase
+  (Keychain `keyPassphrase`, prompt on encrypted/missing/wrong), catches host-key errors,
+  and presents screen 3. New views: `HostKeyPromptSheet` (TOFU 🔑 + changed-key ⚠️ alarm
+  with second-confirmation Replace) and a key-passphrase prompt. ssh-agent now reports
+  "planned for a later release" instead of "M11".
+- **testinfra**: `start.sh` generates a client keypair (gitignored) mounted for pubkey
+  auth; `sftp.d/00-relax-sshd.sh` sets `PerSourcePenalties no` so TOFU-rejection handshakes
+  don't wedge the source IP (ADR-016). **Re-run `testinfra/start.sh` after pulling.**
+- Tests: **135 kit tests + 6 XCUITests, all green** (+21 kit, +1 UI over M10) — incl.
+  fingerprint vectors vs `ssh-keygen`, HostKeyStore round-trip, key-loader passphrase
+  branches, real ed25519 key login, TOFU unknown→trust→reconnect, session-only trust,
+  changed-key detection, and a UI walk-through of the TOFU sheet.
+- **Still todo in M11 (checkpoint B)**: read `~/.ssh/known_hosts` (plaintext + hashed) as
+  pre-trust, and the sidebar `~/.ssh/config` Import….
+
+## Earlier state (after M10)
 
 - **The file-operation surface is complete.** `SFTPSource` gained `rename` (refuses to
   clobber an existing destination → `.alreadyExists`, matching LocalFileSource) and
@@ -193,10 +220,11 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
 
 ## Next steps
 
-1. M11: key auth + host-key TOFU UI (screen 3), known_hosts + `~/.ssh/config` import.
-   Note: `SFTPSource` still uses `hostKeyValidator: .acceptAnything()` (TODO in the
-   source) — M11 must replace it before shipping.
-2. Backlog surfaced in M10: remote→Finder file-promise drag (`NSFilePromiseProvider`).
+1. **Review M11 checkpoint A** (key auth + host-key TOFU) → commit on approval.
+2. M11 checkpoint B: read `~/.ssh/known_hosts` (plaintext + hashed HMAC-SHA1) as pre-trust
+   for the TOFU set; sidebar `~/.ssh/config` Import… (Host blocks → profiles). Sandbox note
+   (ADR-017): `~/.ssh` access will route through the bookmark store in the App Store build.
+3. Backlog surfaced in M10: remote→Finder file-promise drag (`NSFilePromiseProvider`).
 
 ## Session log
 
@@ -208,6 +236,15 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
 - **2026-07-05 (cont.)** — M6 spike: Citadel 0.12.1 added (licenses recorded first), SFTPSource read-only implemented and validated against Docker sshd. Verdict: adopt Citadel, libssh2 fallback retired (ADR-011). Two fixes during spike: error normalization (raw Status thrown), @preconcurrency import for Swift 6. 69 tests green. M6 approved & committed (3c9567a).
 - **2026-07-05 (cont.)** — M7 built: BrowserSession/PaneModel (ADR-012), FileBrowserPane + BrowserView per mockup screen 1, connect lifecycle with password prompt, sync browsing (PathUtilities moved to FerryCore for unit-testability). 73 kit tests + 4 UI tests green incl. e2e connect-and-browse. M7 approved & committed (c23cf04).
 - **2026-07-05 (cont.)** — M8 built: TransferEngine + queue dock + SFTP uploads/delete + drag between panes. Debugging saga (all fixed, ADR-013): SFTP writes "hung" → root cause was Docker's root-owned mountpoint making /upload unwritable, masked by a happy-path-only test loop; hardened engine cancellation anyway (immediate cancelled state, force-close handle); fixed chunk-dropping stream buffering; fixed whole-row draggable breaking double-click. 84 kit + 4 UI tests green incl. e2e download through the queue. M8 approved & committed (b1c9394).
+- **2026-07-17** — M11 checkpoint A built (key auth + host-key TOFU): removed the
+  `acceptAnything()` host-key placeholder (M6 shipping blocker closed). New FerryCore `SSH/`
+  module — `HostKeyInfo`/`HostKeyStore`/`TOFUHostKeyValidator`/`SSHKeyLoader`; `SFTPSource`
+  now verifies host keys TOFU and takes password-or-key credentials; app drives screen 3
+  (TOFU + changed-key alarm) + key-passphrase prompt; ssh-agent deferred to backlog
+  (ADR-016/017). swift-crypto promoted to a direct dependency. testinfra gained a client
+  keypair mount + `PerSourcePenalties no` boot hook (OpenSSH 9.8 penalises TOFU-rejection
+  handshakes). 135 kit + 6 UI tests green. **Awaiting review; checkpoint B (known_hosts
+  pre-trust + ssh/config import) still to do before M11 is complete.**
 - **2026-07-17** — M10 built: SFTP `rename` + `setPermissions` (completing the mutation
   surface on both backends); per-row context menu (Quick Look/Upload·Download/Rename/
   Permissions/Delete); rename alert + delete confirmation (recursive folder warning, no

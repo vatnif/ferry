@@ -15,6 +15,17 @@ final class FerryUITests: XCTestCase {
         return app
     }
 
+    /// After connecting to a server for the first time (empty known_hosts in the
+    /// isolated data dir), Ferry shows the TOFU host-key prompt (M11). Trust it
+    /// so the connection can proceed. Safe to call when no prompt appears.
+    @MainActor
+    private func trustHostKeyIfPrompted(_ app: XCUIApplication) {
+        let trust = app.buttons["hostKey.trust"]
+        if trust.waitForExistence(timeout: 10) {
+            trust.click()
+        }
+    }
+
     @MainActor
     func testAppLaunchesWithSidebarAndEmptyState() throws {
         let app = launchIsolatedApp()
@@ -87,6 +98,9 @@ final class FerryUITests: XCTestCase {
         passwordField.click(); passwordField.typeText("ferrypass")
         app.buttons["passwordPrompt.connect"].click()
 
+        // First contact: trust the server's host key (TOFU, M11).
+        trustHostKeyIfPrompted(app)
+
         // Connected: status bar + remote listing shows the server's dirs.
         XCTAssertTrue(app.staticTexts["browser.status.connected"].waitForExistence(timeout: 15))
         XCTAssertTrue(app.staticTexts["upload"].waitForExistence(timeout: 10),
@@ -116,6 +130,47 @@ final class FerryUITests: XCTestCase {
         // Disconnect returns to the summary.
         app.buttons["browser.disconnect"].click()
         XCTAssertTrue(connectButton.waitForExistence(timeout: 5))
+    }
+
+    /// M11: first contact with a server shows the TOFU host-key dialog with a
+    /// fingerprint; trusting it lets the connection proceed.
+    @MainActor
+    func testHostKeyTrustPromptOnFirstConnect() throws {
+        try XCTSkipUnless(sftpServerUp, "SFTP test server not running — testinfra/start.sh")
+        let app = launchIsolatedApp()
+
+        app.buttons["sidebar.newConnection"].click()
+        let nameField = app.textFields["editor.name"]
+        XCTAssertTrue(nameField.waitForExistence(timeout: 5))
+        nameField.click(); nameField.typeText("docker-sftp")
+        let hostField = app.textFields["editor.host"]
+        hostField.click(); hostField.typeText("127.0.0.1")
+        let portField = app.textFields["editor.port"]
+        portField.click(); portField.typeKey("a", modifierFlags: .command); portField.typeText("2222")
+        let userField = app.textFields["editor.username"]
+        userField.click(); userField.typeText("ferry")
+        app.buttons["editor.save"].click()
+
+        let connectButton = app.buttons["detail.connect"]
+        XCTAssertTrue(connectButton.waitForExistence(timeout: 5))
+        connectButton.click()
+        let passwordField = app.secureTextFields["passwordPrompt.password"]
+        XCTAssertTrue(passwordField.waitForExistence(timeout: 5))
+        passwordField.click(); passwordField.typeText("ferrypass")
+        app.buttons["passwordPrompt.connect"].click()
+
+        // The TOFU sheet appears with the offered fingerprint and a trust action.
+        let trust = app.buttons["hostKey.trust"]
+        XCTAssertTrue(trust.waitForExistence(timeout: 10), "host-key TOFU prompt should appear")
+        let fingerprint = app.staticTexts["hostKey.offered"]
+        XCTAssertTrue(fingerprint.waitForExistence(timeout: 5))
+        // A selectable Text may expose its string as value rather than label.
+        let shown = fingerprint.label + " " + String(describing: fingerprint.value ?? "")
+        XCTAssertTrue(shown.contains("SHA256:"),
+                      "fingerprint box should show the SHA256 (got \(shown))")
+        trust.click()
+
+        XCTAssertTrue(app.staticTexts["browser.status.connected"].waitForExistence(timeout: 15))
     }
 
     /// M10: connect, then rename and delete a file in the LOCAL pane via the
@@ -152,6 +207,7 @@ final class FerryUITests: XCTestCase {
         XCTAssertTrue(passwordField.waitForExistence(timeout: 5))
         passwordField.click(); passwordField.typeText("ferrypass")
         app.buttons["passwordPrompt.connect"].click()
+        trustHostKeyIfPrompted(app)
 
         XCTAssertTrue(app.staticTexts["browser.status.connected"].waitForExistence(timeout: 15))
 

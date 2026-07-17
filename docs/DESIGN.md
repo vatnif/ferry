@@ -20,10 +20,15 @@ their written form. Any change requires user approval + an ADR. Approved 2026-07
   tunnel count in status bar (M14), within-folder drag reorder (M16), remote→Finder
   promise drag (backlog). Status bar shows first-listing round-trip instead of continuous
   latency for now.
-- Screen 2 (connection sheet): live since M4; "Test Connection" is a TCP probe until a
+- Screen 2 (connection sheet): live since M4; SSH-key + agent auth rows are wired (M11 —
+  key auth live; agent reports "planned"); "Test Connection" is a TCP probe until a
   protocol-level test replaces it; tunnels row is a placeholder until M14.
-- Screen 3 (host keys): pending M11. Screen 4 (tunnels): pending M14. Screen 5
-  (settings): pending M16.
+- Screen 3 (host keys): **live (M11)** — TOFU first-contact prompt (🔑, selectable
+  fingerprint box, "Remember this key" default-on) and the changed-key alarm (⚠️,
+  Disconnect primary, Replace gated behind a second confirmation). Plus the connect-time
+  key-passphrase prompt for encrypted keys. Pending in this screen: `~/.ssh/config` Import…
+  and `~/.ssh/known_hosts` pre-trust (M11 checkpoint B). Screen 4 (tunnels): pending M14.
+  Screen 5 (settings): pending M16.
 
 ## Brand
 

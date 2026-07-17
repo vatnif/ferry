@@ -9,6 +9,16 @@ if [ ! -f fixtures/seed/medium-1mb.bin ]; then
   echo "generated fixtures/seed/medium-1mb.bin"
 fi
 
+# Client keypair for the SSH public-key-auth integration tests (M11). The
+# public key is mounted into the SFTP container's .ssh/keys (atmoz appends it
+# to authorized_keys); the private key is read by the tests. Generated, never
+# committed (see .gitignore).
+if [ ! -f fixtures/keys/id_ed25519 ]; then
+  mkdir -p fixtures/keys
+  ssh-keygen -t ed25519 -N "" -C "ferry-test-client" -f fixtures/keys/id_ed25519 -q
+  echo "generated fixtures/keys/id_ed25519 (test client key)"
+fi
+
 docker compose up -d
 
 echo "waiting for servers..."

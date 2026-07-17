@@ -14,10 +14,7 @@ final class SFTPSourceTests: XCTestCase {
 
     override func setUp() async throws {
         _ = try TestServers.requireGreeting(port: TestServers.sftpPort, serverName: "SFTP")
-        source = try await SFTPSource.connect(host: TestServers.host,
-                                              port: Int(TestServers.sftpPort),
-                                              username: TestServers.username,
-                                              password: TestServers.password)
+        source = try await TestServers.connectSFTP()
     }
 
     override func tearDown() async throws {
@@ -33,10 +30,7 @@ final class SFTPSourceTests: XCTestCase {
     func testWrongPasswordFailsAsAuthentication() async throws {
         await source.disconnect()
         do {
-            _ = try await SFTPSource.connect(host: TestServers.host,
-                                             port: Int(TestServers.sftpPort),
-                                             username: TestServers.username,
-                                             password: "definitely-wrong")
+            _ = try await TestServers.connectSFTP(password: "definitely-wrong")
             XCTFail("expected authentication failure")
         } catch let error as RemoteSourceError {
             XCTAssertEqual(error, .authenticationFailed)

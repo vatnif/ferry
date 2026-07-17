@@ -171,3 +171,59 @@ from ADR-013 is preserved. **Deferred:** dragging a *remote* item out to Finder 
 **Context-menu label "Delete…".** The single-item delete uses an ellipsis both because it
 opens a confirmation (macOS convention) and because AppKit injects a standard Edit▸Delete
 menu item — the ellipsis keeps the context item uniquely addressable for XCUITest.
+
+## 2026-07-17 — ADR-016: Host-key TOFU via a rejecting validator + reconnect-on-trust (M11)
+**The constraint.** NIO/Citadel validate the host key on the event loop *during* the
+handshake (`NIOSSHClientServerAuthenticationDelegate.validateHostKey`), synchronously —
+there is no way to pause for a UI prompt. So Ferry can't "ask, then continue the same
+handshake."
+**The design.** `TOFUHostKeyValidator` is built with the set of keys Ferry already trusts
+for the endpoint (from `HostKeyStore` ∪ any session-only key). It succeeds if the offered
+key is trusted, otherwise **captures the offered key and fails the handshake**.
+`SFTPSource.connect` then inspects the validator: if a rejected, untrusted key was
+captured it classifies the failure as `.hostKeyUnknown` (no keys stored → first contact)
+or `.hostKeyChanged` (keys stored, none matched → MITM risk) and throws a `HostKeyInfo`
+value. The app shows screen 3; on approval it writes the key to the store (or trusts it
+for the session only) and **retries connect** — now the key is in the trusted set and the
+handshake passes. This replaces the M6 `acceptAnything()` placeholder — the shipping
+blocker called out since M6 is closed.
+**HostKeyInfo is the currency**, not NIOSSH types: it carries the algorithm label, the
+OpenSSH SHA256 fingerprint (computed like `ssh-keygen -lf`: SHA-256 over the base64-decoded
+blob, base64 no-pad, via swift-crypto), and the OpenSSH one-line encoding used for storage.
+The app layer never imports NIOSSH. `HostKeyStore` is a stateless persister (mirrors
+ConnectionStore) over an OpenSSH-format `known_hosts` at `~/Library/Application
+Support/Ferry/known_hosts`, keyed by `host`/`[host]:port`; Ferry writes only plaintext
+entries. **No silent-accept path exists** (DOMAIN.md): the changed-key alarm's safe action
+(Disconnect) is primary and Replace requires a second confirmation.
+**Test-infra note.** OpenSSH 9.8+ `PerSourcePenalties` penalises "connections without
+attempting authentication" — exactly what a TOFU rejection is (disconnect during KEX).
+At the full suite's connection volume this wedged the source IP for ~15 s, so the test
+container disables it via an `/etc/sftp.d` boot hook. Real servers are unaffected; a user
+who repeatedly cancels a host-key prompt could in principle hit it, which is acceptable.
+
+## 2026-07-17 — ADR-017: SSH key auth via Citadel typed keys; agent deferred (M11)
+**Scope.** M11 ships password + **public-key** auth; **ssh-agent is deferred to the
+post-v1 backlog** — Citadel has no agent support (it would need a custom
+`NIOSSHClientUserAuthenticationDelegate` speaking the agent socket protocol), it is
+sandbox-gated, and it was already backlogged. The UI's SSH-Agent option now says "planned
+for a later release".
+**Key formats.** Citadel parses OpenSSH-format (`-----BEGIN OPENSSH PRIVATE KEY-----`)
+**ed25519 and RSA** private keys (encrypted keys via aes*-ctr + bcrypt). It has **no
+OpenSSH private-key parser for ECDSA**, so `SSHKeyLoader` rejects ECDSA (and legacy PEM
+containers) with a clear `unsupportedKeyType` error pointing at conversion, rather than
+failing obscurely. `SSHKeyLoader` reads the (unencrypted) OpenSSH envelope header to detect
+the key type and whether it's encrypted, then classifies load failures into
+`passphraseRequired` / `incorrectPassphrase` / `unsupportedKeyType` / `malformed` so the
+app can prompt vs. hard-fail.
+**Layering.** The app reads the key file's bytes (owning sandbox / file access) and hands
+`SSHAuthCredential.privateKey(pem:passphrase:)` to `SFTPSource.connect`; FerryCore does the
+parsing. Passphrases follow the existing credential policy — Keychain `keyPassphrase` role,
+prompt on connect when missing, remember opt-in. Key material is held in memory only, never
+logged or persisted.
+**Dependency.** swift-crypto (Apache-2.0) is promoted to a *direct* FerryCore dependency
+(it was already transitive via Citadel) so `Curve25519`/`SHA256` name the same types
+Citadel's OpenSSH initializers extend — using system CryptoKit would be a different,
+incompatible type. LICENSING.md updated.
+**Sandbox.** Reading `~/.ssh` key files (and, in checkpoint B, `known_hosts`/`config`) is
+not permitted in the App Store sandbox by default; that access will route through the
+security-scoped bookmark store / a file-import grant. The Direct build reads freely.

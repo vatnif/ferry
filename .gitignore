@@ -22,3 +22,6 @@ testinfra/.state/
 
 # Generated test fixture
 testinfra/fixtures/seed/medium-1mb.bin
+
+# Generated test client SSH keypair (pubkey-auth integration tests) — never commit
+testinfra/fixtures/keys/

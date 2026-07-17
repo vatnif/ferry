@@ -13,10 +13,7 @@ final class SFTPRobustnessTests: XCTestCase {
 
     override func setUp() async throws {
         _ = try TestServers.requireGreeting(port: TestServers.sftpPort, serverName: "SFTP")
-        source = try await SFTPSource.connect(host: TestServers.host,
-                                              port: Int(TestServers.sftpPort),
-                                              username: TestServers.username,
-                                              password: TestServers.password)
+        source = try await TestServers.connectSFTP()
         localDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("ferry-m9-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: localDir, withIntermediateDirectories: true)
@@ -383,10 +380,7 @@ final class SFTPRobustnessTests: XCTestCase {
     // MARK: Supervisor + real reconnect
 
     func testSupervisorReconnectsDroppedConnection() async throws {
-        let supervised = try await SFTPSource.connect(host: TestServers.host,
-                                                      port: Int(TestServers.sftpPort),
-                                                      username: TestServers.username,
-                                                      password: TestServers.password)
+        let supervised = try await TestServers.connectSFTP()
         let supervisor = ConnectionSupervisor(connection: supervised,
                                               pingInterval: .milliseconds(150),
                                               maxAttempts: 3,

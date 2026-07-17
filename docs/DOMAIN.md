@@ -42,11 +42,22 @@ this document, not the other way round.*
 ## Host key trust (SSH) — TOFU
 
 - Ferry keeps its own host-key store (`~/Library/Application Support/Ferry/known_hosts`,
-  OpenSSH format). The user's `~/.ssh/known_hosts` is **read** to pre-trust, never written.
+  OpenSSH format, plaintext entries only). The user's `~/.ssh/known_hosts` is **read** to
+  pre-trust, never written (M11 checkpoint B).
+- Verification is Trust-On-First-Use (M11, ADR-016). The SSH handshake validates against the
+  currently-trusted keys; an untrusted key aborts the handshake and Ferry surfaces the
+  offered key's algorithm + SHA256 fingerprint for a decision — it cannot pause the
+  handshake to ask.
 - Unknown key → prompt (mockup: screen 3 top): show algorithm + SHA256 fingerprint,
-  "remember" default-on. Trust proceeds; Cancel aborts before auth.
+  "Remember this key" default-on. Trust proceeds (re-connecting with the key now trusted);
+  Cancel aborts. With "remember" **off** the key is trusted for the session only (honored on
+  an in-session auto-reconnect) and not written to the store.
 - **Changed key → alarm dialog** (screen 3 bottom): safe action (Disconnect) is primary;
   replacing the key requires a second confirmation. No "silently accept" path exists.
+- **SSH key auth** (M11): OpenSSH-format ed25519 and RSA private keys, encrypted or not; the
+  passphrase follows the credential policy above (Keychain `keyPassphrase`, prompt on
+  connect, remember opt-in). ECDSA key files are not supported (ADR-017). **ssh-agent** is
+  deferred to post-v1 — the UI offers it but reports it as planned.
 
 ## Transfers & queue (M8–M9)
 

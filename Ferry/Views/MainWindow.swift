@@ -26,6 +26,12 @@ struct MainWindow: View {
         .sheet(item: $model.passwordPrompt) { prompt in
             PasswordPromptSheet(prompt: prompt)
         }
+        .sheet(item: $model.keyPassphrasePrompt) { prompt in
+            KeyPassphrasePromptSheet(prompt: prompt)
+        }
+        .sheet(item: $model.hostKeyPrompt) { prompt in
+            HostKeyPromptSheet(prompt: prompt)
+        }
         .alert("Something went wrong", isPresented: errorPresented) {
             Button("OK", role: .cancel) { model.errorMessage = nil }
         } message: {
@@ -85,6 +91,50 @@ private struct PasswordPromptSheet: View {
         }
         .padding(20)
         .frame(width: 360)
+    }
+}
+
+/// Connect-time passphrase prompt for an encrypted SSH key (no stored
+/// passphrase, or a stored/typed one was wrong). Same shape as the password
+/// prompt, with an "incorrect" hint on retry.
+private struct KeyPassphrasePromptSheet: View {
+    @Environment(ConnectionManagerModel.self) private var model
+    @Environment(\.dismiss) private var dismiss
+    let prompt: ConnectionManagerModel.KeyPassphrasePrompt
+    @State private var passphrase = ""
+    @State private var remember = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Passphrase for “\(prompt.profileName)”")
+                .font(.headline)
+            Text("This SSH key is encrypted. Enter its passphrase to unlock it.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            if prompt.incorrect {
+                Text("That passphrase was incorrect. Try again.")
+                    .font(.callout)
+                    .foregroundStyle(.red)
+            }
+            SecureField("Passphrase", text: $passphrase)
+                .accessibilityIdentifier("passphrasePrompt.passphrase")
+            Toggle("Remember in my Keychain", isOn: $remember)
+                .font(.callout)
+            HStack {
+                Spacer()
+                Button("Cancel") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
+                Button("Unlock") {
+                    dismiss()
+                    model.connectWithTypedPassphrase(passphrase, prompt: prompt, remember: remember)
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(passphrase.isEmpty)
+                .accessibilityIdentifier("passphrasePrompt.unlock")
+            }
+        }
+        .padding(20)
+        .frame(width: 380)
     }
 }
 

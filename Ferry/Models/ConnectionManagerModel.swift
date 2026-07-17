@@ -13,6 +13,11 @@ final class ConnectionManagerModel {
     var editorContext: EditorContext?
     /// Non-nil presents the connect-time password prompt (no stored secret).
     var passwordPrompt: PasswordPrompt?
+    /// Non-nil presents the key-passphrase prompt (encrypted key, no stored
+    /// passphrase, or the stored/typed one was wrong).
+    var keyPassphrasePrompt: KeyPassphrasePrompt?
+    /// Non-nil presents the host-key trust dialog (screen 3: TOFU or changed).
+    var hostKeyPrompt: HostKeyPrompt?
     /// Live connection state shown in the detail column.
     var connectionPhase: ConnectionPhase = .idle
     /// Non-nil presents the folder-name alert (create or rename).
@@ -24,6 +29,8 @@ final class ConnectionManagerModel {
 
     private let store: ConnectionStore
     let vault: CredentialVault
+    /// Trust anchor for SSH host keys (TOFU). Same data dir as connections.json.
+    let hostKeyStore: HostKeyStore
 
     struct EditorContext: Identifiable {
         var id: UUID { profileID ?? Self.newSentinel }
@@ -49,6 +56,29 @@ final class ConnectionManagerModel {
         var profileName: String
     }
 
+    struct KeyPassphrasePrompt: Identifiable {
+        let id = UUID()
+        var profileID: UUID
+        var profileName: String
+        /// The key bytes, already read — retry after the user types a
+        /// passphrase without re-reading the file.
+        var pem: Data
+        /// True when a previous attempt's passphrase was rejected.
+        var incorrect: Bool
+    }
+
+    struct HostKeyPrompt: Identifiable {
+        let id = UUID()
+        var profile: ConnectionProfile
+        var offered: HostKeyInfo
+        /// Keys Ferry already trusts for this endpoint. Empty ⇒ first contact
+        /// (TOFU); non-empty ⇒ the key has CHANGED (MITM alarm).
+        var stored: [HostKeyInfo]
+        /// The credential to reuse on the retry after the user trusts the key.
+        var credential: SSHAuthCredential
+        var isChanged: Bool { !stored.isEmpty }
+    }
+
     enum ConnectionPhase {
         case idle
         case connecting(profileName: String)
@@ -70,13 +100,17 @@ final class ConnectionManagerModel {
         // the Keychain service (docs/TESTING.md).
         let env = ProcessInfo.processInfo.environment
         if let dir = env["FERRY_DATA_DIR"] {
-            store = ConnectionStore(fileURL: URL(fileURLWithPath: dir, isDirectory: true)
-                .appendingPathComponent("connections.json"))
-        } else if let defaultStore = try? ConnectionStore.default() {
+            let base = URL(fileURLWithPath: dir, isDirectory: true)
+            store = ConnectionStore(fileURL: base.appendingPathComponent("connections.json"))
+            hostKeyStore = HostKeyStore(fileURL: base.appendingPathComponent("known_hosts"))
+        } else if let defaultStore = try? ConnectionStore.default(),
+                  let defaultHostKeys = try? HostKeyStore.default() {
             store = defaultStore
+            hostKeyStore = defaultHostKeys
         } else {
-            store = ConnectionStore(fileURL: FileManager.default.temporaryDirectory
-                .appendingPathComponent("ferry-fallback-connections.json"))
+            let tmp = FileManager.default.temporaryDirectory
+            store = ConnectionStore(fileURL: tmp.appendingPathComponent("ferry-fallback-connections.json"))
+            hostKeyStore = HostKeyStore(fileURL: tmp.appendingPathComponent("ferry-fallback-known_hosts"))
         }
         vault = CredentialVault(service: env["FERRY_KEYCHAIN_SERVICE"] ?? CredentialVault.defaultService)
 
@@ -207,26 +241,29 @@ final class ConnectionManagerModel {
         }
     }
 
-    // MARK: Connecting (M7 — SFTP with password auth; key/agent land in M11)
+    // MARK: Connecting (M7 password; M11 adds SSH-key auth + host-key TOFU)
 
     /// Entry point from the sidebar double-click and the detail Connect
-    /// button. Resolves the secret (prompting when none is stored) and
-    /// establishes the session.
+    /// button. Resolves the credential (prompting when needed) and establishes
+    /// the session, driving the host-key trust flow on the way.
     func connect(profileID: UUID) {
         guard let profile = library.profile(withID: profileID) else { return }
         guard profile.scheme == .sftp else {
             infoMessage = "\(profile.scheme.displayName) connections arrive in \(profile.scheme == .scp ? "Milestone 13" : "Milestone 12")."
             return
         }
-        guard case .password = profile.authMethod else {
-            infoMessage = "SSH key and agent authentication arrive in Milestone 11. Edit the connection to use password authentication for now."
-            return
-        }
-        let stored = (try? vault.retrieve(role: .password, profileID: profile.id)) ?? nil
-        if let stored {
-            startConnection(profile: profile, password: stored)
-        } else {
-            passwordPrompt = PasswordPrompt(profileID: profile.id, profileName: profile.name)
+
+        switch profile.authMethod {
+        case .password:
+            if let stored = (try? vault.retrieve(role: .password, profileID: profile.id)) ?? nil {
+                startConnection(profile: profile, credential: .password(stored))
+            } else {
+                passwordPrompt = PasswordPrompt(profileID: profile.id, profileName: profile.name)
+            }
+        case .publicKey(let path):
+            connectWithKey(profile: profile, path: path)
+        case .agent:
+            infoMessage = "SSH-agent authentication is planned for a later release. Edit the connection to use a key file or password for now."
         }
     }
 
@@ -236,33 +273,141 @@ final class ConnectionManagerModel {
         if remember {
             try? vault.store(password, role: .password, profileID: profile.id)
         }
-        startConnection(profile: profile, password: password)
+        startConnection(profile: profile, credential: .password(password))
     }
 
-    private func startConnection(profile: ConnectionProfile, password: String) {
+    /// Resolves an SSH-key credential: read the key file, then attempt with any
+    /// stored passphrase. The connect flow prompts for a passphrase only if the
+    /// key turns out to be encrypted and the stored one is missing/wrong.
+    private func connectWithKey(profile: ConnectionProfile, path: String) {
+        let pem: Data
+        do {
+            pem = try Data(contentsOf: URL(fileURLWithPath: (path as NSString).expandingTildeInPath))
+        } catch {
+            errorMessage = "Could not read the key file at \(path). Check the path and permissions."
+            return
+        }
+        let storedPassphrase = (try? vault.retrieve(role: .keyPassphrase, profileID: profile.id)) ?? nil
+        startConnection(profile: profile,
+                        credential: .privateKey(pem: pem, passphrase: storedPassphrase))
+    }
+
+    /// Continuation after the user typed a key passphrase.
+    func connectWithTypedPassphrase(_ passphrase: String,
+                                    prompt: KeyPassphrasePrompt, remember: Bool) {
+        guard let profile = library.profile(withID: prompt.profileID) else { return }
+        if remember {
+            try? vault.store(passphrase, role: .keyPassphrase, profileID: profile.id)
+        }
+        startConnection(profile: profile,
+                        credential: .privateKey(pem: prompt.pem, passphrase: passphrase))
+    }
+
+    /// The user approved an unknown host key (TOFU) — retry the connection. When
+    /// `remember` is on the key is persisted to the store; otherwise it is
+    /// trusted for this session only (DOMAIN.md → Host key trust).
+    func trustHostKeyAndConnect(_ prompt: HostKeyPrompt, remember: Bool) {
+        if remember {
+            do {
+                try hostKeyStore.trust(prompt.offered, host: prompt.profile.host, port: prompt.profile.port)
+            } catch {
+                errorMessage = "Could not save the host key: \(error.localizedDescription)"
+                return
+            }
+            startConnection(profile: prompt.profile, credential: prompt.credential)
+        } else {
+            startConnection(profile: prompt.profile, credential: prompt.credential,
+                            sessionTrusted: prompt.offered)
+        }
+    }
+
+    /// The user chose to replace a CHANGED host key (second confirmation already
+    /// given by the UI) — swap the trusted key and retry.
+    func replaceHostKeyAndConnect(_ prompt: HostKeyPrompt) {
+        do {
+            try hostKeyStore.replace(with: prompt.offered, host: prompt.profile.host, port: prompt.profile.port)
+        } catch {
+            errorMessage = "Could not update the host key: \(error.localizedDescription)"
+            return
+        }
+        startConnection(profile: prompt.profile, credential: prompt.credential)
+    }
+
+    private func startConnection(profile: ConnectionProfile, credential: SSHAuthCredential,
+                                 sessionTrusted: HostKeyInfo? = nil) {
         connectionPhase = .connecting(profileName: profile.name)
         Task {
             do {
                 let sftp = try await SFTPSource.connect(host: profile.host,
                                                         port: profile.port,
                                                         username: profile.username,
-                                                        password: password,
+                                                        credential: credential,
+                                                        hostKeyStore: hostKeyStore,
+                                                        sessionTrusted: sessionTrusted,
                                                         displayName: profile.name)
                 let session = BrowserSession(profile: profile, sftp: sftp, bookmarks: nil)
                 await session.start()
                 connectionPhase = .connected(session)
             } catch let error as RemoteSourceError {
-                connectionPhase = .idle
-                switch error {
-                case .authenticationFailed:
-                    errorMessage = "The server rejected the login for \(profile.username)@\(profile.host). Check the username and password."
-                case .connectionFailed(let detail):
-                    errorMessage = "Could not connect to \(profile.host):\(String(profile.port)) — \(detail)"
-                }
+                handleConnectError(error, profile: profile, credential: credential)
+            } catch let error as SSHKeyLoadError {
+                handleKeyError(error, profile: profile, credential: credential)
             } catch {
                 connectionPhase = .idle
                 errorMessage = "Could not connect: \(error.localizedDescription)"
             }
+        }
+    }
+
+    private func handleConnectError(_ error: RemoteSourceError,
+                                    profile: ConnectionProfile,
+                                    credential: SSHAuthCredential) {
+        connectionPhase = .idle
+        switch error {
+        case .authenticationFailed:
+            errorMessage = authFailureMessage(profile: profile, credential: credential)
+        case .connectionFailed(let detail):
+            errorMessage = "Could not connect to \(profile.host):\(String(profile.port)) — \(detail)"
+        case .hostKeyUnknown(let offered):
+            hostKeyPrompt = HostKeyPrompt(profile: profile, offered: offered,
+                                          stored: [], credential: credential)
+        case .hostKeyChanged(let stored, let offered):
+            hostKeyPrompt = HostKeyPrompt(profile: profile, offered: offered,
+                                          stored: stored, credential: credential)
+        }
+    }
+
+    private func handleKeyError(_ error: SSHKeyLoadError,
+                                profile: ConnectionProfile,
+                                credential: SSHAuthCredential) {
+        connectionPhase = .idle
+        guard case .privateKey(let pem, _) = credential else {
+            errorMessage = "The key could not be used: \(error.localizedDescription)"
+            return
+        }
+        switch error {
+        case .passphraseRequired:
+            keyPassphrasePrompt = KeyPassphrasePrompt(profileID: profile.id,
+                                                      profileName: profile.name,
+                                                      pem: pem, incorrect: false)
+        case .incorrectPassphrase:
+            keyPassphrasePrompt = KeyPassphrasePrompt(profileID: profile.id,
+                                                      profileName: profile.name,
+                                                      pem: pem, incorrect: true)
+        case .unsupportedKeyType(let label):
+            errorMessage = "This key isn’t supported: \(label). Ferry supports OpenSSH-format ed25519 and RSA keys."
+        case .malformed:
+            errorMessage = "The key file for “\(profile.name)” is not a valid OpenSSH private key."
+        }
+    }
+
+    private func authFailureMessage(profile: ConnectionProfile,
+                                    credential: SSHAuthCredential) -> String {
+        switch credential {
+        case .password:
+            return "The server rejected the login for \(profile.username)@\(profile.host). Check the username and password."
+        case .privateKey:
+            return "The server rejected the key for \(profile.username)@\(profile.host). Check that the matching public key is in the server’s authorized_keys."
         }
     }
 

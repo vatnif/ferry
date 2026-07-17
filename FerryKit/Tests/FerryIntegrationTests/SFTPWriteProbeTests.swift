@@ -8,10 +8,7 @@ import XCTest
 final class SFTPWriteProbeTests: XCTestCase {
     func testUploadSizeLadder() async throws {
         _ = try TestServers.requireGreeting(port: TestServers.sftpPort, serverName: "SFTP")
-        let source = try await SFTPSource.connect(host: TestServers.host,
-                                                  port: Int(TestServers.sftpPort),
-                                                  username: TestServers.username,
-                                                  password: TestServers.password)
+        let source = try await TestServers.connectSFTP()
         defer { Task { [source] in await source.disconnect() } }
 
         for sizeKB in [64, 256, 512, 1024, 2048] {
