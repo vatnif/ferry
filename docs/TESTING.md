@@ -143,6 +143,15 @@ against it.
   create-connection flow (M4), and the M7 end-to-end walk-through: create a connection
   to the Docker SFTP server through the UI, connect via the password prompt, verify the
   remote pane lists the server, disconnect (skips itself when the server is down).
-  **Isolation**: the app honors `FERRY_DATA_DIR` (connections.json location) and
-  `FERRY_KEYCHAIN_SERVICE` env vars; UI tests set both, so user data and the real
-  Keychain service are never touched.
+  **Isolation**: the app honors `FERRY_DATA_DIR` (connections.json + Ferry's own
+  known_hosts location) and `FERRY_KEYCHAIN_SERVICE` env vars; UI tests set both, so user
+  data and the real Keychain service are never touched. Two more overrides isolate the
+  M11-checkpoint-B features from the developer's real dotfiles: `FERRY_SYSTEM_KNOWN_HOSTS`
+  (path read for host-key pre-trust, default `~/.ssh/known_hosts`) and `FERRY_SSH_CONFIG`
+  (path parsed by Import…, default `~/.ssh/config`). The import UI test points
+  `FERRY_SSH_CONFIG` at a temp fixture and drives **File ▸ Import from SSH Config…**.
+- **known_hosts / ssh_config parsing** (M11 checkpoint B): `KnownHostsFileTests` pins the
+  hashed-entry matcher to `ssh-keygen -H` vectors; `SSHConfigParserTests` covers field
+  mapping and wildcard/`Match` skipping (both unit, no server). `SFTPKnownHostsPretrustTests`
+  (integration) proves a host recorded only in the *system* known_hosts connects to the
+  Docker sshd with no TOFU prompt, and a conflicting record still reads as CHANGED.

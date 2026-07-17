@@ -18,7 +18,7 @@
 | M8 | TransferEngine + queue UI | done (committed b1c9394) |
 | M9 | Resume & robustness | done (committed 388de0d) |
 | M10 | File operations | done (committed 9cfe66a) |
-| M11 | Key auth & host trust | **in progress** — checkpoint A (key auth + TOFU) awaiting review; checkpoint B (known_hosts pre-trust + ssh/config import) todo |
+| M11 | Key auth & host trust | checkpoint A done (committed ffd7233); **checkpoint B awaiting review** (known_hosts pre-trust + ssh/config import) |
 | M12 | FTP/FTPS via libcurl | todo |
 | M13 | SCP | todo |
 | M14 | Tunneling | todo |
@@ -29,7 +29,35 @@
 
 Backlog (post-v1): see `docs/ROADMAP.md`.
 
-## Current state of the code (M11 checkpoint A — awaiting review)
+## Current state of the code (M11 checkpoint B — awaiting review)
+
+- **`~/.ssh/known_hosts` is now read as pre-trust** (ADR-018). New read-only FerryCore
+  `KnownHostsFile` parses plaintext **and** hashed (HMAC-SHA1) entries; `SFTPSource.connect`
+  takes an optional `systemKnownHosts` and unions its keys into both the TOFU validator's
+  trusted set and the changed-vs-unknown decision — so a host the user already knows skips
+  the prompt, while a system-known host offering a *different* key still raises the
+  changed-key alarm. `HostKeyStore`'s "Ferry writes only its own plaintext file" invariant
+  is untouched (the reader is a separate type). Frozen at connect so auto-reconnect
+  re-validates identically; the app re-reads at each connect (`FERRY_SYSTEM_KNOWN_HOSTS`
+  override for tests).
+- **`~/.ssh/config` Import…** (ADR-018). New FerryCore `SSHConfigParser` lifts concrete
+  `Host` blocks into SFTP profiles (`HostName`/alias, `Port`, `User`, `IdentityFile`→
+  public-key, tilde-expanded); wildcard/negated patterns and `Match`/`ProxyJump` are
+  skipped/ignored. App: **File ▸ Import from SSH Config…** (⌘⇧I) — the canonical entry —
+  plus a sidebar-toolbar Import menu, both opening `SSHImportSheet` (a checklist). Chosen
+  hosts land under a new "Imported" folder; no secrets are read from the config. UI signed
+  off (not in mockups, rule 3 → ADR-018). `FERRY_SSH_CONFIG` override for tests.
+- **Sandbox**: both features read `~/.ssh` freely in the Direct build and **degrade
+  gracefully to empty** in the App Store build (container home has no `~/.ssh`) — pre-trust
+  simply doesn't apply, import reports nothing found. Bookmark-store routing deferred to M17.
+- Both flavors build (Direct + AppStore). Tests: **155 kit tests + 7 XCUITests, all green**
+  (+20 kit / +1 UI over checkpoint A) — incl. hashed-known_hosts vectors vs `ssh-keygen -H`,
+  ssh_config field mapping + wildcard/`Match` skipping, a real-server pre-trust connect (no
+  TOFU prompt) + conflicting-key CHANGED detection, and a UI walk-through of the config
+  import.
+- **M11 is now feature-complete** pending this review.
+
+## Earlier state (M11 checkpoint A — committed ffd7233)
 
 - **The `acceptAnything()` host-key placeholder is gone** — the shipping blocker flagged
   since M6 is closed. `SFTPSource.connect` now takes an `SSHAuthCredential` (password or
@@ -220,11 +248,12 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
 
 ## Next steps
 
-1. **Review M11 checkpoint A** (key auth + host-key TOFU) → commit on approval.
-2. M11 checkpoint B: read `~/.ssh/known_hosts` (plaintext + hashed HMAC-SHA1) as pre-trust
-   for the TOFU set; sidebar `~/.ssh/config` Import… (Host blocks → profiles). Sandbox note
-   (ADR-017): `~/.ssh` access will route through the bookmark store in the App Store build.
-3. Backlog surfaced in M10: remote→Finder file-promise drag (`NSFilePromiseProvider`).
+1. **Review M11 checkpoint B** (known_hosts pre-trust + ssh/config import) → commit on
+   approval. That closes M11 entirely.
+2. **M12 — FTP/FTPS via libcurl**: next milestone (system libcurl, nothing bundled — ADR-003).
+3. Backlog: remote→Finder file-promise drag (`NSFilePromiseProvider`, M10); route `~/.ssh`
+   pre-trust/import reads through the bookmark store for the App Store sandbox (deferred to
+   M17 packaging, ADR-018).
 
 ## Session log
 
@@ -236,6 +265,18 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
 - **2026-07-05 (cont.)** — M6 spike: Citadel 0.12.1 added (licenses recorded first), SFTPSource read-only implemented and validated against Docker sshd. Verdict: adopt Citadel, libssh2 fallback retired (ADR-011). Two fixes during spike: error normalization (raw Status thrown), @preconcurrency import for Swift 6. 69 tests green. M6 approved & committed (3c9567a).
 - **2026-07-05 (cont.)** — M7 built: BrowserSession/PaneModel (ADR-012), FileBrowserPane + BrowserView per mockup screen 1, connect lifecycle with password prompt, sync browsing (PathUtilities moved to FerryCore for unit-testability). 73 kit tests + 4 UI tests green incl. e2e connect-and-browse. M7 approved & committed (c23cf04).
 - **2026-07-05 (cont.)** — M8 built: TransferEngine + queue dock + SFTP uploads/delete + drag between panes. Debugging saga (all fixed, ADR-013): SFTP writes "hung" → root cause was Docker's root-owned mountpoint making /upload unwritable, masked by a happy-path-only test loop; hardened engine cancellation anyway (immediate cancelled state, force-close handle); fixed chunk-dropping stream buffering; fixed whole-row draggable breaking double-click. 84 kit + 4 UI tests green incl. e2e download through the queue. M8 approved & committed (b1c9394).
+- **2026-07-17** — M11 checkpoint B built (known_hosts pre-trust + `~/.ssh/config` import,
+  ADR-018): read-only `KnownHostsFile` (plaintext + hashed HMAC-SHA1, pinned to `ssh-keygen
+  -H`) folded into `SFTPSource`'s TOFU trusted set + changed/unknown decision, wired via a
+  new `systemKnownHosts` connect param (frozen for reconnect; `FERRY_SYSTEM_KNOWN_HOSTS`
+  override). `SSHConfigParser` → `SSHImportSheet` checklist reached from **File ▸ Import from
+  SSH Config…** (⌘⇧I; the sidebar toolbar's third control folds into the toolbar overflow on
+  narrow windows, so the menu command is canonical — UI signed off, not in mockups → ADR-018).
+  Imports land under an "Imported" folder; no secrets read from config. Both features degrade
+  to empty in the App Store sandbox. 155 kit + 7 UI tests green (+20/+1). Both flavors build.
+  Code review applied two fixes (imported profiles default the username to the local login
+  name à la OpenSSH; changed-key alarm de-dups stored fingerprints). Security review: clean.
+  **Awaiting review — closes M11 on approval.**
 - **2026-07-17** — M11 checkpoint A built (key auth + host-key TOFU): removed the
   `acceptAnything()` host-key placeholder (M6 shipping blocker closed). New FerryCore `SSH/`
   module — `HostKeyInfo`/`HostKeyStore`/`TOFUHostKeyValidator`/`SSHKeyLoader`; `SFTPSource`

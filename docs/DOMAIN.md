@@ -42,8 +42,12 @@ this document, not the other way round.*
 ## Host key trust (SSH) — TOFU
 
 - Ferry keeps its own host-key store (`~/Library/Application Support/Ferry/known_hosts`,
-  OpenSSH format, plaintext entries only). The user's `~/.ssh/known_hosts` is **read** to
-  pre-trust, never written (M11 checkpoint B).
+  OpenSSH format, plaintext entries only). The user's `~/.ssh/known_hosts` is **read** as
+  pre-trust, never written (M11 checkpoint B, ADR-018): plaintext **and** hashed
+  (HMAC-SHA1) entries are honored, so hosts the user already knows skip the TOFU prompt. A
+  system-known host that offers a *different* key still triggers the changed-key alarm. Read
+  freely in the Direct build; the App Store build degrades to no pre-trust when `~/.ssh` is
+  outside the sandbox.
 - Verification is Trust-On-First-Use (M11, ADR-016). The SSH handshake validates against the
   currently-trusted keys; an untrusted key aborts the handshake and Ferry surfaces the
   offered key's algorithm + SHA256 fingerprint for a decision — it cannot pause the
@@ -58,6 +62,18 @@ this document, not the other way round.*
   passphrase follows the credential policy above (Keychain `keyPassphrase`, prompt on
   connect, remember opt-in). ECDSA key files are not supported (ADR-017). **ssh-agent** is
   deferred to post-v1 — the UI offers it but reports it as planned.
+
+## Importing existing SSH config (M11 checkpoint B, ADR-018)
+
+- **`~/.ssh/config` import** (File ▸ Import from SSH Config…, ⌘⇧I, mirrored by the sidebar's
+  Import toolbar menu): concrete `Host` blocks become SFTP `ConnectionProfile`s under a new
+  "Imported" folder. Mapping: `HostName` (alias fallback) → host, `Port`, `User`,
+  `IdentityFile` → public-key auth (tilde-expanded path). Wildcard/negated `Host` patterns
+  are skipped; `Match`/`ProxyJump`/`ProxyCommand` are ignored (imported without a tunnel).
+- The config is read-only and **never carries secrets into Ferry** — key passphrases and
+  passwords are prompted on first connect per the credential policy. The import sheet lets
+  the user pick which parsed hosts to add. Read freely in the Direct build; degrades to
+  "nothing to import" when `~/.ssh` is outside the App Store sandbox.
 
 ## Transfers & queue (M8–M9)
 

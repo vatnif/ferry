@@ -32,6 +32,9 @@ struct MainWindow: View {
         .sheet(item: $model.hostKeyPrompt) { prompt in
             HostKeyPromptSheet(prompt: prompt)
         }
+        .sheet(item: $model.sshImport) { context in
+            SSHImportSheet(hosts: context.hosts) { model.importSSHHosts($0) }
+        }
         .alert("Something went wrong", isPresented: errorPresented) {
             Button("OK", role: .cancel) { model.errorMessage = nil }
         } message: {
@@ -42,6 +45,11 @@ struct MainWindow: View {
         } message: {
             Text(model.infoMessage ?? "")
         }
+        .alert("Ferry", isPresented: noticePresented) {
+            Button("OK", role: .cancel) { model.noticeMessage = nil }
+        } message: {
+            Text(model.noticeMessage ?? "")
+        }
     }
 
     private var errorPresented: Binding<Bool> {
@@ -50,6 +58,10 @@ struct MainWindow: View {
 
     private var infoPresented: Binding<Bool> {
         Binding(get: { model.infoMessage != nil }, set: { if !$0 { model.infoMessage = nil } })
+    }
+
+    private var noticePresented: Binding<Bool> {
+        Binding(get: { model.noticeMessage != nil }, set: { if !$0 { model.noticeMessage = nil } })
     }
 
     private var folderPromptPresented: Binding<Bool> {

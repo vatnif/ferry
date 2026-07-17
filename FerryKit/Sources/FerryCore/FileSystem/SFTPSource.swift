@@ -45,6 +45,11 @@ public actor SFTPSource: FileSystemSource {
         var username: String
         var credential: SSHAuthCredential
         var hostKeyStore: HostKeyStore
+        /// The user's `~/.ssh/known_hosts`, read-only, as pre-trust: hosts they
+        /// already know connect without a TOFU prompt (M11 checkpoint B). Frozen
+        /// at connect so auto-reconnect re-validates identically. nil ⇒ no
+        /// pre-trust (behaves exactly like Ferry's own store alone).
+        var systemKnownHosts: KnownHostsFile?
         /// A key trusted for this session only (the user declined "remember").
         /// Merged into the validator's trusted set and kept so a mid-session
         /// reconnect still succeeds, but never written to the store.
@@ -72,6 +77,8 @@ public actor SFTPSource: FileSystemSource {
     /// `.authenticationFailed` on bad credentials, `SSHKeyLoadError` when a key
     /// file can't be parsed (e.g. a passphrase is needed), and
     /// `.connectionFailed` otherwise.
+    /// - Parameter systemKnownHosts: the user's `~/.ssh/known_hosts` as
+    ///   pre-trust (M11 checkpoint B); pass nil to disable pre-trust.
     /// - Parameter sessionTrusted: a host key to trust for this session only
     ///   (the user declined "remember this key"); not persisted, but honored on
     ///   an in-session reconnect.
@@ -80,10 +87,12 @@ public actor SFTPSource: FileSystemSource {
                                username: String,
                                credential: SSHAuthCredential,
                                hostKeyStore: HostKeyStore,
+                               systemKnownHosts: KnownHostsFile? = nil,
                                sessionTrusted: HostKeyInfo? = nil,
                                displayName: String? = nil) async throws -> SFTPSource {
         let parameters = Parameters(host: host, port: port, username: username,
                                     credential: credential, hostKeyStore: hostKeyStore,
+                                    systemKnownHosts: systemKnownHosts,
                                     sessionTrusted: sessionTrusted)
         let (ssh, sftp) = try await establish(parameters)
         return SFTPSource(displayName: displayName ?? host, ssh: ssh, sftp: sftp,
@@ -93,6 +102,10 @@ public actor SFTPSource: FileSystemSource {
     private static func establish(_ parameters: Parameters) async throws -> (SSHClient, SFTPClient) {
         var trusted = (try? parameters.hostKeyStore.trustedKeys(host: parameters.host,
                                                                 port: parameters.port)) ?? []
+        if let systemKnownHosts = parameters.systemKnownHosts {
+            trusted.formUnion(systemKnownHosts.trustedKeys(host: parameters.host,
+                                                           port: parameters.port))
+        }
         if let sessionTrusted = parameters.sessionTrusted,
            let key = try? NIOSSHPublicKey(openSSHPublicKey: sessionTrusted.openSSH) {
             trusted.insert(key)
@@ -115,8 +128,16 @@ public actor SFTPSource: FileSystemSource {
             // classify it as unknown (first contact) vs. changed (MITM risk).
             if validator.rejectedUntrustedKey, let offered = validator.offeredKey {
                 let offeredInfo = HostKeyInfo(publicKey: offered)
-                let stored = (try? parameters.hostKeyStore.storedInfos(host: parameters.host,
+                var stored = (try? parameters.hostKeyStore.storedInfos(host: parameters.host,
                                                                        port: parameters.port)) ?? []
+                if let systemKnownHosts = parameters.systemKnownHosts {
+                    stored += systemKnownHosts.storedInfos(host: parameters.host,
+                                                           port: parameters.port)
+                }
+                // De-dup: the same key can appear in both stores; the changed-key
+                // alarm should list each stored fingerprint once. Preserve order.
+                var seen = Set<HostKeyInfo>()
+                stored = stored.filter { seen.insert($0).inserted }
                 throw stored.isEmpty
                     ? RemoteSourceError.hostKeyUnknown(offeredInfo)
                     : RemoteSourceError.hostKeyChanged(stored: stored, offered: offeredInfo)

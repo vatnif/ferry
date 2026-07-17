@@ -22,15 +22,39 @@ final class ConnectionManagerModel {
     var connectionPhase: ConnectionPhase = .idle
     /// Non-nil presents the folder-name alert (create or rename).
     var folderPrompt: FolderPrompt?
+    /// Non-nil presents the SSH-config import sheet (M11 checkpoint B).
+    var sshImport: SSHImportContext?
     /// Non-nil presents an error alert.
     var errorMessage: String?
     /// Non-nil presents an informational alert (e.g. stubbed features).
     var infoMessage: String?
+    /// Non-nil presents a neutral notice alert (e.g. import results).
+    var noticeMessage: String?
 
     private let store: ConnectionStore
     let vault: CredentialVault
     /// Trust anchor for SSH host keys (TOFU). Same data dir as connections.json.
     let hostKeyStore: HostKeyStore
+
+    /// The user's OpenSSH `known_hosts`, read as pre-trust so already-known
+    /// hosts skip the TOFU prompt (M11 checkpoint B). Re-read at each connect so
+    /// hosts the user adds via `ssh` are picked up. The Direct build reads
+    /// freely; the App Store build resolves an empty file when `~/.ssh` is
+    /// outside the sandbox (ADR-017) — pre-trust simply doesn't apply and TOFU
+    /// behaves exactly as before.
+    private var systemKnownHosts: KnownHostsFile {
+        KnownHostsFile(contentsOf: Self.systemKnownHostsURL)
+    }
+
+    /// `~/.ssh/known_hosts`, overridable via `FERRY_SYSTEM_KNOWN_HOSTS` for
+    /// tests (docs/TESTING.md).
+    static var systemKnownHostsURL: URL {
+        if let override = ProcessInfo.processInfo.environment["FERRY_SYSTEM_KNOWN_HOSTS"] {
+            return URL(fileURLWithPath: override)
+        }
+        return FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".ssh/known_hosts")
+    }
 
     struct EditorContext: Identifiable {
         var id: UUID { profileID ?? Self.newSentinel }
@@ -48,6 +72,12 @@ final class ConnectionManagerModel {
         /// Parent for creation ("New Folder Here").
         var parentFolderID: UUID?
         var name: String = ""
+    }
+
+    /// Backs the SSH-config import sheet: the hosts parsed from `~/.ssh/config`.
+    struct SSHImportContext: Identifiable {
+        let id = UUID()
+        var hosts: [ImportedSSHHost]
     }
 
     struct PasswordPrompt: Identifiable {
@@ -191,6 +221,53 @@ final class ConnectionManagerModel {
     func moveItem(_ id: UUID, toFolder folderID: UUID?) {
         guard library.parentFolderID(ofItem: id) != folderID else { return }
         mutate { _ = $0.move(itemID: id, toFolder: folderID) }
+    }
+
+    // MARK: SSH config import (M11 checkpoint B)
+
+    /// Presents the import sheet, or an info alert when there's nothing to
+    /// import (no `~/.ssh/config`, or only wildcard/default blocks).
+    func beginSSHConfigImport() {
+        let hosts = SSHConfigParser.parse(contentsOf: Self.sshConfigURL)
+        if hosts.isEmpty {
+            noticeMessage = "No importable hosts were found in ~/.ssh/config."
+        } else {
+            sshImport = SSHImportContext(hosts: hosts)
+        }
+    }
+
+    /// Imports the chosen config hosts as profiles under a fresh "Imported"
+    /// folder. Secrets are never read from the config — key passphrases /
+    /// passwords are prompted on first connect per the credential policy.
+    func importSSHHosts(_ hosts: [ImportedSSHHost]) {
+        guard !hosts.isEmpty else { return }
+        let folder = ProfileFolder(name: uniqueFolderName("Imported"))
+        mutate { library in
+            _ = library.add(.folder(folder))
+            for host in hosts {
+                _ = library.add(.profile(host.makeProfile()), toFolder: folder.id)
+            }
+        }
+        selectedItemID = folder.id
+        let n = hosts.count
+        noticeMessage = "Imported \(n) connection\(n == 1 ? "" : "s") into “\(folder.name)”."
+    }
+
+    /// `~/.ssh/config`, overridable via `FERRY_SSH_CONFIG` for tests.
+    static var sshConfigURL: URL {
+        if let override = ProcessInfo.processInfo.environment["FERRY_SSH_CONFIG"] {
+            return URL(fileURLWithPath: override)
+        }
+        return FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".ssh/config")
+    }
+
+    private func uniqueFolderName(_ base: String) -> String {
+        let existing = Set(library.allFolders.map(\.name))
+        guard existing.contains(base) else { return base }
+        var suffix = 2
+        while existing.contains("\(base) \(suffix)") { suffix += 1 }
+        return "\(base) \(suffix)"
     }
 
     /// Saves the editor sheet. Returns false (with errorMessage set) when the
@@ -343,6 +420,7 @@ final class ConnectionManagerModel {
                                                         username: profile.username,
                                                         credential: credential,
                                                         hostKeyStore: hostKeyStore,
+                                                        systemKnownHosts: systemKnownHosts,
                                                         sessionTrusted: sessionTrusted,
                                                         displayName: profile.name)
                 let session = BrowserSession(profile: profile, sftp: sftp, bookmarks: nil)

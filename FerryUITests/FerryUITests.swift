@@ -5,12 +5,13 @@ import XCTest
 /// so user data is never touched (docs/TESTING.md).
 final class FerryUITests: XCTestCase {
     @MainActor
-    private func launchIsolatedApp() -> XCUIApplication {
+    private func launchIsolatedApp(extraEnvironment: [String: String] = [:]) -> XCUIApplication {
         let app = XCUIApplication()
         let dataDir = NSTemporaryDirectory() + "ferry-uitests-\(UUID().uuidString)"
         try? FileManager.default.createDirectory(atPath: dataDir, withIntermediateDirectories: true)
         app.launchEnvironment["FERRY_DATA_DIR"] = dataDir
         app.launchEnvironment["FERRY_KEYCHAIN_SERVICE"] = "com.gfragos.Ferry.uitests"
+        for (key, value) in extraEnvironment { app.launchEnvironment[key] = value }
         app.launch()
         return app
     }
@@ -266,5 +267,48 @@ final class FerryUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["prod-web-01"].firstMatch.waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["deploy@203.0.113.14:22"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["detail.connect"].exists)
+    }
+
+    /// M11 checkpoint B: importing from `~/.ssh/config` (pointed at a fixture via
+    /// FERRY_SSH_CONFIG) surfaces the parsed hosts in a checklist and adds the
+    /// chosen ones to the sidebar under an "Imported" folder.
+    @MainActor
+    func testImportFromSSHConfigAddsProfiles() throws {
+        let configPath = NSTemporaryDirectory() + "ferry-ssh-config-\(UUID().uuidString)"
+        let config = """
+        Host *
+            User default
+
+        Host imported-box
+            HostName imported.example.com
+            User admin
+            Port 2222
+        """
+        try config.write(toFile: configPath, atomically: true, encoding: .utf8)
+
+        let app = launchIsolatedApp(extraEnvironment: ["FERRY_SSH_CONFIG": configPath])
+        XCTAssertTrue(app.staticTexts["Connections"].waitForExistence(timeout: 10))
+
+        // Drive the canonical entry: File ▸ Import from SSH Config… (the toolbar
+        // control mirrors this but can fold into the toolbar overflow).
+        app.menuBars.menuBarItems["File"].click()
+        let configItem = app.menuItems["Import from SSH Config…"]
+        XCTAssertTrue(configItem.waitForExistence(timeout: 5))
+        configItem.click()
+
+        // The checklist appears with the concrete host checked (wildcard block
+        // skipped). The host name is folded into the checkbox's label.
+        let importButton = app.buttons["sshImport.import"]
+        XCTAssertTrue(importButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.checkBoxes.containing(
+            NSPredicate(format: "label CONTAINS %@", "imported-box")).firstMatch.exists)
+        importButton.click()
+
+        // Success notice (dismiss; OK is duplicated on the Touch Bar), then the
+        // folder + profile appear in the sidebar.
+        let ok = app.windows.buttons["OK"].firstMatch
+        if ok.waitForExistence(timeout: 5) { ok.click() }
+        XCTAssertTrue(app.staticTexts["Imported"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["imported-box"].firstMatch.waitForExistence(timeout: 5))
     }
 }

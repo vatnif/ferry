@@ -227,3 +227,38 @@ incompatible type. LICENSING.md updated.
 **Sandbox.** Reading `~/.ssh` key files (and, in checkpoint B, `known_hosts`/`config`) is
 not permitted in the App Store sandbox by default; that access will route through the
 security-scoped bookmark store / a file-import grant. The Direct build reads freely.
+
+## 2026-07-17 — ADR-018: known_hosts pre-trust + `~/.ssh/config` import (M11 checkpoint B)
+**known_hosts pre-trust.** The user's `~/.ssh/known_hosts` is read (never written) as an
+extra trust source so hosts they already know skip the TOFU prompt. `KnownHostsFile` is a
+**read-only** value type separate from `HostKeyStore` — this keeps `HostKeyStore`'s
+invariant ("Ferry writes only its own plaintext file") intact. It parses both plaintext
+specs (`host`, `[host]:port`, comma lists) and **hashed** entries
+(`|1|<b64 salt>|<b64 hash>`), matching hashed hosts by recomputing
+`HMAC-SHA1(key: salt, msg: hostspec)` via swift-crypto — pinned against `ssh-keygen -H`
+vectors in tests. `SFTPSource.connect` unions its keys into the TOFU validator's trusted
+set **and** into the changed-vs-unknown decision, so a system-known host offering a new key
+is correctly flagged CHANGED, not unknown. The file text is frozen in `Parameters` at
+connect so auto-reconnect re-validates identically. The app re-reads the file at each
+connect (picks up hosts added via `ssh`); overridable via `FERRY_SYSTEM_KNOWN_HOSTS`.
+**`~/.ssh/config` import.** `SSHConfigParser` lifts concrete `Host` blocks into
+`ConnectionProfile`s (SFTP; `HostName`→host with alias fallback, `Port`, `User`,
+`IdentityFile`→`.publicKey` tilde-expanded). Deliberately narrow: wildcard/negated patterns
+are skipped (they're defaults, not endpoints), `Match` and other non-`Host` blocks end the
+current host, and `ProxyJump`/`ProxyCommand` are ignored (imported without a tunnel). No
+secrets are read from the config — passphrases/passwords follow the credential policy
+(prompted on first connect). Imported hosts land under a fresh "Imported" folder.
+Overridable via `FERRY_SSH_CONFIG`.
+**UI sign-off (rule 3).** The import flow is **net-new UI, not in the approved mockups** —
+signed off by the user (2026-07-17): a sidebar-toolbar Import menu → a checklist sheet
+(`SSHImportSheet`). It is mirrored by a **File ▸ Import from SSH Config…** menu command
+(⌘⇧I), which is the canonical entry — SwiftUI folds the sidebar toolbar's third control
+into the standard toolbar overflow (››) on narrow windows, and every toolbar action should
+have a menu-bar equivalent anyway. Success/empty outcomes surface via a neutral notice
+alert (distinct from the "Not yet available" stub-feature alert).
+**Sandbox.** Same as ADR-017: the Direct build reads `~/.ssh/known_hosts` and
+`~/.ssh/config` freely; the App Store build resolves the sandbox container home (no
+`~/.ssh` there), so both features **degrade gracefully to empty** — pre-trust simply
+doesn't apply (TOFU behaves as before) and import reports nothing found. Routing `~/.ssh`
+access through the bookmark store in the App Store build is deferred to the broader sandbox
+work (M17).

@@ -55,6 +55,16 @@ struct SidebarView: View {
                 .accessibilityIdentifier("sidebar.newFolder")
                 .help("New Folder")
             }
+            ToolbarItem {
+                Menu {
+                    Button("From SSH Config…") { model.beginSSHConfigImport() }
+                        .accessibilityIdentifier("sidebar.importSSHConfig")
+                } label: {
+                    Label("Import", systemImage: "square.and.arrow.down")
+                }
+                .accessibilityIdentifier("sidebar.import")
+                .help("Import Connections")
+            }
         }
     }
 
