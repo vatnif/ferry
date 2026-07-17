@@ -123,20 +123,61 @@ final class SFTPSourceTests: XCTestCase {
         XCTAssertEqual(remote, local, "downloaded bytes must match the seeded file exactly")
     }
 
-    func testMutationsReportUnsupportedUntilTheirMilestone() async throws {
-        // delete + openWrite became real in M8, createDirectory in M9
-        // (folder transfers); rename + setPermissions land in M10.
-        await XCTAssertThrowsErrorAsync(
-            try await self.source.rename(from: "/upload/a", to: "/upload/b")) {
-            guard case .unsupported = $0 as? FileSystemSourceError else {
-                return XCTFail("expected .unsupported, got \($0)")
-            }
+    // MARK: Mutations (M10) — writable "/upload" only (atmoz/sftp chroot)
+
+    /// Creates a file under /upload with the given bytes, replacing any leftover
+    /// from a prior run.
+    private func seedUploadFile(_ path: String, contents: String = "seed") async throws {
+        try? await source.delete(at: path)
+        let handle = try await source.openWrite(at: path, offset: 0)
+        try await handle.write(Data(contents.utf8))
+        try await handle.close()
+    }
+
+    func testRenameMovesFileAndRefusesClobber() async throws {
+        let src = "/upload/rename-src.txt"
+        let dst = "/upload/rename-dst.txt"
+        let other = "/upload/rename-other.txt"
+        try await seedUploadFile(src)
+
+        try await source.rename(from: src, to: dst)
+        _ = try await source.stat(path: dst)
+        await XCTAssertThrowsErrorAsync(try await self.source.stat(path: src)) {
+            XCTAssertEqual($0 as? FileSystemSourceError, .notFound(path: src))
         }
-        await XCTAssertThrowsErrorAsync(
-            try await self.source.setPermissions(FilePermissions(rawMode: 0o644), at: "/upload/x")) {
-            guard case .unsupported = $0 as? FileSystemSourceError else {
-                return XCTFail("expected .unsupported, got \($0)")
-            }
+
+        // Renaming onto an existing path is refused (matches LocalFileSource).
+        try await seedUploadFile(other)
+        await XCTAssertThrowsErrorAsync(try await self.source.rename(from: dst, to: other)) {
+            XCTAssertEqual($0 as? FileSystemSourceError, .alreadyExists(path: other))
         }
+
+        try? await source.delete(at: dst)
+        try? await source.delete(at: other)
+    }
+
+    func testRenameMissingSourceThrowsNotFound() async throws {
+        let missing = "/upload/rename-missing-src.txt"
+        let target = "/upload/rename-missing-dst.txt"
+        try? await source.delete(at: missing)
+        try? await source.delete(at: target)
+        await XCTAssertThrowsErrorAsync(try await self.source.rename(from: missing, to: target)) {
+            XCTAssertEqual($0 as? FileSystemSourceError, .notFound(path: missing))
+        }
+    }
+
+    func testSetPermissionsRoundTrip() async throws {
+        let path = "/upload/chmod-test.txt"
+        try await seedUploadFile(path)
+
+        try await source.setPermissions(FilePermissions(rawMode: 0o600), at: path)
+        let locked = try await source.stat(path: path)
+        XCTAssertEqual((locked.permissions?.rawMode ?? 0) & 0o777, 0o600)
+
+        try await source.setPermissions(FilePermissions(rawMode: 0o644), at: path)
+        let opened = try await source.stat(path: path)
+        XCTAssertEqual((opened.permissions?.rawMode ?? 0) & 0o777, 0o644)
+
+        try? await source.delete(at: path)
     }
 }

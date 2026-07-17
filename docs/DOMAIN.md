@@ -80,13 +80,19 @@ this document, not the other way round.*
 
 - Local pane left, remote right; both are the same browser component (sortable columns,
   clickable breadcrumbs, hidden-files toggle, type-to-filter). Remote adds permissions +
-  owner columns; chmod editor from context menu (M10).
+  owner columns; chmod editor from the row context menu (rwx grid + octal field).
 - **Sync browsing** (approved M0 addition): per-tab "Linked" toggle. On enable, both
   current paths become anchor roots; navigation mirrors relative paths. Missing folder on
   the other side ⇒ that pane stays, path bar flashes, link persists. Toggle off ⇒
   independent again.
-- Drag & drop: between panes ⇒ queue transfer; from/to Finder ⇒ same. Double-click:
-  folders navigate; files on local Quick Look, on remote (M10+) download-and-Quick-Look.
+- Drag & drop: between panes ⇒ queue transfer; from Finder ⇒ same (drop files onto a
+  pane to upload/copy); local files drag out to Finder. Remote→Finder promise drag is
+  backlogged. Double-click: folders navigate; files on local Quick Look, on remote
+  download-and-Quick-Look (streamed to a temp file first).
+- File ops (row context menu): rename (in place, rejects "/" and clobbering an existing
+  name), delete (confirms; recursive for folders; no Trash — items are removed, not moved),
+  chmod (both panes). Rename refuses to overwrite; replacements go through the conflict
+  dialog, never a silent clobber.
 
 ## Tunnels (M14)
 

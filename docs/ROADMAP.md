@@ -54,5 +54,7 @@ Workflow per milestone: implement → unit + integration tests pass → docs upd
 6. Embedded terminal (SwiftTerm)
 7. WebDAV + S3 backends; remote↔remote transfers
 8. Menu-bar quick-upload droplet; `sftp://` URL handler; Shortcuts/AppleScript
+   - Remote→Finder drag-out via `NSFilePromiseProvider` (download-on-drop) — surfaced in
+     M10; local→Finder and Finder→pane already ship.
 9. Expanded help: searchable/contextual (per-screen ? buttons), troubleshooting
    guides (host keys, firewalls/passive FTP, permissions), localized

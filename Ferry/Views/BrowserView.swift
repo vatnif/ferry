@@ -18,13 +18,15 @@ struct BrowserView: View {
         @Bindable var session = session
         VStack(spacing: 0) {
             HSplitView {
-                FileBrowserPane(session: session, pane: session.local) { items, sourcePane in
-                    transfer(items, from: sourcePane)
-                }
+                FileBrowserPane(
+                    session: session, pane: session.local,
+                    onDropItems: { items, sourcePane in transfer(items, from: sourcePane) },
+                    onDropURLs: { urls, destinationPane in importFiles(urls, into: destinationPane) })
                 .frame(minWidth: 300)
-                FileBrowserPane(session: session, pane: session.remote) { items, sourcePane in
-                    transfer(items, from: sourcePane)
-                }
+                FileBrowserPane(
+                    session: session, pane: session.remote,
+                    onDropItems: { items, sourcePane in transfer(items, from: sourcePane) },
+                    onDropURLs: { urls, destinationPane in importFiles(urls, into: destinationPane) })
                 .frame(minWidth: 300)
             }
             if !session.queue.rows.isEmpty {
@@ -216,6 +218,16 @@ struct BrowserView: View {
         guard !items.isEmpty else { return }
         Task {
             let conflicts = await session.stageTransfers(items, from: pane)
+            if !conflicts.isEmpty { pendingConflicts = conflicts }
+        }
+    }
+
+    /// Files dropped from Finder (or dragged from the local pane) into
+    /// `destinationPane` — upload to the server or copy locally (M10).
+    func importFiles(_ urls: [URL], into destinationPane: PaneModel) {
+        guard !urls.isEmpty else { return }
+        Task {
+            let conflicts = await session.importFiles(urls, into: destinationPane)
             if !conflicts.isEmpty { pendingConflicts = conflicts }
         }
     }

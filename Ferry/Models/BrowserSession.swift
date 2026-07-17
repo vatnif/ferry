@@ -92,6 +92,83 @@ final class PaneModel: Identifiable {
         }
     }
 
+    // MARK: File operations (M10)
+
+    /// Renames `item` in place (same directory). Rejects empty names, names
+    /// containing "/", and no-ops when unchanged. On success reloads the pane.
+    func rename(_ item: FileItem, to newName: String) async {
+        let trimmed = newName.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, trimmed != item.name else { return }
+        guard !trimmed.contains("/") else {
+            errorMessage = "A file name can't contain “/”."
+            return
+        }
+        let parent = (item.path as NSString).deletingLastPathComponent
+        let destination = PathUtilities.join(parent, trimmed)
+        do {
+            try await source.rename(from: item.path, to: destination)
+            await reload()
+        } catch {
+            errorMessage = Self.describe(error, path: item.path)
+        }
+    }
+
+    /// Deletes every item (directories recursively — the UI confirms first).
+    /// Continues past a failure so one bad item doesn't strand the rest; the
+    /// last error is surfaced and the pane reloads to reflect what remains.
+    func delete(_ items: [FileItem]) async {
+        var failure: Error?
+        var failedPath = ""
+        for item in items {
+            do {
+                try await source.delete(at: item.path)
+            } catch {
+                failure = error
+                failedPath = item.path
+            }
+        }
+        await reload()
+        if let failure { errorMessage = Self.describe(failure, path: failedPath) }
+    }
+
+    /// Applies POSIX permissions to `item` (chmod editor). Reloads so the
+    /// Perms column reflects the change.
+    func applyPermissions(_ permissions: FilePermissions, to item: FileItem) async {
+        do {
+            try await source.setPermissions(permissions, at: item.path)
+            await reload()
+        } catch {
+            errorMessage = Self.describe(error, path: item.path)
+        }
+    }
+
+    /// Resolves a local file URL suitable for Quick Look. Local files preview
+    /// in place; remote files are streamed into a temp file first
+    /// (DOMAIN.md → download-and-Quick-Look). Directories aren't previewed.
+    func previewURL(for item: FileItem) async -> URL? {
+        guard !item.isDirectory else { return nil }
+        if kind == .local {
+            return URL(fileURLWithPath: item.path)
+        }
+        do {
+            let directory = FileManager.default.temporaryDirectory
+                .appendingPathComponent("FerryQuickLook", isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let destination = directory.appendingPathComponent(item.name)
+            try? FileManager.default.removeItem(at: destination)
+            FileManager.default.createFile(atPath: destination.path, contents: nil)
+            let handle = try FileHandle(forWritingTo: destination)
+            defer { try? handle.close() }
+            for try await chunk in try await source.openRead(at: item.path, offset: 0) {
+                try handle.write(contentsOf: chunk)
+            }
+            return destination
+        } catch {
+            errorMessage = Self.describe(error, path: item.path)
+            return nil
+        }
+    }
+
     static func describe(_ error: Error, path: String) -> String {
         guard let sourceError = error as? FileSystemSourceError else {
             return error.localizedDescription
@@ -312,6 +389,37 @@ final class BrowserSession {
                 direction: pane.kind == .local ? .upload : .download,
                 kind: item.isDirectory ? .directory : .file,
                 source: pane.source, sourcePath: item.path,
+                destination: destinationPane.source,
+                destinationPath: Self.join(destinationPane.path, item.name),
+                displayName: item.name)
+            if (try? await destinationPane.source.stat(path: request.destinationPath)) != nil {
+                conflicts.append(request)
+            } else {
+                queue.enqueue(request)
+            }
+        }
+        return conflicts
+    }
+
+    /// Enqueues transfers of files dropped from Finder (or dragged from the
+    /// local pane, which vends file URLs) into `destinationPane`'s directory.
+    /// Uploads when the destination is remote, local copies otherwise. Skips a
+    /// URL already sitting in the destination directory (a no-op self-drop).
+    /// Conflicting names are returned for the same per-file ask dialog as
+    /// `stageTransfers` (DOMAIN.md).
+    func importFiles(_ urls: [URL], into destinationPane: PaneModel) async -> [TransferRequest] {
+        let localSource = local.source
+        let direction: TransferRequest.Direction = destinationPane.kind == .remote ? .upload : .download
+        var conflicts: [TransferRequest] = []
+        for url in urls {
+            let sourcePath = url.path
+            let parent = (sourcePath as NSString).deletingLastPathComponent
+            if destinationPane.kind == .local, parent == destinationPane.path { continue }
+            guard let item = try? await localSource.stat(path: sourcePath) else { continue }
+            let request = TransferRequest(
+                direction: direction,
+                kind: item.isDirectory ? .directory : .file,
+                source: localSource, sourcePath: sourcePath,
                 destination: destinationPane.source,
                 destinationPath: Self.join(destinationPane.path, item.name),
                 displayName: item.name)

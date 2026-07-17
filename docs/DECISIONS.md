@@ -140,3 +140,34 @@ being killed mid-transfer must be big enough (32 MiB, seeded server-side with `d
 the transfer is still running when the kill lands. (d) A `for await` deadline check never
 fires on a silent stream — test timeouts must race a timer task, not test dates on
 event arrival (the first M9 run hung forever on this).
+
+## 2026-07-17 — ADR-015: File operations & Finder integration (M10)
+**SFTP mutations completed.** `SFTPSource.rename` (Citadel `sftp.rename`) refuses to
+clobber an existing destination (`.alreadyExists`, matching LocalFileSource) so the
+conflict flow — not a silent overwrite — decides replacements; `setPermissions` sends a
+SETSTAT with the lower-12 mode bits. The FileSystemSource mutation surface is now fully
+live on both backends.
+**Operations live on PaneModel**, not BrowserSession: rename/delete/applyPermissions/
+previewURL act on one pane's own source and reload it, so the cross-pane concerns
+(transfers, sync browsing) stay in BrowserSession. Delete continues past a per-item
+failure and surfaces the last error, so one bad item doesn't strand a multi-select.
+**Delete confirms, never trashes.** Both panes confirm before deleting (recursive folder
+warning when a folder is in the set); the wording is explicit that items are removed on
+this Mac / on the server, not moved to a Trash (there is none over SFTP).
+**Quick Look.** Local files preview in place via `.quickLookPreview`; remote files are
+streamed to a temp file (`FerryQuickLook/`) first, then previewed (DOMAIN.md
+download-and-Quick-Look). Double-clicking a file previews it; folders still navigate.
+**chmod editor** is a sheet with a 3×3 rwx grid kept in sync with an editable octal
+field; available on both panes (local and remote both implement setPermissions).
+**Finder drag & drop — the drag-payload split.** Local items now vend a file `URL`
+(Transferable) instead of the M8 string payload, so they drag to Finder for free AND
+drop onto the remote pane as an upload; remote items keep the `ferryitem|…` string
+payload (no file URL exists for a remote path) and drop onto the local pane as a
+download. Each pane therefore carries two `.dropDestination`s: `String` (inter-pane from
+the remote side) and `URL` (Finder files + local-pane items). A URL whose parent is
+already the destination directory is skipped (self-drop no-op). The icon-only drag handle
+from ADR-013 is preserved. **Deferred:** dragging a *remote* item out to Finder needs an
+`NSFilePromiseProvider` (download-on-drop) — backlogged, not in M10.
+**Context-menu label "Delete…".** The single-item delete uses an ellipsis both because it
+opens a confirmation (macOS convention) and because AppKit injects a standard Edit▸Delete
+menu item — the ellipsis keeps the context item uniquely addressable for XCUITest.

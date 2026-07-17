@@ -10,11 +10,16 @@ their written form. Any change requires user approval + an ADR. Approved 2026-07
   transfer queue dock with Upload/Download + drag between panes (M8), and M9's
   robustness set — pause/resume buttons, RESUMED/PAUSED badges, folder transfers,
   per-file conflict dialog with Replace All/Skip All, reconnect states in the status
-  bar (amber "Reconnecting…", red "Connection lost" + Reconnect link) — are live.
-  Notes: drag handle is the file icon (whole-row drag breaks double-click, ADR-013).
-  Pending: file context menus/Quick Look (M10), tabs (M16), tunnel count in status bar
-  (M14), within-folder drag reorder (M16). Status bar shows first-listing round-trip
-  instead of continuous latency for now.
+  bar (amber "Reconnecting…", red "Connection lost" + Reconnect link) — are live. M10's
+  file operations are live too: per-row context menu (Quick Look · Upload/Download ·
+  Rename… · Permissions… · Delete…), rename alert, delete confirmation, chmod editor
+  sheet, Quick Look (local in place / remote via temp download), and Finder drag & drop
+  (drop files onto a pane to transfer; drag local files out to Finder).
+  Notes: drag handle is the file icon (whole-row drag breaks double-click, ADR-013); local
+  items vend a file URL, remote items a string payload (ADR-015). Pending: tabs (M16),
+  tunnel count in status bar (M14), within-folder drag reorder (M16), remote→Finder
+  promise drag (backlog). Status bar shows first-listing round-trip instead of continuous
+  latency for now.
 - Screen 2 (connection sheet): live since M4; "Test Connection" is a TCP probe until a
   protocol-level test replaces it; tunnels row is a placeholder until M14.
 - Screen 3 (host keys): pending M11. Screen 4 (tunnels): pending M14. Screen 5

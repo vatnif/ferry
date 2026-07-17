@@ -17,7 +17,7 @@
 | M7 | Dual-pane browser UI | done (committed c23cf04) |
 | M8 | TransferEngine + queue UI | done (committed b1c9394) |
 | M9 | Resume & robustness | done (committed 388de0d) |
-| M10 | File operations | todo |
+| M10 | File operations | **awaiting review** |
 | M11 | Key auth & host trust | todo |
 | M12 | FTP/FTPS via libcurl | todo |
 | M13 | SCP | todo |
@@ -29,7 +29,31 @@
 
 Backlog (post-v1): see `docs/ROADMAP.md`.
 
-## Current state of the code (after M9)
+## Current state of the code (after M10)
+
+- **The file-operation surface is complete.** `SFTPSource` gained `rename` (refuses to
+  clobber an existing destination → `.alreadyExists`, matching LocalFileSource) and
+  `setPermissions` (SETSTAT) — the FileSystemSource mutation contract is now fully live on
+  both backends (ADR-015).
+- App: each pane row has a context menu (Quick Look · Upload/Download · Rename… ·
+  Permissions… · Delete…). Rename is an inline alert; Delete confirms with a recursive
+  folder warning and states items are removed on this Mac / on the server (no Trash over
+  SFTP). Operations live on `PaneModel` (rename/delete/applyPermissions/previewURL) and
+  reload the pane; multi-select delete continues past a per-item failure.
+- **Quick Look**: local files preview in place (`.quickLookPreview`); remote files stream
+  to a temp file then preview (double-click a file previews, folders navigate).
+- **chmod editor** (`PermissionsEditorSheet`): 3×3 rwx grid synced to an editable octal
+  field; available on both panes.
+- **Finder drag & drop**: local items now vend a file `URL` (drag to Finder + drop onto
+  the remote pane = upload); remote items keep the string payload (drop onto local =
+  download); Finder files dropped onto a pane enqueue a transfer (upload/copy). Each pane
+  carries a `String` and a `URL` drop destination. Remote→Finder promise drag is
+  backlogged (ADR-015).
+- Tests: 114 kit tests + 5 XCUITests, all green — incl. SFTP rename (move, refuse-clobber,
+  missing-source) + chmod round-trip against Docker sshd, and a UI rename+delete walk-
+  through via the row context menu.
+
+## Earlier state (after M9)
 
 - **Transfers are robust.** `TransferEngine` (ADR-014): downloads stage into
   `<name>.ferrypart` and atomically rename on completion; valid partials resume
@@ -169,8 +193,11 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
 
 ## Next steps
 
-1. M10: file operations — rename, delete UI, chmod editor, Quick Look, Finder drag &
-   drop (SFTP mkdir already done in M9).
+1. M10 review → commit once approved.
+2. M11: key auth + host-key TOFU UI (screen 3), known_hosts + `~/.ssh/config` import.
+   Note: `SFTPSource` still uses `hostKeyValidator: .acceptAnything()` (TODO in the
+   source) — M11 must replace it before shipping.
+3. Backlog surfaced in M10: remote→Finder file-promise drag (`NSFilePromiseProvider`).
 
 ## Session log
 
@@ -182,4 +209,14 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
 - **2026-07-05 (cont.)** — M6 spike: Citadel 0.12.1 added (licenses recorded first), SFTPSource read-only implemented and validated against Docker sshd. Verdict: adopt Citadel, libssh2 fallback retired (ADR-011). Two fixes during spike: error normalization (raw Status thrown), @preconcurrency import for Swift 6. 69 tests green. M6 approved & committed (3c9567a).
 - **2026-07-05 (cont.)** — M7 built: BrowserSession/PaneModel (ADR-012), FileBrowserPane + BrowserView per mockup screen 1, connect lifecycle with password prompt, sync browsing (PathUtilities moved to FerryCore for unit-testability). 73 kit tests + 4 UI tests green incl. e2e connect-and-browse. M7 approved & committed (c23cf04).
 - **2026-07-05 (cont.)** — M8 built: TransferEngine + queue dock + SFTP uploads/delete + drag between panes. Debugging saga (all fixed, ADR-013): SFTP writes "hung" → root cause was Docker's root-owned mountpoint making /upload unwritable, masked by a happy-path-only test loop; hardened engine cancellation anyway (immediate cancelled state, force-close handle); fixed chunk-dropping stream buffering; fixed whole-row draggable breaking double-click. 84 kit + 4 UI tests green incl. e2e download through the queue. M8 approved & committed (b1c9394).
+- **2026-07-17** — M10 built: SFTP `rename` + `setPermissions` (completing the mutation
+  surface on both backends); per-row context menu (Quick Look/Upload·Download/Rename/
+  Permissions/Delete); rename alert + delete confirmation (recursive folder warning, no
+  Trash); `PermissionsEditorSheet` chmod grid; Quick Look (local in place, remote via temp
+  download); Finder drag & drop via a drag-payload split (local items vend file URLs, remote
+  items keep the string payload) + a URL drop destination per pane (ADR-015). Remote→Finder
+  promise drag backlogged. Test notes: alert TextFields don't expose identifiers (type into
+  the auto-focused field); alert buttons live under `windows`, not `dialogs` (Touch Bar dup);
+  the context Delete uses "Delete…" to stay unique vs AppKit's Edit▸Delete. 114 kit + 5
+  XCUITests green. Awaiting review.
 - **2026-07-05 (cont.)** — M9 built: `.ferrypart` staging + resume, pause/resume, transient-error retry policy, lazy folder transfers (SFTP mkdir pulled forward), ConnectionSupervisor keep-alive/auto-reconnect, per-file conflict dialog with apply-to-all, reconnect status bar (ADR-014). Test saga: closing the local SSHClient mid-read fatalErrors NIOSSH → kill-mid-transfer tests drop the session server-side (`docker exec pkill`, matching OpenSSH ≥ 9.8 `sshd-session` naming) on a 32 MiB dd-seeded file; first run hung forever because `for await` deadline checks never fire on silent streams → test waits now race a timer. 112 kit + 4 UI tests green. M9 approved & committed (388de0d).

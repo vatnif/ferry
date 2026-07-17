@@ -118,6 +118,74 @@ final class FerryUITests: XCTestCase {
         XCTAssertTrue(connectButton.waitForExistence(timeout: 5))
     }
 
+    /// M10: connect, then rename and delete a file in the LOCAL pane via the
+    /// row context menu. Uses the local pane (no server writes), but still
+    /// exercises the real browser, so a live connection is required.
+    @MainActor
+    func testRenameAndDeleteFileInLocalPane() throws {
+        try XCTSkipUnless(sftpServerUp, "SFTP test server not running — testinfra/start.sh")
+        let workDir = NSTemporaryDirectory() + "ferry-uitests-ops-\(UUID().uuidString)"
+        try FileManager.default.createDirectory(atPath: workDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(atPath: workDir) }
+        let original = workDir + "/target.txt"
+        FileManager.default.createFile(atPath: original, contents: Data("hi".utf8))
+
+        let app = launchIsolatedApp()
+        app.buttons["sidebar.newConnection"].click()
+        let nameField = app.textFields["editor.name"]
+        XCTAssertTrue(nameField.waitForExistence(timeout: 5))
+        nameField.click(); nameField.typeText("docker-sftp")
+        let hostField = app.textFields["editor.host"]
+        hostField.click(); hostField.typeText("127.0.0.1")
+        let portField = app.textFields["editor.port"]
+        portField.click(); portField.typeKey("a", modifierFlags: .command); portField.typeText("2222")
+        let userField = app.textFields["editor.username"]
+        userField.click(); userField.typeText("ferry")
+        let localStartField = app.textFields["editor.localStart"]
+        localStartField.click(); localStartField.typeText(workDir)
+        app.buttons["editor.save"].click()
+
+        let connectButton = app.buttons["detail.connect"]
+        XCTAssertTrue(connectButton.waitForExistence(timeout: 5))
+        connectButton.click()
+        let passwordField = app.secureTextFields["passwordPrompt.password"]
+        XCTAssertTrue(passwordField.waitForExistence(timeout: 5))
+        passwordField.click(); passwordField.typeText("ferrypass")
+        app.buttons["passwordPrompt.connect"].click()
+
+        XCTAssertTrue(app.staticTexts["browser.status.connected"].waitForExistence(timeout: 15))
+
+        // Rename target.txt → renamed.txt via the context menu.
+        let row = app.staticTexts["target.txt"].firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10), "local pane should list the seeded file")
+        row.rightClick()
+        app.menuItems["Rename…"].click()
+        // The alert's text field auto-focuses; select-all and overwrite it.
+        let renameButton = app.windows.buttons["Rename"].firstMatch
+        XCTAssertTrue(renameButton.waitForExistence(timeout: 5))
+        app.typeKey("a", modifierFlags: .command)
+        app.typeText("renamed.txt")
+        renameButton.click()
+
+        XCTAssertTrue(app.staticTexts["renamed.txt"].firstMatch.waitForExistence(timeout: 10),
+                      "renamed file should appear in the pane")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: original),
+                       "the original name should be gone on disk")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: workDir + "/renamed.txt"))
+
+        // Delete renamed.txt via the context menu + confirmation.
+        app.staticTexts["renamed.txt"].firstMatch.rightClick()
+        // "Delete…" (ellipsis) is unique — AppKit's standard Edit▸Delete has none.
+        app.menuItems["Delete…"].click()
+        let deleteButton = app.windows.buttons["Delete"].firstMatch
+        XCTAssertTrue(deleteButton.waitForExistence(timeout: 5))
+        deleteButton.click()
+
+        XCTAssertFalse(app.staticTexts["renamed.txt"].firstMatch.waitForExistence(timeout: 8),
+                       "deleted file should disappear from the pane")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: workDir + "/renamed.txt"))
+    }
+
     @MainActor
     func testCreateConnectionShowsInSidebarAndDetail() throws {
         let app = launchIsolatedApp()

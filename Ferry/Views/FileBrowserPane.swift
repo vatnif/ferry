@@ -1,5 +1,6 @@
 import SwiftUI
 import FerryCore
+import QuickLook
 import UniformTypeIdentifiers
 
 /// Sort/display helpers for table columns (optionals aren't Comparable).
@@ -41,8 +42,18 @@ struct FileBrowserPane: View {
     let pane: PaneModel
     /// Items dragged from the OTHER pane were dropped here (M8 transfers).
     var onDropItems: (([FileItem], PaneModel) -> Void)?
+    /// File URLs dropped from Finder — or dragged from the local pane, which
+    /// vends file URLs — were dropped here (M10). Enqueued as transfers.
+    var onDropURLs: (([URL], PaneModel) -> Void)?
 
-    /// Drag payload: "ferryitem|<kind>|<d/f>|<path>".
+    // File-operation dialogs (M10), scoped to this pane.
+    @State private var renameTarget: FileItem?
+    @State private var renameText = ""
+    @State private var deleteTargets: [FileItem] = []
+    @State private var permissionsTarget: FileItem?
+    @State private var quickLookURL: URL?
+
+    /// Drag payload for REMOTE items (no file URL exists): "ferryitem|<kind>|<d/f>|<path>".
     static func dragPayload(for item: FileItem, in pane: PaneModel) -> String {
         "ferryitem|\(pane.kind == .local ? "local" : "remote")|\(item.isDirectory ? "d" : "f")|\(item.path)"
     }
@@ -59,14 +70,40 @@ struct FileBrowserPane: View {
         .background(Color(nsColor: .textBackgroundColor))
         // Track the focused pane for the toolbar filter + nav buttons.
         .onTapGesture { session.activePaneKind = pane.kind }
+        // Inter-pane drops from the REMOTE side arrive as string payloads…
         .dropDestination(for: String.self) { payloads, _ in
             handleDrop(payloads)
+        }
+        // …while Finder files and local-pane items arrive as file URLs (M10).
+        .dropDestination(for: URL.self) { urls, _ in
+            let files = urls.filter(\.isFileURL)
+            guard !files.isEmpty else { return false }
+            onDropURLs?(files, pane)
+            return true
         }
         .alert("Problem in this pane", isPresented: paneErrorPresented) {
             Button("OK", role: .cancel) { pane.errorMessage = nil }
         } message: {
             Text(pane.errorMessage ?? "")
         }
+        .alert("Rename “\(renameTarget?.name ?? "")”", isPresented: renamePresented) {
+            TextField("New name", text: $renameText)
+                .accessibilityIdentifier("rename.field")
+            Button("Cancel", role: .cancel) { renameTarget = nil }
+            Button("Rename") { commitRename() }
+        }
+        .confirmationDialog(deleteTitle, isPresented: deletePresented, titleVisibility: .visible) {
+            Button(deleteButtonTitle, role: .destructive) { commitDelete() }
+            Button("Cancel", role: .cancel) { deleteTargets = [] }
+        } message: {
+            Text(deleteMessage)
+        }
+        .sheet(item: $permissionsTarget) { target in
+            PermissionsEditorSheet(item: target) { permissions in
+                Task { await pane.applyPermissions(permissions, to: target) }
+            }
+        }
+        .quickLookPreview($quickLookURL)
     }
 
     private var paneErrorPresented: Binding<Bool> {
@@ -146,10 +183,10 @@ struct FileBrowserPane: View {
             TableColumn("Name", value: \.name) { item in
                 HStack(spacing: 6) {
                     // Drag handle is the icon only: a whole-row .draggable
-                    // swallows double-clicks and breaks folder navigation.
-                    Image(systemName: item.iconName)
-                        .foregroundStyle(item.isDirectory ? Color.accentColor : Color.secondary)
-                        .draggable(Self.dragPayload(for: item, in: pane))
+                    // swallows double-clicks and breaks folder navigation
+                    // (ADR-013). Local items vend a file URL so they drag to
+                    // Finder too (M10); remote items vend the string payload.
+                    icon(for: item)
                     Text(item.name)
                 }
                 .opacity(item.isHidden ? 0.55 : 1)
@@ -185,17 +222,106 @@ struct FileBrowserPane: View {
             }
             .width(min: 60, ideal: 80)
         }
-        .contextMenu(forSelectionType: FileItem.ID.self) { _ in
-            // File operations (rename/delete/chmod/Quick Look) arrive in M10.
+        .contextMenu(forSelectionType: FileItem.ID.self) { ids in
+            fileContextMenu(for: pane.items.filter { ids.contains($0.id) })
         } primaryAction: { ids in
             guard let id = ids.first,
                   let item = pane.items.first(where: { $0.id == id }) else { return }
             if item.isDirectory {
                 session.navigate(pane, to: item.path)
             } else {
-                model.infoMessage = "Opening files with Quick Look arrives in Milestone 10 — use Upload/Download or drag to transfer."
+                quickLook(item)
             }
         }
+    }
+
+    /// Icon = drag handle. Local items carry a file URL (Finder + upload to
+    /// the remote pane); remote items carry the string payload (download).
+    @ViewBuilder
+    private func icon(for item: FileItem) -> some View {
+        let image = Image(systemName: item.iconName)
+            .foregroundStyle(item.isDirectory ? Color.accentColor : Color.secondary)
+        if pane.kind == .local {
+            image.draggable(URL(fileURLWithPath: item.path))
+        } else {
+            image.draggable(Self.dragPayload(for: item, in: pane))
+        }
+    }
+
+    // MARK: Context menu + file operations (M10)
+
+    @ViewBuilder
+    private func fileContextMenu(for items: [FileItem]) -> some View {
+        if let item = items.first, items.count == 1 {
+            if !item.isDirectory {
+                Button("Quick Look") { quickLook(item) }
+                Divider()
+            }
+            Button(transferVerb) { onDropItems?(items, pane) }
+            Button("Rename…") { startRename(item) }
+            Button("Permissions…") { permissionsTarget = item }
+            Divider()
+            Button("Delete…", role: .destructive) { deleteTargets = items }
+        } else if !items.isEmpty {
+            Button("\(transferVerb) \(items.count) Items") { onDropItems?(items, pane) }
+            Divider()
+            Button("Delete \(items.count) Items…", role: .destructive) { deleteTargets = items }
+        }
+    }
+
+    /// Upload from the local pane, download from the remote pane — both send
+    /// to the opposite pane's current directory via `onDropItems`.
+    private var transferVerb: String { pane.kind == .local ? "Upload" : "Download" }
+
+    private func quickLook(_ item: FileItem) {
+        session.activePaneKind = pane.kind
+        Task {
+            if let url = await pane.previewURL(for: item) { quickLookURL = url }
+        }
+    }
+
+    private func startRename(_ item: FileItem) {
+        renameTarget = item
+        renameText = item.name
+    }
+
+    private func commitRename() {
+        guard let target = renameTarget else { return }
+        let newName = renameText
+        renameTarget = nil
+        Task { await pane.rename(target, to: newName) }
+    }
+
+    private func commitDelete() {
+        let items = deleteTargets
+        deleteTargets = []
+        Task { await pane.delete(items) }
+    }
+
+    private var renamePresented: Binding<Bool> {
+        Binding(get: { renameTarget != nil }, set: { if !$0 { renameTarget = nil } })
+    }
+
+    private var deletePresented: Binding<Bool> {
+        Binding(get: { !deleteTargets.isEmpty }, set: { if !$0 { deleteTargets = [] } })
+    }
+
+    private var deleteTitle: String {
+        if deleteTargets.count == 1 { return "Delete “\(deleteTargets[0].name)”?" }
+        return "Delete \(deleteTargets.count) items?"
+    }
+
+    private var deleteButtonTitle: String {
+        deleteTargets.count == 1 ? "Delete" : "Delete \(deleteTargets.count) Items"
+    }
+
+    private var deleteMessage: String {
+        let hasFolder = deleteTargets.contains(where: \.isDirectory)
+        let scope = pane.kind == .local ? "on this Mac" : "on the server"
+        if hasFolder {
+            return "Folders are deleted with all their contents. This can't be undone — the items are removed \(scope), not moved to a Trash."
+        }
+        return "This can't be undone — the item\(deleteTargets.count == 1 ? " is" : "s are") removed \(scope), not moved to a Trash."
     }
 
     /// Accepts drops originating from the opposite pane only.

@@ -10,8 +10,8 @@ public enum RemoteSourceError: Error, Equatable {
 }
 
 /// FileSystemSource over SFTP via Citadel (ADR-011). Read side since M6,
-/// writes since M8, mkdir + reconnect support since M9; rename/chmod land
-/// in M10 and throw `.unsupported` until then.
+/// writes since M8, mkdir + reconnect support since M9, rename + chmod
+/// since M10 — the full mutation surface is now live.
 ///
 /// Host keys are currently accepted blindly — M11 replaces the validator
 /// with the TOFU flow (HostKeyStore + prompt, DOMAIN.md → Host key trust).
@@ -163,7 +163,7 @@ public actor SFTPSource: FileSystemSource {
         }
     }
 
-    // MARK: Write side (M8) + mkdir (M9) — rename/setPermissions follow in M10
+    // MARK: Write side (M8) + mkdir (M9)
 
     public func openWrite(at path: String, offset: Int64) async throws -> any FileWriteHandle {
         guard offset >= 0 else { throw FileSystemSourceError.invalidOffset(offset) }
@@ -223,14 +223,26 @@ public actor SFTPSource: FileSystemSource {
         }
     }
 
-    // MARK: Mutations — deferred milestones
+    // MARK: Mutations (rename + chmod, M10)
 
+    /// Rename or move within the source. Refuses to clobber an existing
+    /// destination (matches LocalFileSource: `.alreadyExists`) — the UI's
+    /// conflict flow, not a silent overwrite, decides replacements.
     public func rename(from sourcePath: String, to destinationPath: String) async throws {
-        throw FileSystemSourceError.unsupported(operation: "SFTP rename (M10)")
+        if (try? await stat(path: destinationPath)) != nil {
+            throw FileSystemSourceError.alreadyExists(path: destinationPath)
+        }
+        try await mapped(path: sourcePath) {
+            try await self.sftp.rename(at: sourcePath, to: destinationPath)
+        }
     }
 
     public func setPermissions(_ permissions: FilePermissions, at path: String) async throws {
-        throw FileSystemSourceError.unsupported(operation: "SFTP setPermissions (M10)")
+        var attributes = SFTPFileAttributes()
+        attributes.permissions = UInt32(permissions.rawMode)
+        try await mapped(path: path) {
+            try await self.sftp.setAttributes(at: path, to: attributes)
+        }
     }
 
     // MARK: Internals

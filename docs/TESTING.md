@@ -75,6 +75,20 @@ for changed-key-detection tests.
   SSHClient mid-read (NIOSSH fatalError); test timeouts must race a timer, not check
   deadlines on event arrival.
 
+## M10 additions (114 kit tests + 5 UI, all green)
+
+- `FerryIntegrationTests/SFTPSourceTests` (Docker SFTP): rename moves a file and refuses
+  to clobber an existing destination (`.alreadyExists`); rename of a missing source →
+  `.notFound`; `setPermissions` round-trip (0o600 → 0o644, verified via stat). All under
+  the writable `/upload` chroot, self-seeding + cleaning to stay rerunnable. (The old
+  "mutations report unsupported" test was retired — the mutation surface is now complete.)
+- `FerryUITests/testRenameAndDeleteFileInLocalPane` (Docker SFTP): connect, then rename
+  and delete a seeded file in the local pane via the row context menu. XCUITest gotchas
+  hit here (ADR-015): alert TextFields don't expose accessibility identifiers — type into
+  the auto-focused field; alert buttons live under `app.windows`, not `app.dialogs` (a
+  Touch Bar duplicate otherwise trips `firstMatch`); the context Delete is labelled
+  "Delete…" to stay unique against AppKit's standard Edit▸Delete menu item.
+
 ## Suite inventory (M1–M8)
 
 - `FerryCoreTests` (unit): `FerryVersionTests`, `ConnectionProfileTests`,
