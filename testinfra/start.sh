@@ -29,10 +29,12 @@ if [ ! -f fixtures/certs/ftps.key ]; then
   echo "generated fixtures/certs/ftps.{crt,key} (self-signed test cert)"
 fi
 
-docker compose up -d
+# --build so the SCP/exec server (ssh-exec/) reflects any Dockerfile changes;
+# the build is cached, so this is fast when nothing changed.
+docker compose up -d --build
 
 echo "waiting for servers..."
-for port in 2222 2121 2990; do
+for port in 2222 2121 2990 2223; do
   tries=0
   until nc -z 127.0.0.1 "$port" 2>/dev/null; do
     tries=$((tries + 1))
@@ -45,4 +47,4 @@ for port in 2222 2121 2990; do
   done
   echo "  port $port up"
 done
-echo "test servers ready: SFTP on 2222, FTP on 2121, FTPS on 2990 (user: ferry / ferrypass)"
+echo "test servers ready: SFTP on 2222, SSH/SCP on 2223, FTP on 2121, FTPS on 2990 (user: ferry / ferrypass)"

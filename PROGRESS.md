@@ -20,7 +20,7 @@
 | M10 | File operations | done (committed 9cfe66a) |
 | M11 | Key auth & host trust | done (checkpoint A ffd7233, checkpoint B a008639) |
 | M12 | FTP/FTPS via libcurl | done (committed 7223169) |
-| M13 | SCP | todo |
+| M13 | SCP | **awaiting review** |
 | M14 | Tunneling | todo |
 | M15 | Open in Terminal | todo |
 | M16 | Tabs & polish | todo |
@@ -28,6 +28,54 @@
 | M18 | Sale readiness | todo |
 
 Backlog (post-v1): see `docs/ROADMAP.md`.
+
+## Current state of the code (M13 — awaiting review)
+
+- **SCP works end-to-end** over an **SSH exec channel**, reusing the M11 SSH stack
+  (Citadel; host-key TOFU + password/key auth) — ADR-020. New FerryCore `SCPSource`
+  (actor, `FileSystemSource` + `SupervisedConnection`) slots into the generalized
+  `BrowserSession` exactly like `FTPSource` did (M12).
+- **Split surface** (the core mapping problem — the scp wire protocol carries only bytes):
+  **metadata runs POSIX commands over exec** (`pwd`/`ls -la`/`ls -ld`/`mkdir -p`/`rm -rf`/
+  `mv`/`chmod`, all paths single-quoted + `--` against injection; `ls` parsed by the shared
+  Unix `ls -l` parser reused from FTP), and **bytes stream over the classic scp protocol**
+  (`scp -f` download, `scp -t` upload) driven through Citadel's bidirectional `withExec`.
+- **Capability compromises vs SFTP** (documented in DOMAIN.md → SCP): **no transfer resume**
+  — a resumed download re-reads from the start but the stream still begins at `offset`
+  (byte-exact, no bandwidth saving); a resumed upload is rejected (offset > 0 →
+  `.invalidOffset`, so the engine restarts). Upload **buffers to a local temp file** (scp
+  needs the size up front) and **stages to a remote `.ferry-scp-part` renamed into place on
+  success**, so an interrupted upload never poisons the engine's resume. A server that
+  forbids exec (SFTP-only) is detected at connect with a clear message.
+- **withExec error masking** handled: Citadel's `withExec` cleanup (`channel.close()`) throws
+  "Already closed" once the remote scp has exited, masking a thrown error — so neither
+  protocol driver throws through it. The download driver reports via the stream continuation;
+  the upload driver via an out-of-band `UploadOutcome` (explicit `completed` flag so a clean
+  close after success isn't read as failure). Errors are classified from scp `\x01`/`\x02`
+  status messages and drained `stderr`.
+- **Shared SSH connect**: host-key TOFU + auth + error-classification extracted from
+  `SFTPSource` into **`SSHClientFactory`** (+ shared `SSHConnectionParameters`), now used by
+  both SFTP and SCP — one audited home for the security-critical trust decision.
+- **macOS 15+ gate** (user decision 2026-07-18, ADR-020): SCP needs `withExec`
+  (`@available(macOS 15)`) and Citadel exposes no macOS-14 path, so `SCPSource` is
+  `@available(macOS 15)` and the app blocks an SCP connect on macOS 14 with a clear message.
+  **SFTP/FTP/FTPS are unaffected**; the app stays macOS 14. Metadata commands are
+  macOS-14-capable — only byte transfers force the gate.
+- **App**: `ConnectionManagerModel.connect` no longer info-alerts `.scp` — it runs the real
+  SCP path (`startSCPConnection`, same host-key TOFU + password/key credential resolution as
+  SFTP). The editor already offered SCP (SSH auth, port 22), so **no UI changes** — rule 3
+  satisfied without a mockup deviation. Both flavors build (Direct + AppStore).
+- **Test infra**: the milestone brief's assumption (test SCP against atmoz/sftp) was wrong —
+  atmoz forces `internal-sftp` (blocks exec) **and has no scp binary**. Added a purpose-built
+  exec-capable OpenSSH container (`testinfra/ssh-exec`, :2223) with the same creds + client
+  key; `start.sh` now `--build`s it. **Re-run `testinfra/start.sh` after pulling M13.**
+- Tests: **223 kit tests + 9 XCUITests, all green** (+35 kit / +1 UI over M12) — SCP shell-
+  quote/error-mapping unit vectors; a full SCP op suite (list/stat/home/byte-exact 1 MiB
+  download/600 KB round-trip/offset-skip/mkdir/delete/rename/chmod/wrong-password/missing/
+  exec-blocked-server) + engine round-trip, 5-way concurrent uploads, and folder upload
+  against :2223; and a UI e2e connecting via SCP and downloading through the queue.
+- Self-review applied: removed a dead `import NIOSSH` from `SFTPSource` after the factory
+  extraction. **M13 awaiting review.**
 
 ## Current state of the code (M12 — done, committed 7223169)
 
@@ -286,9 +334,11 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
 
 ## Next steps
 
-1. **Review M12**, then commit on approval.
-2. **M13 — SCP** over an SSH exec channel (reuses the M11 SSH stack; `SCPSource` slots into
-   the generalized `BrowserSession` like `FTPSource` did).
+1. **Review M13**, then commit on approval (two-commit pattern: work commit, then a "Mark
+   M13 done in PROGRESS.md" commit recording the hash).
+2. **M14 — Tunneling** (`TunnelEngine` + tunnel manager UI, screen 4: local/remote/SOCKS,
+   auto-start). The new exec-capable :2223 SSH server also supports future exec-based
+   features (M15 Open in Terminal).
 3. Backlog: FTPS **certificate-trust prompt** (TLS analogue of host-key TOFU, for self-
    signed/private-CA servers — deferred from M12, ADR-019); FTP connection pooling
    (`CURLSH`) to avoid a login per op; per-file `MDTM` for precise FTP mtimes; remote→Finder
@@ -297,6 +347,25 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
 
 ## Session log
 
+- **2026-07-18** — M13 built (SCP over an SSH exec channel, ADR-020). New FerryCore
+  `SCPSource` (actor) reuses the M11 SSH stack via a new **`SSHClientFactory`** (host-key
+  TOFU + password/key auth extracted from `SFTPSource` so both share one audited connect).
+  Split surface: **metadata via POSIX commands over exec** (`pwd`/`ls -la`/`ls -ld`/`mkdir`/
+  `rm -rf`/`mv`/`chmod`, shell-quoted + `--`, `ls` parsed by the reused Unix parser) and
+  **bytes via the classic scp protocol** (`scp -f`/`scp -t`) over Citadel's `withExec`.
+  Compromises (DOMAIN.md): no resume (download re-reads from start but stream begins at
+  offset; upload rejects offset > 0), upload buffers to a local temp + stages to a remote
+  `.ferry-scp-part` renamed on success (avoids poisoning the engine's retry). Handled
+  `withExec`'s "Already closed" cleanup masking (drivers report out-of-band via the stream
+  continuation / an `UploadOutcome`). **macOS 15+ gate** (user decision): `withExec` is
+  macOS 15 and Citadel has no macOS-14 path, so `SCPSource` is `@available(macOS 15)` and the
+  app blocks SCP on macOS 14 with a clear message; SFTP/FTP/FTPS + the macOS-14 target are
+  unaffected. App runs the real SCP connect (`startSCPConnection`); editor already offered
+  SCP so **no UI change** (rule 3 met). **Test-infra deviation**: atmoz/sftp can't serve SCP
+  (forces `internal-sftp`, no scp binary), so a purpose-built exec-capable OpenSSH container
+  (`testinfra/ssh-exec`, :2223, same creds + key) was added; `start.sh` now `--build`s it.
+  223 kit + 9 UI tests green (+35/+1); both flavors build. Self-review removed a dead
+  `import NIOSSH`. **M13 awaiting review.**
 - **2026-07-18** — M12 built (FTP/FTPS via system libcurl, ADR-019). New `CFTP` C target
   wraps libcurl's variadic `setopt`/`getinfo` (Swift can't call C variadics) + callback
   setters; `FTPSource` (actor) implements the whole `FileSystemSource`+`SupervisedConnection`

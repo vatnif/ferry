@@ -43,7 +43,7 @@ must appear in the acknowledgements screen (M16).
 
 | Tool | License | Purpose |
 |---|---|---|
-| Docker images `atmoz/sftp` (incl. OpenSSH), `delfer/alpine-ftp-server` (vsftpd) | MIT / GPL components | local test servers — run in Docker, never distributed with the app |
+| Docker images `atmoz/sftp` (incl. OpenSSH), `delfer/alpine-ftp-server` (vsftpd), and a locally-built `alpine` + `openssh` image (`testinfra/ssh-exec`, for SCP/exec — M13) | MIT / GPL components / BSD (OpenSSH) | local test servers — run in Docker, never distributed with the app |
 
 GPL in test *infrastructure* is fine: we distribute nothing from it.
 

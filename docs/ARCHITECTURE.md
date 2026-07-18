@@ -37,7 +37,9 @@ FerryCore (FerryKit package)
 │   ├── FTPSource                        system libcurl via the CFTP shim (M12,
 │   │                                    ADR-019); FTP + explicit/implicit FTPS,
 │   │                                    per-operation easy handles (no session)
-│   └── SCPSource                        SSH exec channel (M13)
+│   └── SCPSource                        SSH exec channel (M13, ADR-020); metadata via
+│                                        POSIX commands (ls/mkdir/rm/mv/chmod), bytes via
+│                                        the scp wire protocol; macOS 15+ (withExec)
 ├── TransferEngine (actor, M8/M9)        FIFO queue, concurrency cap (3/connection),
 │                                        snapshot stream w/ replay, robust cancel
 │                                        (ADR-013); M9: .ferrypart staging + resume,
@@ -54,9 +56,12 @@ FerryCore (FerryKit package)
 │                                        HostKeyInfo (algo + SHA256 fingerprint + OpenSSH
 │                                        line), TOFUHostKeyValidator (rejects untrusted
 │                                        keys mid-handshake), SSHKeyLoader (ed25519/RSA
-│                                        OpenSSH keys + passphrase) — ADR-016/017
+│                                        OpenSSH keys + passphrase) — ADR-016/017;
+│                                        SSHClientFactory (M13) — shared host-key TOFU +
+│                                        auth connect used by SFTPSource and SCPSource
 ├── SSHConfigImporter                    ~/.ssh/config, known_hosts (read-only) (M11-B)
-├── FTPListParser                         Unix `ls -l` LIST → FileItem (pure, M12)
+├── FTPListParser                         Unix `ls -l` LIST → FileItem (pure, M12; also
+│                                        parses SCP's `ls -la`/`ls -ld`, M13)
 └── FerryVersion, Logging
 
 CFTP (separate SwiftPM C target)          thin non-variadic shim over the system

@@ -7,10 +7,17 @@ import XCTest
 enum TestServers {
     static let host = "127.0.0.1"
     static let sftpPort: UInt16 = 2222
+    /// Exec-capable OpenSSH server for the SCP tests (M13). atmoz/sftp forbids
+    /// exec and ships no scp binary, so SCP needs a full SSH server — see
+    /// testinfra/ssh-exec and docs/DECISIONS.md ADR-020.
+    static let scpPort: UInt16 = 2223
     static let ftpPort: UInt16 = 2121
     static let ftpsPort: UInt16 = 2990
     static let username = "ferry"
     static let password = "ferrypass"
+    /// The SCP/SSH server's writable login directory; fixtures are mounted
+    /// read-only at `<sshHome>/fixtures`.
+    static let sshHome = "/home/ferry"
     /// The FTP servers' login directory (delfer/alpine-ftp-server). Fixtures are
     /// mounted read-only at `<ftpHome>/fixtures`; the home itself is writable.
     static let ftpHome = "/ftp/ferry"
@@ -101,6 +108,42 @@ enum TestServers {
         // the full suite's ~50 reconnects (ADR-014); retry transient connection
         // failures generously. Auth failures are NOT retried — they surface
         // immediately so the wrong-password/wrong-key tests stay fast and exact.
+        var lastError: Error?
+        for _ in 0..<10 {
+            do {
+                return try await attempt()
+            } catch let error as RemoteSourceError {
+                if case .connectionFailed = error {
+                    lastError = error
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                    continue
+                }
+                throw error
+            }
+        }
+        throw lastError ?? RemoteSourceError.connectionFailed("exhausted retries")
+    }
+
+    /// Connects to the SCP/exec test server (:2223), trusting the host key on
+    /// first contact (TOFU) exactly as `connectSFTP` does. Password auth by
+    /// default; pass a `.privateKey` credential to exercise key auth. Retries
+    /// transient connection failures, never auth failures.
+    @available(macOS 15.0, *)
+    static func connectSCP(username: String = TestServers.username,
+                           credential: SSHAuthCredential = .password(TestServers.password)) async throws -> SCPSource {
+        let store = sharedHostKeyStore
+        func attempt() async throws -> SCPSource {
+            do {
+                return try await SCPSource.connect(host: host, port: Int(scpPort),
+                                                   username: username, credential: credential,
+                                                   hostKeyStore: store)
+            } catch RemoteSourceError.hostKeyUnknown(let info) {
+                try store.trust(info, host: host, port: Int(scpPort))
+                return try await SCPSource.connect(host: host, port: Int(scpPort),
+                                                   username: username, credential: credential,
+                                                   hostKeyStore: store)
+            }
+        }
         var lastError: Error?
         for _ in 0..<10 {
             do {

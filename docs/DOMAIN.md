@@ -100,6 +100,37 @@ this document, not the other way round.*
 - **Resume**: downloads `REST` from the `.ferrypart` size; uploads `APPE` from the remote
   size (FTP can't truncate, so upload resume requires the remote size to equal the offset).
 
+## SCP specifics (M13, ADR-020)
+
+SCP reuses the SSH stack (same host-key TOFU + password/key auth as SFTP), but the classic
+scp wire protocol is far weaker than SFTP: it transfers **only file bytes** and has no
+listing, stat, mkdir, delete, rename, or chmod. So Ferry splits the surface:
+
+- **Metadata runs POSIX commands over an SSH exec channel**: `pwd` (home), `ls -la`
+  (listing, parsed with the same Unix `ls -l` parser as FTP), `ls -ld` (stat), `mkdir -p`,
+  `rm -rf`, `mv`, `chmod`. Every path is single-quoted (plus `--`) to block shell
+  injection. This costs more round-trips than SFTP's structured requests, and — like FTP —
+  timestamps are the `ls` best-effort resolution. Symlink following is not applied to
+  `stat` (it reports the link, matching the listing).
+- **Bytes stream over the real scp protocol**: `openRead` drives `scp -f` (source→sink),
+  `openWrite` drives `scp -t` (sink←source).
+- **Capability compromises vs SFTP (v1)**:
+  - **No transfer resume.** SCP has no seek and cannot append. A resumed *download* still
+    produces byte-exact output but **re-reads from the start** (the stream discards the
+    bytes before the offset — no bandwidth saving). A resumed *upload* is **rejected**
+    (non-zero offset → the engine restarts it cleanly).
+  - **Upload buffers locally first.** scp declares the file size up front, which the
+    streaming write contract doesn't provide, so the write handle buffers to a local temp
+    file and transfers on close. It stages to a remote `.ferry-scp-part` file and renames
+    into place on success, so an interrupted upload never leaves a partial at the
+    destination (which would otherwise poison the engine's resume).
+  - **Exec required.** A server that accepts the SSH login but forbids command execution
+    (e.g. SFTP-only with `ForceCommand internal-sftp`) cannot do SCP; Ferry detects this at
+    connect and says so, pointing the user to SFTP.
+  - **Availability**: SCP needs Citadel's bidirectional exec channel, which is **macOS
+    15+**. On macOS 14 the app blocks an SCP connect with a clear message (SFTP/FTP/FTPS
+    are unaffected).
+
 ## Transfers & queue (M8–M9)
 
 - Queue is global per app, FIFO within a connection, default **3 concurrent transfers per

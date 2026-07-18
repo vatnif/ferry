@@ -1,0 +1,18 @@
+# Minimal OpenSSH server config for the SCP/exec test container (M13).
+# The point of this server, unlike atmoz/sftp, is that exec IS allowed — there
+# is deliberately NO `ForceCommand`, so `scp -t`/`scp -f` and the metadata
+# commands (ls, mkdir, rm, mv, chmod) that SCPSource runs will execute.
+Port 22
+PermitRootLogin no
+
+# Both auth methods the app supports, so SCP tests can exercise either.
+PasswordAuthentication yes
+PubkeyAuthentication yes
+AuthorizedKeysFile .ssh/authorized_keys
+
+# Keep an SFTP subsystem available (harmless; not used by SCP).
+Subsystem sftp /usr/lib/ssh/sftp-server
+
+# Useful for later exec-based features (M14 tunnels); harmless for tests.
+AllowTcpForwarding yes
+PrintMotd no

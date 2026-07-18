@@ -20,7 +20,7 @@ Ferry is a native macOS dual-pane file-transfer client (SFTP/FTP/FTPS/SCP; think
 - `Ferry/` — app target: SwiftUI shell, assets, entitlements (Direct + AppStore).
 - `FerryKit/` — local SwiftPM package with ALL core logic (`FerryCore`) and the unit + integration test targets. Testable headless via `swift test`.
 - `FerryUITests/` — XCUITest smoke tests.
-- `testinfra/` — Docker test servers (SFTP :2222, FTP :2121; user `ferry`/`ferrypass`).
+- `testinfra/` — Docker test servers (SFTP :2222, SSH/SCP-exec :2223, FTP :2121, FTPS :2990; user `ferry`/`ferrypass`).
 - `tools/generate-appicon.swift` — regenerates the app icon from the approved concept.
 - `docs/` — living documentation (see map below).
 

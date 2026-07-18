@@ -325,8 +325,11 @@ final class ConnectionManagerModel {
     /// the session, driving the host-key trust flow on the way.
     func connect(profileID: UUID) {
         guard let profile = library.profile(withID: profileID) else { return }
-        guard profile.scheme != .scp else {
-            infoMessage = "SCP connections arrive in Milestone 13."
+        // SCP rides Citadel's bidirectional exec channel, which is macOS 15+
+        // (ADR-020). Fail fast with a clear message on older systems rather than
+        // partway through connecting.
+        if profile.scheme == .scp, #unavailable(macOS 15.0) {
+            errorMessage = "SCP connections require macOS 15 or later. Use SFTP for this server on this Mac."
             return
         }
 
@@ -416,8 +419,10 @@ final class ConnectionManagerModel {
         switch profile.scheme {
         case .ftp, .ftps:
             startFTPConnection(profile: profile, credential: credential)
-        case .sftp, .scp:
+        case .sftp:
             startSFTPConnection(profile: profile, credential: credential, sessionTrusted: sessionTrusted)
+        case .scp:
+            startSCPConnection(profile: profile, credential: credential, sessionTrusted: sessionTrusted)
         }
     }
 
@@ -434,6 +439,42 @@ final class ConnectionManagerModel {
                                                         sessionTrusted: sessionTrusted,
                                                         displayName: profile.name)
                 let session = BrowserSession(profile: profile, remote: sftp, bookmarks: nil)
+                await session.start()
+                connectionPhase = .connected(session)
+            } catch let error as RemoteSourceError {
+                handleConnectError(error, profile: profile, credential: credential)
+            } catch let error as SSHKeyLoadError {
+                handleKeyError(error, profile: profile, credential: credential)
+            } catch {
+                connectionPhase = .idle
+                errorMessage = "Could not connect: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    /// SCP connect (M13). Reuses the SSH stack exactly as SFTP does — same
+    /// host-key TOFU + password/key auth — differing only in the backend
+    /// (`SCPSource`, exec-channel metadata + scp wire-protocol transfers,
+    /// ADR-020). Gated to macOS 15+ (Citadel's `withExec`); `connect` already
+    /// blocked older systems, so the `#available` else-branch is belt-and-braces.
+    private func startSCPConnection(profile: ConnectionProfile, credential: SSHAuthCredential,
+                                    sessionTrusted: HostKeyInfo?) {
+        guard #available(macOS 15.0, *) else {
+            connectionPhase = .idle
+            errorMessage = "SCP connections require macOS 15 or later."
+            return
+        }
+        Task {
+            do {
+                let scp = try await SCPSource.connect(host: profile.host,
+                                                      port: profile.port,
+                                                      username: profile.username,
+                                                      credential: credential,
+                                                      hostKeyStore: hostKeyStore,
+                                                      systemKnownHosts: systemKnownHosts,
+                                                      sessionTrusted: sessionTrusted,
+                                                      displayName: profile.name)
+                let session = BrowserSession(profile: profile, remote: scp, bookmarks: nil)
                 await session.start()
                 connectionPhase = .connected(session)
             } catch let error as RemoteSourceError {

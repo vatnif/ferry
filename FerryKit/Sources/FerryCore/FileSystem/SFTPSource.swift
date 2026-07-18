@@ -1,7 +1,6 @@
 @preconcurrency import Citadel
 import Foundation
 import NIOCore
-import NIOSSH
 
 /// How an SSH session authenticates. A Sendable value the app builds and hands
 /// to `SFTPSource.connect`: the app owns file access (sandbox / security-scoped
@@ -39,35 +38,16 @@ public enum RemoteSourceError: Error, Equatable {
 /// HostKeyStore and throws `hostKeyUnknown`/`hostKeyChanged` for the app to
 /// resolve (DOMAIN.md → Host key trust). Password + SSH-key auth (ed25519/RSA).
 public actor SFTPSource: FileSystemSource {
-    /// Everything needed to rebuild the transport for auto-reconnect (M9).
-    /// Held in memory only — never logged or persisted (DOMAIN.md). Includes
-    /// the credential (incl. key material) and the trust store, so a silent
-    /// reconnect re-validates the host key exactly as the first connect did.
-    private struct Parameters {
-        var host: String
-        var port: Int
-        var username: String
-        var credential: SSHAuthCredential
-        var hostKeyStore: HostKeyStore
-        /// The user's `~/.ssh/known_hosts`, read-only, as pre-trust: hosts they
-        /// already know connect without a TOFU prompt (M11 checkpoint B). Frozen
-        /// at connect so auto-reconnect re-validates identically. nil ⇒ no
-        /// pre-trust (behaves exactly like Ferry's own store alone).
-        var systemKnownHosts: KnownHostsFile?
-        /// A key trusted for this session only (the user declined "remember").
-        /// Merged into the validator's trusted set and kept so a mid-session
-        /// reconnect still succeeds, but never written to the store.
-        var sessionTrusted: HostKeyInfo?
-    }
-
     public nonisolated let displayName: String
     private var ssh: SSHClient
     private var sftp: SFTPClient
-    private let parameters: Parameters
+    /// Everything needed to rebuild the transport for auto-reconnect (M9);
+    /// shared with SCPSource via `SSHClientFactory` (ADR-020).
+    private let parameters: SSHConnectionParameters
 
     static let readChunkLength: UInt32 = 128 * 1024
 
-    private init(displayName: String, ssh: SSHClient, sftp: SFTPClient, parameters: Parameters) {
+    private init(displayName: String, ssh: SSHClient, sftp: SFTPClient, parameters: SSHConnectionParameters) {
         self.displayName = displayName
         self.ssh = ssh
         self.sftp = sftp
@@ -94,83 +74,25 @@ public actor SFTPSource: FileSystemSource {
                                systemKnownHosts: KnownHostsFile? = nil,
                                sessionTrusted: HostKeyInfo? = nil,
                                displayName: String? = nil) async throws -> SFTPSource {
-        let parameters = Parameters(host: host, port: port, username: username,
-                                    credential: credential, hostKeyStore: hostKeyStore,
-                                    systemKnownHosts: systemKnownHosts,
-                                    sessionTrusted: sessionTrusted)
+        let parameters = SSHConnectionParameters(host: host, port: port, username: username,
+                                                 credential: credential, hostKeyStore: hostKeyStore,
+                                                 systemKnownHosts: systemKnownHosts,
+                                                 sessionTrusted: sessionTrusted)
         let (ssh, sftp) = try await establish(parameters)
         return SFTPSource(displayName: displayName ?? host, ssh: ssh, sftp: sftp,
                           parameters: parameters)
     }
 
-    private static func establish(_ parameters: Parameters) async throws -> (SSHClient, SFTPClient) {
-        var trusted = (try? parameters.hostKeyStore.trustedKeys(host: parameters.host,
-                                                                port: parameters.port)) ?? []
-        if let systemKnownHosts = parameters.systemKnownHosts {
-            trusted.formUnion(systemKnownHosts.trustedKeys(host: parameters.host,
-                                                           port: parameters.port))
-        }
-        if let sessionTrusted = parameters.sessionTrusted,
-           let key = try? NIOSSHPublicKey(openSSHPublicKey: sessionTrusted.openSSH) {
-            trusted.insert(key)
-        }
-        let validator = TOFUHostKeyValidator(trusted: trusted)
-        // Key parsing errors (incl. passphraseRequired) propagate untouched so
-        // the app can prompt — they must not be swallowed as connection errors.
-        let authMethod = try makeAuthMethod(parameters)
-
-        let ssh: SSHClient
-        do {
-            ssh = try await SSHClient.connect(
-                host: parameters.host,
-                port: parameters.port,
-                authenticationMethod: authMethod,
-                hostKeyValidator: .custom(validator),
-                reconnect: .never)
-        } catch {
-            // A rejected, untrusted host key is the reason for the failure —
-            // classify it as unknown (first contact) vs. changed (MITM risk).
-            if validator.rejectedUntrustedKey, let offered = validator.offeredKey {
-                let offeredInfo = HostKeyInfo(publicKey: offered)
-                var stored = (try? parameters.hostKeyStore.storedInfos(host: parameters.host,
-                                                                       port: parameters.port)) ?? []
-                if let systemKnownHosts = parameters.systemKnownHosts {
-                    stored += systemKnownHosts.storedInfos(host: parameters.host,
-                                                           port: parameters.port)
-                }
-                // De-dup: the same key can appear in both stores; the changed-key
-                // alarm should list each stored fingerprint once. Preserve order.
-                var seen = Set<HostKeyInfo>()
-                stored = stored.filter { seen.insert($0).inserted }
-                throw stored.isEmpty
-                    ? RemoteSourceError.hostKeyUnknown(offeredInfo)
-                    : RemoteSourceError.hostKeyChanged(stored: stored, offered: offeredInfo)
-            }
-            throw Self.mapConnectError(error)
-        }
-
+    /// Builds the shared SSH transport (host-key TOFU + auth, `SSHClientFactory`)
+    /// then opens the SFTP subsystem on it.
+    private static func establish(_ parameters: SSHConnectionParameters) async throws -> (SSHClient, SFTPClient) {
+        let ssh = try await SSHClientFactory.connect(parameters)
         do {
             return (ssh, try await ssh.openSFTP())
         } catch {
             try? await ssh.close()
             throw RemoteSourceError.connectionFailed(String(describing: error))
         }
-    }
-
-    private static func makeAuthMethod(_ parameters: Parameters) throws -> SSHAuthenticationMethod {
-        switch parameters.credential {
-        case .password(let password):
-            return .passwordBased(username: parameters.username, password: password)
-        case .privateKey(let pem, let passphrase):
-            return try SSHKeyLoader.authenticationMethod(username: parameters.username,
-                                                         pem: pem, passphrase: passphrase)
-        }
-    }
-
-    private static func mapConnectError(_ error: Error) -> RemoteSourceError {
-        if error is Citadel.AuthenticationFailed { return .authenticationFailed }
-        if case SSHClientError.allAuthenticationOptionsFailed = error { return .authenticationFailed }
-        return .connectionFailed(String(describing: error))
     }
 
     public func disconnect() async {
