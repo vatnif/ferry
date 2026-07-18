@@ -21,7 +21,7 @@
 | M11 | Key auth & host trust | done (checkpoint A ffd7233, checkpoint B a008639) |
 | M12 | FTP/FTPS via libcurl | done (committed 7223169) |
 | M13 | SCP | done (committed 6b1e981) |
-| M14 | Tunneling | **awaiting review** |
+| M14 | Tunneling | done (committed 7938556) |
 | M15 | Open in Terminal | todo |
 | M16 | Tabs & polish | todo |
 | M17 | Packaging (sign/notarize/DMG/Sparkle) | todo |
@@ -29,7 +29,7 @@
 
 Backlog (post-v1): see `docs/ROADMAP.md`.
 
-## Current state of the code (M14 — awaiting review)
+## Current state of the code (M14 — done, committed 7938556)
 
 - **Port forwarding works end-to-end for Local + SOCKS** over the M11 SSH stack (Citadel;
   host-key TOFU + password/key auth via `SSHClientFactory`) — ADR-021. New FerryCore
@@ -73,6 +73,7 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
   unit vectors; a tunnel op suite (local + SOCKS TCP round-trip reading the server's own sshd
   banner back through the tunnel, port-in-use, stop-releases-port, auto-start, remote-
   unsupported) against :2223; and a UI walk-through opening the manager and adding a tunnel.
+  **M14 approved & committed (7938556).**
 
 ## Current state of the code (M13 — done, committed 6b1e981)
 
@@ -410,7 +411,7 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
   Store entitlements (user sign-off). Glue **ordering** fix during dev: install the local-side
   glue before the SSH channel exists (and hold SOCKS SSH reads until the reply is sent) so the
   server's opening banner isn't dropped. 240 kit + 10 UI tests green (+17/+1); both flavors
-  build. **Awaiting review.**
+  build. **M14 approved & committed (7938556).**
 - **2026-07-18** — M13 built (SCP over an SSH exec channel, ADR-020). New FerryCore
   `SCPSource` (actor) reuses the M11 SSH stack via a new **`SSHClientFactory`** (host-key
   TOFU + password/key auth extracted from `SFTPSource` so both share one audited connect).
