@@ -24,14 +24,14 @@
 | M14 | Tunneling | done (committed 7938556) |
 | M14.5 | Remote port forwarding | done (committed a4899a2) |
 | M15 | Open in Terminal | todo |
-| M15.5 | Embedded terminal (SwiftTerm) | A+B done (committed d7971a8); **C (app UI) awaiting review** |
+| M15.5 | Embedded terminal (SwiftTerm) | done (A+B d7971a8, C 6410384) |
 | M16 | Tabs & polish | todo |
 | M17 | Packaging (sign/notarize/DMG/Sparkle) | todo |
 | M18 | Sale readiness | todo |
 
 Backlog (post-v1): see `docs/ROADMAP.md`.
 
-## Current state of the code (M15.5 checkpoint C — awaiting review, NOT committed)
+## Current state of the code (M15.5 — done; A+B committed d7971a8, C committed 6410384)
 
 - **The embedded terminal is live in the app** (screen 7; A+B committed d7971a8).
   App target now links the **`FerryTerminalUI`** product (one pbxproj product-dependency
@@ -458,9 +458,9 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
 
 ## Next steps
 
-1. **M15.5 checkpoint A review** — embedded-terminal mockups (tab 7) await user
-   sign-off; then M15 (Open in Terminal, Direct only) and M15.5 checkpoints B/C
-   (plan: `~/.claude/plans/plan-a-new-milestone-graceful-whisper.md`, ADR-023).
+1. **M15 — Open in Terminal** (Direct only): the external hand-off, now one branch of
+   the ADR-023 dispatch (the embedded terminal, M15.5, shipped first — the toolbar
+   button and Open Terminal menu route externally once M15's setting exists).
 2. Backlog: multiplexed `SSHSessionManager` (ADR-021/022); FTPS
    **certificate-trust prompt** (TLS analogue of host-key TOFU, for self-
    signed/private-CA servers — deferred from M12, ADR-019); FTP connection pooling
@@ -479,7 +479,7 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
   toolchain component installed (SwiftTerm's shader; BUILDING.md). UI-test war stories
   (TESTING.md): container identifiers clobber children; Toggle = checkbox; Touch Bar
   duplicate again. 276 kit + 11 UI tests green; both flavors build. **Checkpoint C
-  awaiting review — not committed.**
+  approved & committed (6410384) — M15.5 complete.**
 - **2026-07-18 (d)** — M15.5 checkpoint B built (terminal engine + bridge). SwiftTerm
   1.14.0 added (MIT verified; new `FerryTerminalUI` product so FerryCore stays UI-free;
   LICENSING.md updated). `TerminalSession` actor over Citadel `withPTY` (dedicated
