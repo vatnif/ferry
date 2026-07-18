@@ -20,7 +20,7 @@
 | M10 | File operations | done (committed 9cfe66a) |
 | M11 | Key auth & host trust | done (checkpoint A ffd7233, checkpoint B a008639) |
 | M12 | FTP/FTPS via libcurl | done (committed 7223169) |
-| M13 | SCP | **awaiting review** |
+| M13 | SCP | done (committed 6b1e981) |
 | M14 | Tunneling | todo |
 | M15 | Open in Terminal | todo |
 | M16 | Tabs & polish | todo |
@@ -29,7 +29,7 @@
 
 Backlog (post-v1): see `docs/ROADMAP.md`.
 
-## Current state of the code (M13 — awaiting review)
+## Current state of the code (M13 — done, committed 6b1e981)
 
 - **SCP works end-to-end** over an **SSH exec channel**, reusing the M11 SSH stack
   (Citadel; host-key TOFU + password/key auth) — ADR-020. New FerryCore `SCPSource`
@@ -75,7 +75,7 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
   exec-blocked-server) + engine round-trip, 5-way concurrent uploads, and folder upload
   against :2223; and a UI e2e connecting via SCP and downloading through the queue.
 - Self-review applied: removed a dead `import NIOSSH` from `SFTPSource` after the factory
-  extraction. **M13 awaiting review.**
+  extraction. **M13 approved & committed (6b1e981).**
 
 ## Current state of the code (M12 — done, committed 7223169)
 
@@ -365,7 +365,7 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
   (forces `internal-sftp`, no scp binary), so a purpose-built exec-capable OpenSSH container
   (`testinfra/ssh-exec`, :2223, same creds + key) was added; `start.sh` now `--build`s it.
   223 kit + 9 UI tests green (+35/+1); both flavors build. Self-review removed a dead
-  `import NIOSSH`. **M13 awaiting review.**
+  `import NIOSSH`. **M13 approved & committed (6b1e981).**
 - **2026-07-18** — M12 built (FTP/FTPS via system libcurl, ADR-019). New `CFTP` C target
   wraps libcurl's variadic `setopt`/`getinfo` (Swift can't call C variadics) + callback
   setters; `FTPSource` (actor) implements the whole `FileSystemSource`+`SupervisedConnection`
