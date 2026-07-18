@@ -21,7 +21,7 @@ closed-source redistribution without copyleft obligations.
 |---|---|---|---|
 | Apple SDKs (SwiftUI, Foundation, Security, …) | Apple SDK terms | app | in use (M1) |
 | Citadel (orlandos-nl/Citadel) | MIT | SSH/SFTP client | added M6 |
-| swift-nio-ssh (apple) | Apache-2.0 | SSH transport (via Citadel) | added M6 (transitive) |
+| swift-nio-ssh (Wellz26 fork of apple/swift-nio-ssh) | Apache-2.0 (fork's LICENSE.txt verified) | SSH transport (via Citadel; provides the remote-forward API) | added M6 (transitive); fork identified M14.5 (ADR-022) |
 | swift-crypto (apple) | Apache-2.0 | host-key SHA256 fingerprints + private-key types (SHA256/Curve25519/RSA) | **promoted to direct M11** (was transitive since M6) |
 | swift-nio, swift-atomics, swift-collections, swift-log (apple) | Apache-2.0 | via Citadel | added M6 (transitive) |
 | BigInt (attaswift) | MIT | via Citadel (RSA math) | added M6 (transitive) |

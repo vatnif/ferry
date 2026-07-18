@@ -225,6 +225,34 @@ enum TestServers {
                      credential: .password(password), hostKeyStore: sharedHostKeyStore)
     }
 
+    /// Remote-forward round trip (M14.5): the in-container port the tests ask
+    /// sshd to open via `tcpip-forward`, and the host-side port Docker maps to
+    /// it (compose: 127.0.0.1:2224 → ssh container :18080). Keep in sync with
+    /// testinfra/docker-compose.yml.
+    static let remoteForwardServerPort = 18080
+    static let remoteForwardHostPort: UInt16 = 2224
+
+    /// Opens a TCP connection to `host:port` and keeps it open, returning the
+    /// file descriptor (caller closes) — for live-connection-count tests.
+    static func holdOpenConnection(port: UInt16) -> Int32? {
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        guard fd >= 0 else { return nil }
+        var addr = sockaddr_in()
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = port.bigEndian
+        addr.sin_addr.s_addr = inet_addr(host)
+        let connected = withUnsafePointer(to: &addr) { ptr in
+            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        guard connected == 0 else {
+            close(fd)
+            return nil
+        }
+        return fd
+    }
+
     /// Binds a loopback socket to port 0, reads the OS-assigned port, and frees
     /// it — a race-tolerant way to pick a listen port for a tunnel test.
     static func freeLocalPort() -> UInt16 {

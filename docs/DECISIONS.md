@@ -437,3 +437,62 @@ mockups — approved as the natural editor, recorded here per rule 3.
 `AllowTcpForwarding yes`. Integration tests prove a real round trip by forwarding to the
 server's own sshd (`127.0.0.1:22`) and reading the SSH banner back through the tunnel (local +
 SOCKS), plus port-in-use, stop-releases-port, auto-start, and remote-unsupported.
+
+## 2026-07-18 — ADR-022: Remote port forwarding via Citadel's public API (M14.5)
+
+**Supersedes the "Remote — deferred to backlog" portion of ADR-021.**
+
+**Premise correction.** ADR-021 recorded that Citadel 0.12.1 exposes no client
+`tcpip-forward`. That was wrong for the exact revision pinned in `FerryKit/Package.resolved`
+(`ae8562f`): Citadel 0.12.1 merged a full public remote-port-forward client API (its PR #127)
+— `SSHClient.withRemotePortForward(host:port:onOpen:handleChannel:)` and higher-level
+variants — riding the **Wellz26/swift-nio-ssh 0.3.6 fork** that `Package.resolved` already
+pins (Citadel switched to the fork for Mac Catalyst compatibility). LICENSING.md previously
+recorded the transport as "swift-nio-ssh (apple)" — corrected; the fork's LICENSE.txt is
+still Apache-2.0. No vendoring, forking, or dropping to raw NIOSSH was needed.
+
+**Supply-chain note.** The capability (`NIOSSHHandler.sendTCPForwardingRequest` + the typed
+`GlobalRequest` API) lives in the non-Apple fork. If Citadel ever re-pins Apple upstream,
+verify the API shape survives before taking the update.
+
+**Entry point: the low-level closure form.** Rejected alternatives: the `NIOAsyncChannel`
+variant wraps the raw channel as `ByteBuffer` without installing any codec (unsound by
+default), and `runRemotePortForward` pipes connections internally, hiding the per-connection
+channels the status column's live count needs. The low-level form hands each server-opened
+`forwarded-tcpip` channel to the engine, which reuses the M14 `GlueHandler` splice and
+connection counting unchanged.
+
+**Own codec.** `forwarded-tcpip` channels arrive speaking `SSHChannelData`; Citadel installs
+its `DataToBufferCodec` only on `direct-tcpip` channels and keeps it internal, so FerryCore
+carries `SSHChannelDataCodec` (~30 lines, same translation).
+
+**Registry matching ⇒ fixed listen port.** Citadel dispatches inbound `forwarded-tcpip`
+channels by matching the server-reported `(listeningHost, listeningPort)` against the
+*requested* pair. OpenSSH echoes the requested host string verbatim and reports the actual
+bound port — so `listenPort == 0` ("let the server choose") could never dispatch and is
+rejected as invalid configuration. A non-OpenSSH server that rewrites the host string would
+fail to dispatch (connections rejected, count stuck at 0) — accepted limitation.
+
+**Lifecycle.** `withRemotePortForward` blocks until its task is cancelled; cancellation
+sends the protocol-level cancel request before the task finishes. The engine stores a
+`Task` per remote tunnel; `stop()` cancels and awaits it — bounded at 3 s, because a
+half-dead session could stall the cancel round-trip — so the server-side port is
+deterministically released on the happy path. A denied `tcpip-forward` (port busy on the
+server, forwarding disabled) throws `NIOSSHError` (`.globalRequestRefused`) before `onOpen`
+and maps to a clear "server refused" status message.
+
+**Session drop.** A remote forward otherwise sleeps obliviously if the SSH session dies,
+leaving a misleading "forwarding" status, so `ensureConnected` now registers
+`SSHClient.onDisconnect`: remote tunnels fail immediately ("The SSH session dropped.").
+Local/SOCKS listeners deliberately keep their existing behavior (listener stays up; bridges
+fail per-connection and a fresh session is dialed lazily) — recorded asymmetry.
+
+**Test infra.** `testinfra/ssh-exec/sshd_config` gains `GatewayPorts clientspecified` and
+compose maps `127.0.0.1:2224 → container :18080`, so the round-trip test reaches the
+forwarded listener from the host: host :2224 → sshd's `0.0.0.0:18080` listener →
+`forwarded-tcpip` → engine → host-mapped sshd :2223 → `SSH-2.0` banner. Rebuild the image
+with `docker compose up -d --build ssh`.
+
+**UI.** The editor's "Remote isn't supported yet" warning — ADR-021's recorded deviation
+from mockup screen 4 — is removed; Remote rows now behave exactly as mocked (this closes
+the deviation rather than adding one). Still not macOS-15-gated (no `withExec` involved).

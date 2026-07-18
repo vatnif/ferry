@@ -3,8 +3,7 @@ import FerryCore
 
 /// Add/edit form for a single port forward (M14). Not drawn in the mockups —
 /// the natural editor behind screen 4's Add/Edit buttons; UI signed off with
-/// ADR-021. SOCKS hides the destination fields (dynamic); Remote is savable but
-/// flagged as not-yet-runnable (deferred to backlog, ADR-021).
+/// ADR-021. SOCKS hides the destination fields (dynamic).
 struct TunnelEditorSheet: View {
     let existing: TunnelConfiguration?
     let onSave: (TunnelConfiguration) -> Void
@@ -60,12 +59,6 @@ struct TunnelEditorSheet: View {
                 }
             }
             .formStyle(.grouped)
-
-            if kind == .remote {
-                Label("Remote forwarding isn’t supported yet — this tunnel will save but won’t start.",
-                      systemImage: "exclamationmark.triangle")
-                    .font(.caption).foregroundStyle(.orange)
-            }
 
             HStack {
                 if existing != nil, let onDelete {

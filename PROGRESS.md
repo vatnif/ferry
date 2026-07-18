@@ -22,6 +22,7 @@
 | M12 | FTP/FTPS via libcurl | done (committed 7223169) |
 | M13 | SCP | done (committed 6b1e981) |
 | M14 | Tunneling | done (committed 7938556) |
+| M14.5 | Remote port forwarding | **awaiting review** |
 | M15 | Open in Terminal | todo |
 | M16 | Tabs & polish | todo |
 | M17 | Packaging (sign/notarize/DMG/Sparkle) | todo |
@@ -29,8 +30,21 @@
 
 Backlog (post-v1): see `docs/ROADMAP.md`.
 
-## Current state of the code (M14 — done, committed 7938556)
+## Current state of the code (M14.5 — awaiting review; M14 committed 7938556)
 
+- **M14.5: Remote port forwarding works end-to-end** (ADR-022). The pinned Citadel 0.12.1
+  turned out to ship a public client `tcpip-forward` API after all (via the Wellz26
+  swift-nio-ssh fork it rides on — ADR-021's premise was outdated), so no vendoring was
+  needed. `TunnelEngine.startRemote` runs Citadel's `withRemotePortForward` in a stored
+  per-tunnel `Task` (cancel ⇒ protocol cancel request; `stop()` awaits it, bounded 3 s);
+  each server-opened `forwarded-tcpip` channel gets the new `SSHChannelDataCodec`
+  (Citadel's equivalent is internal) + a `GlueHandler` pair bridging to the local
+  destination on the same single event loop. Fixed listen port required (Citadel routes
+  inbound channels by the requested host/port). `SSHClient.onDisconnect` now fails remote
+  tunnels immediately if the session drops (local/SOCKS keep their listeners). Editor's
+  "not supported" warning removed; testinfra gained `GatewayPorts clientspecified` + a
+  `127.0.0.1:2224 → :18080` mapping (rebuild: `docker compose up -d --build ssh`); new
+  unit suites (codec, remote validation) + 3 remote integration tests, all green.
 - **Port forwarding works end-to-end for Local + SOCKS** over the M11 SSH stack (Citadel;
   host-key TOFU + password/key auth via `SSHClientFactory`) — ADR-021. New FerryCore
   `Tunnel/` module: **`TunnelEngine`** (actor; observable status stream, start/stop/stopAll,
@@ -42,10 +56,8 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
   `GlueHandler` pair. **SOCKS**: same listener + a per-connection SOCKS5 (CONNECT, no-auth)
   handshake picks the target. **Not macOS-15-gated** — `direct-tcpip` needs no `withExec`
   (unlike SCP), so tunnels work on macOS 14.
-- **Main technical risk resolved (ADR-021)**: Citadel 0.12.1 exposes **no** public client API
-  for **remote** forwarding (`tcpip-forward` — `SSHClient.session` is internal). Per user
-  sign-off, Remote is **deferred to the backlog**: still savable/editable (mockup shows the
-  row), but starting one reports `failed("Remote port forwarding isn't supported yet.")`.
+- ~~Main technical risk (ADR-021): Remote deferred — no public Citadel API~~ **superseded by
+  M14.5/ADR-022**: the pinned revision does expose it; Remote forwarding now runs for real.
 - **Single event loop is the key design constraint**: the engine's SSH client, its `direct-tcpip`
   forwards, and the listener sockets all run on one **dedicated single-thread group** (new
   optional `group:` param on `SSHClientFactory.connect`), so a glue pair can touch both channel
@@ -380,13 +392,14 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
 
 ## Next steps
 
-1. **Review M14**, then commit on approval (two-commit pattern: work commit `M14: …`, then a
-   "Mark M14 done in PROGRESS.md" commit recording the work commit's hash).
-   - Note for review: two items changed the mockups/schema and are flagged in ADR-021 —
-     **Remote forwarding is deferred** (savable but not runnable) and the **tunnel add/edit
-     form** is new UI; both were signed off. `network.server` was added to the App Store build.
+1. **Review M14.5** (remote port forwarding, ADR-022), then commit on approval (two-commit
+   pattern: work commit `M14.5: …`, then a "Mark M14.5 done" commit recording the hash).
+   - Note for review: no mockup deviation — this *removes* one (the editor's "Remote isn't
+     supported yet" warning), restoring screen 4's mocked behavior. No new entitlements.
+     LICENSING.md corrected: swift-nio-ssh actually resolves to the Wellz26 fork (Apache-2.0).
+     Testinfra image changed — reviewers must `docker compose up -d --build ssh` once.
 2. **M15 — Open in Terminal** (Direct only). The exec-capable :2223 SSH server supports it.
-3. Backlog: **Remote port forwarding** + a multiplexed `SSHSessionManager` (ADR-021); FTPS
+3. Backlog: multiplexed `SSHSessionManager` (ADR-021/022); FTPS
    **certificate-trust prompt** (TLS analogue of host-key TOFU, for self-
    signed/private-CA servers — deferred from M12, ADR-019); FTP connection pooling
    (`CURLSH`) to avoid a login per op; per-file `MDTM` for precise FTP mtimes; remote→Finder
@@ -395,6 +408,22 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
 
 ## Session log
 
+- **2026-07-18 (b)** — M14.5 built (Remote port forwarding, ADR-022). Re-audit of the pinned
+  Citadel 0.12.1 checkout found ADR-021's premise outdated: it ships a full public client
+  remote-forward API (merged via the **Wellz26/swift-nio-ssh 0.3.6 fork** that
+  Package.resolved pins — LICENSING.md corrected, still Apache-2.0). No vendoring needed.
+  Engine: `startRemote` wraps `withRemotePortForward` in a stored per-tunnel `Task`
+  (validation: destination required, fixed listen port — Citadel dispatches inbound
+  `forwarded-tcpip` channels by the requested host/port pair; cancel ⇒ protocol cancel,
+  `stop()` awaits it bounded 3 s); new `SSHChannelDataCodec` (Citadel's is internal) + the
+  existing `GlueHandler`/count machinery bridge each forwarded channel to the local
+  destination on the engine's single loop; `onDisconnect` fails remote tunnels on session
+  drop (local/SOCKS listeners deliberately survive). UI: editor warning label removed (closes
+  the ADR-021 mockup deviation). Testinfra: `GatewayPorts clientspecified` +
+  `127.0.0.1:2224 → :18080` mapping (image rebuilt). Tests: `SSHChannelDataCodecTests` +
+  `TunnelRemoteValidationTests` (unit), remote round trip / stop-releases-server-port /
+  refusal / live-count integration tests — full `swift test` green, Ferry-Direct builds.
+  **Awaiting user review — not committed.**
 - **2026-07-18** — M14 built (Tunneling — Local + SOCKS port forwards, ADR-021). New FerryCore
   `Tunnel/` module: **`TunnelEngine`** (actor; own dedicated single-thread event-loop group +
   own SSH session via `SSHClientFactory`, opened lazily; observable status stream;

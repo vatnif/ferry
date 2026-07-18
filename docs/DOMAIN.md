@@ -177,13 +177,17 @@ listing, stat, mkdir, delete, rename, or chmod. So Ferry splits the surface:
   chmod (both panes). Rename refuses to overwrite; replacements go through the conflict
   dialog, never a silent clobber.
 
-## Tunnels (M14)
+## Tunnels (M14; Remote M14.5)
 
 - Types: **Local** (listen locally → destination reachable from the server), **Dynamic SOCKS**
-  (loopback SOCKS5 proxy; per-connection target), and **Remote** (listen on the server →
-  local dest) — **Remote is deferred to the backlog** (Citadel 0.12.1 exposes no client
-  `tcpip-forward`, ADR-021). A Remote tunnel is still savable/editable, but starting it reports
-  "not supported yet" in the status column.
+  (loopback SOCKS5 proxy; per-connection target), and **Remote** (the server listens via a
+  `tcpip-forward` request; each server-side connection arrives back as a `forwarded-tcpip`
+  channel and is bridged to a destination reachable from this Mac — ADR-022). A Remote tunnel
+  needs a **fixed listen port** (Citadel dispatches incoming channels by the requested
+  host/port pair, so "let the server choose" can't work); its listen host is the *server-side*
+  bind address (default loopback; subject to the server's `GatewayPorts` policy). If the SSH
+  session drops, remote tunnels fail immediately ("The SSH session dropped."); local/SOCKS
+  listeners stay up and re-dial lazily.
 - Saved per profile (`ConnectionProfile.tunnels`); `isEnabled` marks a tunnel for auto-start,
   and the per-profile `autoStartTunnels` flag (footer checkbox; nil ⇒ on) gates whether enabled
   tunnels come up on connect. The Active toggle starts/stops a tunnel live while connected.
@@ -214,5 +218,7 @@ listing, stat, mkdir, delete, rename, or chmod. So Ferry splits the surface:
 - Network: outbound client (`com.apple.security.network.client`) **plus**
   `com.apple.security.network.server` (M14, ADR-021) — Local and SOCKS forwards bind a loopback
   listener socket and *accept* connections, which the sandbox permits only with the server
-  entitlement. (Remote forwards would listen on the *server* and need nothing here — moot while
-  Remote is deferred.) The Direct build is unsandboxed.
+  entitlement. Remote forwards (M14.5) need nothing further: the listener lives on the *server*;
+  the forwarded channels arrive over the existing SSH connection and the bridge to the local
+  destination is an ordinary outbound connect (`network.client`, already held). The Direct
+  build is unsandboxed.

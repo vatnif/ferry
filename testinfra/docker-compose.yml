@@ -32,6 +32,9 @@ services:
     container_name: ferry-test-ssh
     ports:
       - "127.0.0.1:2223:22"
+      # Remote-forward round trip (M14.5): host :2224 reaches the forwarded
+      # listener the tests ask sshd to open on container :18080.
+      - "127.0.0.1:2224:18080"
     volumes:
       # Writable home; fixtures mounted read-only alongside it.
       - ./fixtures/seed:/home/ferry/fixtures:ro

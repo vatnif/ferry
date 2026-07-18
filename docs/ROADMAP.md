@@ -35,8 +35,9 @@ Workflow per milestone: implement → unit + integration tests pass → docs upd
 
 ## Phase E — Power features
 - **M14** `TunnelEngine` + tunnel manager UI (screen 4): **Local + SOCKS** forwards + auto-start.
-  **Remote** forwarding deferred to backlog — Citadel 0.12.1 exposes no client `tcpip-forward`
-  (ADR-021); the type stays savable but reports not-supported when started.
+  Remote forwarding was deferred here (ADR-021) and un-deferred in M14.5.
+- **M14.5** **Remote** port forwarding — un-deferred: the pinned Citadel 0.12.1 does expose the
+  client `tcpip-forward` API (via the Wellz26 swift-nio-ssh fork it rides on, ADR-022).
 - **M15** Open in Terminal (Direct only).
 - **M16** Tabs, settings (screen 5), dark-mode audit vs mockups, error-message pass,
   acknowledgements screen (license notices), minimal in-app help (Help menu → user
@@ -48,11 +49,9 @@ Workflow per milestone: implement → unit + integration tests pass → docs upd
   EULA, website checklist.
 
 ## Post-v1 backlog (rough priority)
-0. **Remote port forwarding** (deferred from M14, ADR-021): needs the `tcpip-forward` global
-   request + server-opened `forwarded-tcpip` channels, which Citadel 0.12.1 doesn't expose on
-   the client — revisit when Citadel gains the API, or vendor a patch / drop to NIOSSH. Also a
-   multiplexed `SSHSessionManager` (one SSH session shared by SFTP + tunnels + exec) so tunnels
-   ride the browser's session instead of opening their own.
+0. Multiplexed `SSHSessionManager` (one SSH session shared by SFTP + tunnels + exec) so tunnels
+   ride the browser's session instead of opening their own. (Remote port forwarding, formerly
+   this item, shipped in M14.5 — ADR-022.)
 1. Edit remote file in external editor with auto-upload on save
 2. Jump host / ProxyJump; ssh-agent support (Direct)
 3. Import from FileZilla / Cyberduck

@@ -100,7 +100,12 @@ against it.
   exec-blocked server (:2222) reports a clear error; upload resume rejected
 - M14: TCP round trip through a local forward and through the SOCKS proxy (read the
   server's own sshd banner back via `127.0.0.1:22`), port-in-use, stop releases the port,
-  auto-start, remote-unsupported — against :2223 (`AllowTcpForwarding yes`)
+  auto-start — against :2223 (`AllowTcpForwarding yes`)
+- M14.5: remote-forward round trip the other way (host :2224 → the `tcpip-forward`
+  listener sshd opens on container :18080 → `forwarded-tcpip` → engine → host-mapped sshd
+  :2223), stop releases the server-side port, server refusal reported, live connection
+  count — needs `GatewayPorts clientspecified` + the :2224 mapping; rebuild the image with
+  `docker compose up -d --build ssh` after pulling these changes
 
 ## M9 additions (112 kit tests + 4 UI, all green)
 
@@ -186,11 +191,27 @@ against it.
   local-forward round trip (forward `127.0.0.1:22` on the server side and read the SSH
   banner back through the tunnel) + stop-releases-the-port; SOCKS5 round trip (drive the
   handshake by hand to the same target); port-in-use reports a clear failure; `startEnabled`
-  brings up enabled tunnels and skips disabled ones; a Remote tunnel reports not-supported.
+  brings up enabled tunnels and skips disabled ones.
   Host key is pre-trusted via the exec server's SFTP subsystem (macOS-14-safe).
 - `FerryUITests/testTunnelManagerOpensAndAddsTunnel`: connect over SFTP, open the tunnel
   manager from the toolbar, add a local forward through the editor, and see the row land in
   the table.
+
+## M14.5 additions (Remote port forwarding, ADR-022)
+
+- `FerryCoreTests/SSHChannelDataCodecTests` (unit, `EmbeddedChannel`, no server): the
+  `SSHChannelData ↔ ByteBuffer` codec remote forwards install on `forwarded-tcpip`
+  channels — inbound unwrap, stdErr-type rejection, outbound wrap.
+- `FerryCoreTests/TunnelRemoteValidationTests` (unit, no server — validation runs before
+  the engine dials): remote without a destination, and with a server-chosen listen port
+  (0), both fail with clear messages.
+- `FerryIntegrationTests/TunnelIntegrationTests` remote tests (same suite; need the
+  rebuilt image — `docker compose up -d --build ssh` — for `GatewayPorts clientspecified`
+  and the `127.0.0.1:2224 → :18080` mapping): full round trip (host :2224 → sshd's
+  `0.0.0.0:18080` listener → `forwarded-tcpip` → engine → host-mapped sshd :2223 →
+  `SSH-2.0` banner) + stop releases the server-side port (asserted as "no banner" — the
+  Docker proxy may accept-then-reset); a refused `tcpip-forward` (port 22, sshd's own)
+  reports "refused"; the live connection count tracks a held-open connection 0 → 1 → 0.
 
 ## Suite inventory (M1–M8)
 

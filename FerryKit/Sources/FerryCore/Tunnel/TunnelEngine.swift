@@ -27,7 +27,7 @@ public struct TunnelStatus: Sendable, Equatable, Identifiable {
 }
 
 /// Manages a connection profile's port forwards over a **dedicated** SSH session
-/// (M14, ADR-021). The tunnel session is opened with the same `SSHClientFactory`
+/// (M14, ADR-021; remote forwards M14.5, ADR-022). The tunnel session is opened with the same `SSHClientFactory`
 /// (host-key TOFU + password/key auth) and reuses the already-resolved
 /// credential, so it never re-prompts — but it's independent of the browser's
 /// SFTP/SCP session, so tunnels have their own lifecycle and work regardless of
@@ -38,12 +38,13 @@ public struct TunnelStatus: Sendable, Equatable, Identifiable {
 /// group**, which is what lets the `GlueHandler` pair splice a local connection
 /// to its SSH channel by touching both contexts directly.
 ///
-/// Supported modes (Citadel 0.12.1 exposes only `direct-tcpip` on the client):
+/// Supported modes:
 /// - **Local** — bind a loopback listener; each accepted connection opens a
 ///   `direct-tcpip` channel to a fixed destination reachable from the server.
 /// - **SOCKS** — same, but a per-connection SOCKS5 handshake picks the target.
-/// - **Remote** — needs the `tcpip-forward` global request, which Citadel keeps
-///   internal; deferred to the backlog (ADR-021). Starting one reports failed.
+/// - **Remote** — a `tcpip-forward` global request makes the server listen;
+///   each server-side connection arrives back as a `forwarded-tcpip` channel
+///   and is bridged to a local destination (M14.5, ADR-022).
 public actor TunnelEngine {
     private let parameters: SSHConnectionParameters
     /// One thread, so all channels share an event loop (see type doc).
@@ -54,6 +55,9 @@ public actor TunnelEngine {
         let config: TunnelConfiguration
         let listener: Channel?
         let connections: NIOLockedValueBox<Int>
+        /// Remote forwards: the Task running Citadel's `withRemotePortForward`,
+        /// which blocks until cancelled. nil for local/SOCKS.
+        let task: Task<Void, Never>?
     }
     private var running: [UUID: RunningTunnel] = [:]
     private var phases: [UUID: TunnelStatus.Phase] = [:]
@@ -127,8 +131,7 @@ public actor TunnelEngine {
             switch config.kind {
             case .local:  try await startForward(config, socks: false)
             case .socks:  try await startForward(config, socks: true)
-            case .remote:
-                setPhase(config.id, .failed("Remote port forwarding isn’t supported yet."))
+            case .remote: try await startRemote(config)
             }
         } catch {
             setPhase(config.id, .failed(Self.describe(error, listenPort: config.listenPort)))
@@ -140,6 +143,14 @@ public actor TunnelEngine {
             // Clear a lingering failed/starting status for a not-actually-running tunnel.
             if phases[id] != nil { setPhase(id, .stopped) }
             return
+        }
+        if let task = tunnel.task {
+            // Cancellation makes withRemotePortForward send the protocol-level
+            // cancel request; wait for that round-trip so the server-side port
+            // is actually released — bounded, because a half-dead session
+            // could stall the reply indefinitely.
+            task.cancel()
+            await Self.awaitCompletion(of: task, upTo: 3)
         }
         try? await tunnel.listener?.close()
         setPhase(id, .stopped)
@@ -163,8 +174,25 @@ public actor TunnelEngine {
     private func ensureConnected() async throws -> SSHClient {
         if let ssh, ssh.isConnected { return ssh }
         let client = try await SSHClientFactory.connect(parameters, group: group)
+        // A remote forward otherwise sleeps obliviously if the session dies,
+        // leaving a misleading "forwarding" status (ADR-022).
+        client.onDisconnect { [weak self] in
+            Task { await self?.sshSessionDropped() }
+        }
         ssh = client
         return client
+    }
+
+    /// The dedicated SSH session died. Remote forwards live *on* the session,
+    /// so they fail immediately; local/SOCKS listeners stay up (their
+    /// per-connection bridges fail until a session is lazily re-established).
+    private func sshSessionDropped() {
+        ssh = nil
+        for (id, tunnel) in running where tunnel.config.kind == .remote {
+            tunnel.task?.cancel()
+            running.removeValue(forKey: id)
+            setPhase(id, .failed("The SSH session dropped."))
+        }
     }
 
     // MARK: Local / SOCKS forwards
@@ -207,7 +235,7 @@ public actor TunnelEngine {
         }
 
         let listener = try await bootstrap.bind(host: config.listenHost, port: config.listenPort).get()
-        running[id] = RunningTunnel(config: config, listener: listener, connections: counts)
+        running[id] = RunningTunnel(config: config, listener: listener, connections: counts, task: nil)
         setPhase(id, .forwarding(connections: 0))
         // Detect an unexpected listener drop (not via stop()).
         listener.closeFuture.whenComplete { [weak self] _ in
@@ -245,6 +273,102 @@ public actor TunnelEngine {
     private func connectionCountChanged(_ id: UUID) {
         guard let tunnel = running[id] else { return }
         setPhase(id, .forwarding(connections: tunnel.connections.withLockedValue { $0 }))
+    }
+
+    // MARK: Remote forwards (M14.5, ADR-022)
+
+    /// Asks the server to listen on `listenHost:listenPort` (`tcpip-forward`
+    /// global request); each server-side connection arrives back as a
+    /// `forwarded-tcpip` channel and is bridged to the configured destination
+    /// on this machine. Citadel's `withRemotePortForward` blocks until its
+    /// task is cancelled (cancellation sends the protocol's cancel request),
+    /// so it runs inside a stored `Task` that `stop()` cancels.
+    private func startRemote(_ config: TunnelConfiguration) async throws {
+        guard config.destinationHost?.isEmpty == false,
+              let destPort = config.destinationPort, destPort > 0 else {
+            throw TunnelError.invalidConfiguration("A remote forward needs a destination host and port.")
+        }
+        // Citadel routes incoming `forwarded-tcpip` channels by matching the
+        // server-reported (host, port) against the requested pair, so a
+        // server-chosen port (0) could never be dispatched.
+        guard config.listenPort > 0 else {
+            throw TunnelError.invalidConfiguration("A remote forward needs a fixed listen port.")
+        }
+        if running.values.contains(where: { $0.config.kind == .remote
+                && $0.config.listenHost == config.listenHost
+                && $0.config.listenPort == config.listenPort }) {
+            throw TunnelError.invalidConfiguration(
+                "Another tunnel is already forwarding \(config.listenHost):\(config.listenPort) on the server.")
+        }
+
+        let ssh = SendableSSH(client: try await ensureConnected())
+        let counts = NIOLockedValueBox(0)
+        let id = config.id
+        let notify: @Sendable () -> Void = { [weak self] in
+            Task { await self?.connectionCountChanged(id) }
+        }
+        let destHost = config.destinationHost ?? ""
+
+        let task = Task { [weak self] in
+            do {
+                try await ssh.client.withRemotePortForward(
+                    host: config.listenHost,
+                    port: config.listenPort,
+                    onOpen: { [weak self] _ in await self?.remoteForwardOpened(id) },
+                    handleChannel: { [weak self] forwarded, _ in
+                        guard let self else {
+                            return forwarded.eventLoop.makeFailedFuture(CancellationError())
+                        }
+                        let promise = forwarded.eventLoop.makePromise(of: Void.self)
+                        promise.completeWithTask {
+                            try await self.bridgeRemote(forwarded: forwarded,
+                                                        host: destHost, port: destPort,
+                                                        counts: counts, notify: notify)
+                        }
+                        return promise.futureResult
+                    })
+            } catch is CancellationError {
+                // stop() cancelled us; the protocol cancel request already
+                // went out and stop() reports the .stopped phase.
+            } catch {
+                await self?.remoteForwardTaskFailed(id, error: error, listenPort: config.listenPort)
+            }
+        }
+        // No suspension between task creation and this insert (actor-isolated),
+        // so the task's callbacks can't observe a missing entry.
+        running[id] = RunningTunnel(config: config, listener: nil, connections: counts, task: task)
+        // The phase stays .starting until the server confirms (onOpen) or refuses.
+    }
+
+    private func remoteForwardOpened(_ id: UUID) {
+        guard running[id] != nil else { return }   // stopped while starting
+        setPhase(id, .forwarding(connections: 0))
+    }
+
+    private func remoteForwardTaskFailed(_ id: UUID, error: Error, listenPort: Int) {
+        guard running.removeValue(forKey: id) != nil else { return }   // stop() already handled it
+        setPhase(id, .failed(Self.describe(error, listenPort: listenPort)))
+    }
+
+    /// Waits for `task` to finish, giving up after `seconds`. `Task.value`
+    /// doesn't react to cancellation, so a task-group race can't bound it —
+    /// the losing waiter here is resume-once guarded and simply abandoned.
+    private static func awaitCompletion(of task: Task<Void, Never>, upTo seconds: Double) async {
+        let resumed = NIOLockedValueBox(false)
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            Task {
+                await task.value
+                if resumed.withLockedValue({ let first = !$0; $0 = true; return first }) {
+                    continuation.resume()
+                }
+            }
+            Task {
+                try? await Task.sleep(for: .seconds(seconds))
+                if resumed.withLockedValue({ let first = !$0; $0 = true; return first }) {
+                    continuation.resume()
+                }
+            }
+        }
     }
 
     // MARK: Channel bridging (nonisolated: runs off the actor, on NIO futures)
@@ -323,6 +447,27 @@ public actor TunnelEngine {
         trackConnection(accepted, counts: counts, notify: notify)
     }
 
+    /// Bridges one server-side connection (a `forwarded-tcpip` channel) to the
+    /// local destination — `bridgeLocal`'s ordering, inverted. The forwarded
+    /// channel doesn't start reading until this function's future completes,
+    /// and the SSH child channel buffers writes issued before it activates, so
+    /// neither side's opening bytes can be dropped.
+    private nonisolated func bridgeRemote(forwarded: Channel, host: String, port: Int,
+                                          counts: NIOLockedValueBox<Int>,
+                                          notify: @escaping @Sendable () -> Void) async throws {
+        let (sshGlue, localGlue) = GlueHandler.matchedPair()
+        // Codec first: forwarded-tcpip channels arrive speaking SSHChannelData
+        // (direct-tcpip channels get Citadel's internal codec; this path doesn't).
+        try await forwarded.pipeline.addHandlers([SSHChannelDataCodec(), sshGlue]).get()
+        // Same single event loop as the forwarded channel — the GlueHandler
+        // pair requires it.
+        _ = try await ClientBootstrap(group: forwarded.eventLoop)
+            .channelInitializer { local in local.pipeline.addHandler(localGlue) }
+            .connect(host: host, port: port)
+            .get()
+        trackConnection(forwarded, counts: counts, notify: notify)
+    }
+
     // MARK: Errors
 
     enum TunnelError: Error { case invalidConfiguration(String) }
@@ -335,6 +480,12 @@ public actor TunnelEngine {
             return "Permission denied binding port \(listenPort) (ports below 1024 need privileges)."
         }
         if case TunnelError.invalidConfiguration(let message) = error { return message }
+        if let ssh = error as? NIOSSHError, ssh.type == .globalRequestRefused {
+            return "The server refused to forward port \(listenPort) — it may be in use on the server, or forwarding may be disabled (AllowTcpForwarding)."
+        }
+        if case SSHClientError.channelCreationFailed = error {
+            return "Couldn’t establish the remote forward for port \(listenPort)."
+        }
         return String(describing: error)
     }
 }

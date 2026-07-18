@@ -15,4 +15,8 @@ Subsystem sftp /usr/lib/ssh/sftp-server
 
 # Useful for later exec-based features (M14 tunnels); harmless for tests.
 AllowTcpForwarding yes
+# Remote-forward tests (M14.5) request a 0.0.0.0 bind so the forwarded
+# listener is reachable through the container's port mapping; the default
+# (GatewayPorts no) would force loopback-only inside the container.
+GatewayPorts clientspecified
 PrintMotd no
