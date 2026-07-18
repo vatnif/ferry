@@ -48,8 +48,11 @@ FerryCore (FerryKit package)
 ├── ConnectionSupervisor (actor, M9)     keep-alive ping (30 s) + auto-reconnect with
 │                                        backoff over a SupervisedConnection
 │                                        (ping/reestablish — SFTPSource conforms)
-├── SSHSessionManager (actor)            one SSH session shared by SFTP + tunnels + exec
 ├── TunnelEngine                         local / remote / SOCKS forwards (M14)
+├── TerminalSession (actor, M15.5)       interactive PTY shell over Citadel withPTY
+│                                        (macOS 15+ like SCP, ADR-023); dedicated SSH
+│                                        session via SSHClientFactory; out-of-band
+│                                        end-reason classification (TerminalEndClassifier)
 ├── ConnectionStore                      profiles + folder tree, JSON, NO secrets
 ├── CredentialVault                      Keychain wrapper (M3)
 ├── SSH/ (M11)                           HostKeyStore (Ferry known_hosts, plaintext),
@@ -67,6 +70,15 @@ FerryCore (FerryKit package)
 CFTP (separate SwiftPM C target)          thin non-variadic shim over the system
                                           libcurl so Swift can call setopt/getinfo;
                                           links `curl`. FerryCore depends on it (M12).
+
+FerryTerminalUI (second FerryKit product, M15.5)
+├── TerminalSessionBridge                 SwiftTerm TerminalViewDelegate ⇄ TerminalSession
+│                                         (keystrokes → send, resize → window-change,
+│                                         output stream → feed on the main actor)
+└── SSHTerminalView                       NSViewRepresentable host for SwiftTerm's
+                                          TerminalView (theme-following native colors)
+                                          — kept out of FerryCore so the core stays
+                                          UI-free; depends on SwiftTerm (MIT, ADR-023)
 ```
 
 ## Key design decisions
@@ -81,8 +93,12 @@ CFTP (separate SwiftPM C target)          thin non-variadic shim over the system
   `FileSystemSourceError`. Panes and the TransferEngine only see this protocol, so
   WebDAV/S3 later are new conformances, not rewrites, and the local pane is "just another
   source" (which also enables remote↔remote later).
-- **Session sharing**: `SSHSessionManager` owns one authenticated SSH connection per
-  profile; SFTP channels, exec channels (SCP, terminal prep) and tunnels multiplex over it.
+- **Session per subsystem** (ADR-021/023): each SSH subsystem — `SFTPSource`/`SCPSource`
+  (browser), `TunnelEngine`, `TerminalSession` — owns its own authenticated session,
+  all built by `SSHClientFactory` (one audited home for host-key TOFU + auth) and
+  reusing the profile's already-resolved credential, so nothing re-prompts. A
+  multiplexed `SSHSessionManager` (one session shared by all of them) is a backlog
+  item, not current architecture.
 - **Resume semantics** (implemented M9; details in DOMAIN.md + ADR-014): downloads write
   `name.ferrypart` and restart from its size (SFTP seek / FTP `REST`), atomically renamed
   into place on completion; uploads probe remote size and continue. The engine owns all

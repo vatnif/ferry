@@ -5,7 +5,10 @@ let package = Package(
     name: "FerryKit",
     platforms: [.macOS(.v14)],
     products: [
-        .library(name: "FerryCore", targets: ["FerryCore"])
+        .library(name: "FerryCore", targets: ["FerryCore"]),
+        // The embedded terminal's view layer (M15.5, ADR-023) — kept out of
+        // FerryCore so the core stays UI-free and headless-testable.
+        .library(name: "FerryTerminalUI", targets: ["FerryTerminalUI"])
     ],
     dependencies: [
         // SSH/SFTP client (MIT, over swift-nio-ssh Apache-2.0) — ADR-003/ADR-011,
@@ -15,7 +18,11 @@ let package = Package(
         // Citadel; made a direct dependency at M11 so host-key fingerprints (SHA256)
         // and private-key parsing name the SAME Curve25519/RSA types Citadel's
         // OpenSSH initializers extend (Crypto, not CryptoKit). ADR-017, LICENSING.md.
-        .package(url: "https://github.com/apple/swift-crypto.git", "3.0.0"..<"4.0.0")
+        .package(url: "https://github.com/apple/swift-crypto.git", "3.0.0"..<"4.0.0"),
+        // Terminal emulator (MIT; its non-MIT deps attach only to targets we
+        // don't link — ADR-023, LICENSING.md). Pure emulation: Ferry uses
+        // TerminalView + delegate only, never LocalProcess (sandbox-safe).
+        .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", from: "1.14.0")
     ],
     targets: [
         // Thin C shim over the system libcurl (curl license — nothing bundled,
@@ -26,7 +33,12 @@ let package = Package(
                 dependencies: ["CFTP",
                                .product(name: "Citadel", package: "Citadel"),
                                .product(name: "Crypto", package: "swift-crypto")]),
+        // SwiftTerm host view + TerminalSession bridge (M15.5, ADR-023).
+        .target(name: "FerryTerminalUI",
+                dependencies: ["FerryCore",
+                               .product(name: "SwiftTerm", package: "SwiftTerm")]),
         .testTarget(name: "FerryCoreTests", dependencies: ["FerryCore"]),
+        .testTarget(name: "FerryTerminalUITests", dependencies: ["FerryTerminalUI"]),
         // Integration tests talk to the local Docker test servers (testinfra/).
         // They skip themselves when the servers are down, unless
         // FERRY_REQUIRE_TEST_SERVERS=1 turns absence into a failure (CI mode).

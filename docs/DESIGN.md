@@ -3,7 +3,8 @@
 *The approved M0 mockups are the binding UI contract (CLAUDE.md rule 3). This file is
 their written form. Any change requires user approval + an ADR. Approved 2026-07-05.*
 
-**Mockups**: open `docs/design/ferry-mockups.html` in a browser (6 tabs, light + dark).
+**Mockups**: open `docs/design/ferry-mockups.html` in a browser (7 tabs, light + dark —
+tab 7 "Terminal" added in M15.5, approved 2026-07-18, ADR-023).
 
 **Implementation status** (which mockup elements are live vs pending — keep current):
 - Screen 1: sidebar + editor (M4), dual-pane browser with sync browsing (M7), the
@@ -26,6 +27,8 @@ their written form. Any change requires user approval + an ADR. Approved 2026-07
   protocol-level test replaces it. The tunnels row (saved-count + Edit…) still opens the
   full manager only from screen 1's Tunnels button in M14; editing tunnels from the
   connection sheet is a later refinement.
+- Screen 7 (embedded terminal, M15.5): **approved 2026-07-18** (mockup tab 7, ADR-023).
+  Implementation pending (checkpoints B/C in progress).
 - Screen 3 (host keys): **live (M11)** — TOFU first-contact prompt (🔑, selectable
   fingerprint box, "Remember this key" default-on) and the changed-key alarm (⚠️,
   Disconnect primary, Replace gated behind a second confirmation). Plus the connect-time
@@ -105,6 +108,47 @@ interrupted policy segmented **Resume automatically** (default) / Ask / Restart 
 `.ferrypart` explainer; exists-policy Overwrite / **Ask** / Skip / Rename; retry count
 (3× / 5 s); bandwidth limit + checksum verification (v1.x, may ship hidden); queue-done
 notification. Footer note: "Changes apply immediately."
+
+## Screen 7 — Embedded terminal (M15.5 — approved 2026-07-18)
+
+*Added to the binding UI contract at the M15.5 checkpoint A review (mockup tab 7,
+ADR-023).*
+
+- **Terminal panel**: collapsible, docked below the dual panes and above the transfer
+  queue (independent collapse); height draggable at its top edge; open/closed state,
+  height, and docked/windowed mode are per connection tab. Header: `＞_ Terminal` +
+  endpoint (mono) + live state ("● shell running" green / "session ended" grey) +
+  pop-out (⧉), collapse (⌄) and close (✕). Body: the shell (SF Mono, standard ANSI
+  palette, follows the app theme). Session-ended state shows an accent-tinted banner
+  with "↻ Restart Session".
+- **Pop-out window**: ⧉ moves the *same live shell* (session + scrollback intact) to a
+  per-connection window titled "Terminal — <profile>"; its header swaps the pop-out
+  action for "⇤ Dock in Window", which reverses the move. A popped-out window survives
+  disconnecting/closing the browser tab (it owns its session).
+- **Terminal-only connections**: an **Open Terminal** item in the sidebar profile
+  context menu (SSH profiles only) opens a shell *without* connecting the browser,
+  honoring the same dispatch setting — built-in → the standalone terminal window
+  ("Dock in Window" hidden; there is no browser tab), external → the M15 hand-off.
+  Same host-key TOFU + credential flow as a normal connect.
+- **Dispatch**: the existing screen-1 Terminal toolbar button (accent-filled while the
+  panel is open) and the Open Terminal menu item act per Settings ▸ Terminal —
+  "Ferry's built-in terminal" opens the panel/window; Terminal.app / iTerm2 / custom
+  command do the M15 external hand-off.
+- **Settings ▸ Terminal tab**: radio group "Open terminal sessions in" (built-in ·
+  Terminal.app · iTerm2 · custom command + command field), then built-in options: font
+  (family + size) and scrollback line count, with the hint "Scrollback is kept in memory
+  only — nothing you type or see is ever written to disk."
+- **Visibility rules**: Terminal button only for SSH profiles (SFTP/SCP), absent for
+  FTP/FTPS (like Tunnels). Built-in requires macOS 15 (SSH-library gate, as SCP):
+  on macOS 14 the Settings option is disabled with "Requires macOS 15" — Direct falls
+  back to Terminal.app; APPSTORE builds hide all three external options (Direct-only
+  capability) and on macOS 14 disable the toolbar button with the same explainer.
+- **Security**: every terminal (panel or window) is its own SSH session reusing the
+  profile's resolved credential (no second prompt); nothing typed or displayed is
+  logged; scrollback is memory-only.
+- **Scope fence**: Ferry's terminal is a convenience, not a terminal app — deliberately
+  no terminal tabs, split panes, color themes, or keybinding editors; font and
+  scrollback settings only (ADR-023).
 
 ## Conventions
 

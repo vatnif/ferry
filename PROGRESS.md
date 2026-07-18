@@ -24,11 +24,43 @@
 | M14 | Tunneling | done (committed 7938556) |
 | M14.5 | Remote port forwarding | done (committed a4899a2) |
 | M15 | Open in Terminal | todo |
+| M15.5 | Embedded terminal (SwiftTerm) | **in progress** — A approved; B (FerryKit) **awaiting review**; C (app UI) todo |
 | M16 | Tabs & polish | todo |
 | M17 | Packaging (sign/notarize/DMG/Sparkle) | todo |
 | M18 | Sale readiness | todo |
 
 Backlog (post-v1): see `docs/ROADMAP.md`.
+
+## Current state of the code (M15.5 checkpoint B — awaiting review, NOT committed)
+
+- **The embedded terminal's engine + view bridge are built and green** (ADR-023;
+  checkpoint A mockups approved 2026-07-18, screen 7 now binding).
+- **`FerryCore/Terminal/TerminalSession`** (actor, `@available(macOS 15)` like SCP):
+  dedicated SSH session via `SSHClientFactory` (TOFU + resolved credential, no
+  re-prompt), Citadel `withPTY` driven from a nonisolated helper (Swift 6 region
+  rules), `send`/`resize` (→ `window-change`) via the published `TTYStdinWriter`,
+  one lifetime `output: AsyncStream<Data>` spanning restarts, observable state
+  stream (idle/connecting/running/ended). End reasons come from the pure
+  **`TerminalEndClassifier`** — out-of-band flags (user terminate, session drop)
+  outrank whatever `withPTY` throws, because its cleanup `close()` masks errors
+  with "Already closed" (the ADR-020 lesson). `onDisconnect` fails a live shell
+  ("The SSH session dropped."); `terminate()` is bounded (3 s, TunnelEngine idiom).
+- **New FerryKit product `FerryTerminalUI`** (keeps FerryCore UI-free): **SwiftTerm
+  1.14.0** dependency (MIT — LICENSING.md moved it from Planned to live; its non-MIT
+  deps attach only to targets Ferry doesn't link), `TerminalSessionBridge`
+  (`@MainActor`; delegate keystrokes → `send`, `sizeChanged` → `resize`, output pump →
+  `feed(byteArray:)`; `@preconcurrency TerminalViewDelegate` conformance), and
+  `SSHTerminalView` (`NSViewRepresentable`, `configureNativeColors()` = theme-following,
+  settable font). Scrollback-lines config deferred to checkpoint C (SwiftTerm recomputes
+  options on resize — needs care).
+- Tests: **272 kit tests, all green** — `TerminalSessionUnitTests` (11: classifier
+  vectors + PTY request), `TerminalSessionBridgeTests` (6, new `FerryTerminalUITests`
+  target, stub session), `TerminalSessionIntegrationTests` (8 against :2223: command
+  round trip, resize verified by `stty size`, `exit`/`exit 1` clean, wrong password
+  typed, bounded terminate, restart, :2222 forced-command never hangs). **No testinfra
+  changes.** Both app flavors build (app doesn't link FerryTerminalUI until C).
+- **Checkpoint C (todo)**: terminal panel + pop-out window + "Open Terminal" context
+  menu + Settings dispatch per screen 7; XCUITest; scrollback setting.
 
 ## Current state of the code (M14.5 — done, committed a4899a2)
 
@@ -392,7 +424,9 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
 
 ## Next steps
 
-1. **M15 — Open in Terminal** (Direct only). The exec-capable :2223 SSH server supports it.
+1. **M15.5 checkpoint A review** — embedded-terminal mockups (tab 7) await user
+   sign-off; then M15 (Open in Terminal, Direct only) and M15.5 checkpoints B/C
+   (plan: `~/.claude/plans/plan-a-new-milestone-graceful-whisper.md`, ADR-023).
 2. Backlog: multiplexed `SSHSessionManager` (ADR-021/022); FTPS
    **certificate-trust prompt** (TLS analogue of host-key TOFU, for self-
    signed/private-CA servers — deferred from M12, ADR-019); FTP connection pooling
@@ -402,6 +436,40 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
 
 ## Session log
 
+- **2026-07-18 (d)** — M15.5 checkpoint B built (terminal engine + bridge). SwiftTerm
+  1.14.0 added (MIT verified; new `FerryTerminalUI` product so FerryCore stays UI-free;
+  LICENSING.md updated). `TerminalSession` actor over Citadel `withPTY` (dedicated
+  session, ADR-021 pattern; macOS-15 gate; out-of-band `TerminalEndClassifier` for the
+  "Already closed" masking, ADR-020 pattern) + `TerminalSessionBridge`/`SSHTerminalView`
+  (SwiftTerm delegate ⇄ session, theme-following colors). One Swift 6 fight: the
+  `withPTY` closure must be formed in a nonisolated region (sending non-Sendable
+  closure), solved with a nonisolated static driver + `@unchecked Sendable` boxes
+  (TunnelEngine idiom). 272 kit tests green (+11 unit, +6 bridge in a new test target,
+  +8 integration against :2223 — no testinfra changes); both flavors build.
+  ARCHITECTURE.md corrected (aspirational `SSHSessionManager` → session-per-subsystem
+  reality), DOMAIN.md gained the Embedded-terminal rules, TESTING.md updated.
+  **Checkpoint B awaiting review — nothing committed.**
+- **2026-07-18 (c)** — M15.5 planned + checkpoint A built (embedded terminal, ADR-023).
+  Planning verified both risks against pinned sources: Citadel 0.12.1 has a **public
+  `withPTY`** (pty-req + shell + stdin writer + `changeSize` resize) but it is
+  `@available(macOS 15)` like `withExec` with no public macOS-14 path → terminal is
+  macOS-15-gated (ADR-020 precedent, no Citadel fork); SwiftTerm v1.14.0 verified MIT,
+  SwiftPM, macOS 11 floor, pure emulator (no process spawn → App Store-safe). Plan
+  approved: backlog item 6 pulled forward as M15.5; dedicated SSH session via
+  `SSHClientFactory` (ADR-021 pattern); SwiftTerm attaches via a new `FerryTerminalUI`
+  FerryKit product; embedded-vs-external is one setting driving the one Terminal button
+  (user's proposal). Checkpoint A artifacts: mockup **tab 7** in
+  `docs/design/ferry-mockups.html` (terminal panel docked below the panes — running +
+  session-ended states — and the Settings ▸ Terminal tab with the built-in/external
+  picker), DESIGN.md screen 7 (marked PROPOSED), ADR-023 (status: sign-off pending),
+  ROADMAP updated. Review round 1 added two user-requested features to the proposal:
+  a **pop-out terminal window** (⧉ re-hosts the same live shell; "Dock in Window"
+  reverses; tunnel-manager precedent) and **terminal-only connections** (profile
+  context-menu "Open Terminal" — a shell with no browser, same dispatch setting, same
+  TOFU/credential flow), plus an explicit **scope fence** (no terminal tabs/splits/
+  themes/keybindings — ADR-023). **Checkpoint A approved (both rounds) 2026-07-18**;
+  markers flipped in mockups/DESIGN.md/ADR-023 — screen 7 is now part of the binding UI
+  contract. Checkpoint B (FerryKit) started. Nothing committed yet.
 - **2026-07-18 (b)** — M14.5 built (Remote port forwarding, ADR-022). Re-audit of the pinned
   Citadel 0.12.1 checkout found ADR-021's premise outdated: it ships a full public client
   remote-forward API (merged via the **Wellz26/swift-nio-ssh 0.3.6 fork** that

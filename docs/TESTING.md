@@ -106,6 +106,12 @@ against it.
   :2223), stop releases the server-side port, server refusal reported, live connection
   count — needs `GatewayPorts clientspecified` + the :2224 mapping; rebuild the image with
   `docker compose up -d --build ssh` after pulling these changes
+- M15.5 (checkpoint B): real PTY shell suite against :2223 (**no testinfra changes** —
+  the exec server already permits TTYs): command round trip, resize via `window-change`
+  verified by `stty size`, `exit`/`exit 1` both end as clean exits, wrong password →
+  typed failure, bounded terminate mid-command, restart after exit; plus the
+  forced-command server (:2222) pinned to "never hangs, ends on input". All
+  `@available(macOS 15)` like the SCP suite (Citadel's `withPTY` gate).
 
 ## M9 additions (112 kit tests + 4 UI, all green)
 
@@ -212,6 +218,25 @@ against it.
   `SSH-2.0` banner) + stop releases the server-side port (asserted as "no banner" — the
   Docker proxy may accept-then-reset); a refused `tcpip-forward` (port 22, sshd's own)
   reports "refused"; the live connection count tracks a held-open connection 0 → 1 → 0.
+
+## M15.5 checkpoint B additions (272 kit tests, all green)
+
+- `FerryCoreTests/TerminalSessionUnitTests` (unit, no server): the end-reason
+  classifier — the piece `withPTY`'s "Already closed" error masking makes
+  safety-critical (out-of-band flags outrank the thrown error): user-terminate
+  outranks everything, session-drop → failure, cleanup artifacts
+  (`alreadyClosed`/`ioOnClosedChannel`/cancellation) → clean exit, shell refusal
+  (`channelFailure`) → clear message, connect errors → user-presentable text;
+  plus PTY request construction (term type, dims, degenerate-dimension clamp).
+  (`SSHClient.CommandFailed` can't be constructed — internal init; covered by
+  the integration `exit 1` test.)
+- `FerryTerminalUITests/TerminalSessionBridgeTests` (unit, stub session — new
+  test target): keystrokes forward to `send`, view resize forwards to `resize`,
+  session output delivered in order, detach stops delivery, title callback,
+  and one real `feed` into SwiftTerm's emulator buffer. Escape-sequence
+  handling is SwiftTerm's code and is deliberately not tested.
+- `FerryIntegrationTests/TerminalSessionIntegrationTests` (Docker :2223 — see
+  the scenarios list above).
 
 ## Suite inventory (M1–M8)
 

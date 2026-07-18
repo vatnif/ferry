@@ -39,6 +39,11 @@ Workflow per milestone: implement → unit + integration tests pass → docs upd
 - **M14.5** **Remote** port forwarding — un-deferred: the pinned Citadel 0.12.1 does expose the
   client `tcpip-forward` API (via the Wellz26 swift-nio-ssh fork it rides on, ADR-022).
 - **M15** Open in Terminal (Direct only).
+- **M15.5** Embedded terminal (SwiftTerm) — pulled forward from backlog item 6
+  (planning session 2026-07-18, ADR-023): Citadel `withPTY` shell panel (macOS 15+,
+  ADR-020-style gate), dedicated SSH session, one Terminal button dispatching on a
+  built-in/external setting. Checkpoints: A mockups+sign-off · B FerryKit
+  (`TerminalSession` + `FerryTerminalUI` + tests) · C app UI + XCUITest + docs.
 - **M16** Tabs, settings (screen 5), dark-mode audit vs mockups, error-message pass,
   acknowledgements screen (license notices), minimal in-app help (Help menu → user
   guide incl. `.ferrypart`/resume explainer + keyboard-shortcut reference).
@@ -57,7 +62,7 @@ Workflow per milestone: implement → unit + integration tests pass → docs upd
 3. Import from FileZilla / Cyberduck
 4. Folder synchronization (one-way mirror, dry-run preview)
 5. Bandwidth limits; checksum verification
-6. Embedded terminal (SwiftTerm)
+6. ~~Embedded terminal (SwiftTerm)~~ — pulled forward as **M15.5** (2026-07-18, ADR-023)
 7. WebDAV + S3 backends; remote↔remote transfers
 8. Menu-bar quick-upload droplet; `sftp://` URL handler; Shortcuts/AppleScript
    - Remote→Finder drag-out via `NSFilePromiseProvider` (download-on-drop) — surfaced in

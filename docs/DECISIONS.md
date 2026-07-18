@@ -496,3 +496,71 @@ with `docker compose up -d --build ssh`.
 **UI.** The editor's "Remote isn't supported yet" warning — ADR-021's recorded deviation
 from mockup screen 4 — is removed; Remote rows now behave exactly as mocked (this closes
 the deviation rather than adding one). Still not macOS-15-gated (no `withExec` involved).
+
+## 2026-07-18 — ADR-023: Embedded terminal — SwiftTerm, `withPTY`, dedicated session (M15.5)
+
+**Status: approved 2026-07-18** (checkpoint A review, two rounds — the second added the
+pop-out window, terminal-only connections, and the scope fence, all recorded below).
+Mockup tab 7 / DESIGN.md screen 7 are part of the binding UI contract (rule 3).
+
+**Milestone placement.** Backlog item 6 pulled forward as **M15.5** (after M15, before
+M16), per the approved planning session (2026-07-18): both technical risks were retired
+during planning, it shares seams with M15 (same Terminal button + dispatch setting) and
+M16 (the Settings ▸ Terminal tab renders one picker, once), and it is the App Store
+build's only possible terminal story (M15's hand-off is Direct-only).
+
+**Emulator: SwiftTerm (MIT), verified.** LICENSE file checked (MIT); its Package.swift
+dependencies (swift-argument-parser, swift-docc-plugin, package-benchmark) attach only
+to executable/doc/benchmark targets, not the `SwiftTerm` library product Ferry links —
+LICENSING.md updated when the dependency lands (pin ≥ 1.14.0). The core emulator is
+pure — `TerminalView` (NSView) + `TerminalViewDelegate` (`send` = keystrokes out,
+`sizeChanged` = resize out, `feed` = bytes in); `LocalProcess` (pty fork/exec) is an
+optional class Ferry never uses, so the App Store sandbox is unaffected (proven by
+sandboxed SwiftTerm apps: Secure ShellFish, La Terminal). Tools-version 5.9 ⇒ compiles
+in Swift 5 mode under Ferry's Swift 6 app. It attaches via a new FerryKit library
+product **`FerryTerminalUI`** (NSViewRepresentable host + delegate bridge), keeping
+`FerryCore` UI-free; one pbxproj product-dependency addition.
+
+**Shell channel: Citadel's public `withPTY` — macOS 15 gate accepted (ADR-020
+precedent).** The pinned Citadel 0.12.1 (rev ae8562f) ships
+`SSHClient.withPTY(request:environment:perform:)` (pty-req + shell; `TTYStdinWriter`
+carries `write` and `changeSize` → `WindowChangeRequest`, so resize works natively).
+Like `withExec`, it is `@available(macOS 15, *)` — the gate sits on
+`TTYOutput: AsyncSequence`, and no public macOS-14 path exists (`SSHClient.session` is
+internal; `executeCommandStream` has no stdin/resize). Forking Citadel to lower the
+gate was rejected (it is upstream orlandos-nl — unlike the already-forked
+swift-nio-ssh, ADR-022's supply-chain note). So the **embedded terminal requires
+macOS 15**, surfaced in Settings/UI with a clear explainer; SFTP/FTP/FTPS and the
+macOS 14 deployment target are unaffected. The `withPTY` cleanup inherits `withExec`'s
+"Already closed" error masking — the terminal driver reports its end state out-of-band
+(the SCPSource `UploadOutcome` pattern), never through `withPTY`'s throw.
+
+**Session strategy: dedicated SSH session per terminal** via `SSHClientFactory`
+(ADR-021 pattern): identical host-key TOFU + auth, reuses the connection's resolved
+credential (no second prompt, rule 6), decoupled lifecycle; Citadel's `.singleton`
+event-loop group (no cross-channel splicing, unlike tunnels). The multiplexed
+`SSHSessionManager` stays backlogged. Terminal bytes are never logged; scrollback is
+in-memory only (SwiftTerm's buffer).
+
+**Embedded vs OS terminal — one setting, one button** (user proposal, adopted): the
+screen-1 Terminal toolbar button dispatches on Settings ▸ Terminal — "Ferry's built-in
+terminal" (default on macOS 15+) opens the embedded panel; Terminal.app / iTerm2 /
+custom command keep M15's external hand-off. APPSTORE builds hide the external options
+(`#if !APPSTORE`, DOMAIN.md); on macOS 14 built-in is disabled with "Requires macOS 15"
+(Direct falls back to Terminal.app). Scope: SSH profiles only (SFTP/SCP) — FTP/FTPS
+show no Terminal button (like Tunnels); remote shells only, no local-shell mode.
+
+**Pop-out window + terminal-only connections** (user additions at checkpoint A review,
+2026-07-18): the panel header gains ⧉, which re-hosts the *same live* SwiftTerm view in
+a per-connection window (session + scrollback intact — the `TerminalSession`/view split
+makes this cheap); "⇤ Dock in Window" reverses it; a popped-out window survives its
+browser tab (it owns its dedicated session). Building on that window, a profile
+context-menu item **Open Terminal** (SSH profiles only) opens a shell *without*
+connecting the browser — honoring the same dispatch setting (built-in → the standalone
+window with re-dock hidden; external → M15 hand-off) and reusing the normal connect
+flow's TOFU + credential resolution. Ferry's profiles thereby double as terminal
+bookmarks without a second connect UI.
+
+**Scope fence** (recorded to keep the terminal from creeping into an iTerm2 competitor):
+deliberately **no** terminal tabs, split panes, color themes, or keybinding editors —
+font and scrollback settings only. Revisiting this fence requires a new ADR.

@@ -26,6 +26,7 @@ closed-source redistribution without copyleft obligations.
 | swift-nio, swift-atomics, swift-collections, swift-log (apple) | Apache-2.0 | via Citadel | added M6 (transitive) |
 | BigInt (attaswift) | MIT | via Citadel (RSA math) | added M6 (transitive) |
 | System libcurl (`/usr/lib/libcurl`, ships with macOS) | curl (MIT-like) | FTP/FTPS backend | **in use M12** (linked `-lcurl` via the `CFTP` shim; nothing bundled — ADR-019) |
+| SwiftTerm (migueldeicaza) | MIT (LICENSE verified 2026-07-18) | embedded terminal emulator (`FerryTerminalUI`, M15.5) | **added M15.5** (ADR-023; pinned ≥ 1.14.0). Its Package.swift deps (swift-argument-parser, swift-docc-plugin, package-benchmark — Apache-2.0-family) attach only to executable/doc/benchmark targets, **not** the `SwiftTerm` library product Ferry links |
 
 Transitive inventory: `cd FerryKit && swift package show-dependencies` — re-check and
 update this table whenever `Package.swift` or pinned versions change. All names above
@@ -37,7 +38,6 @@ must appear in the acknowledgements screen (M16).
 |---|---|---|---|
 | libssh2 (fallback only if Citadel proves insufficient) | BSD-3 | SSH/SFTP | contingency |
 | Sparkle 2 | MIT | auto-update, Direct build only | M17 |
-| SwiftTerm | MIT | embedded terminal | post-v1 |
 
 ### Dev/test-only (not shipped, so license only needs to permit use)
 

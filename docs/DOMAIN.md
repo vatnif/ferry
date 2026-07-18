@@ -204,6 +204,30 @@ listing, stat, mkdir, delete, rename, or chmod. So Ferry splits the surface:
 - "Terminal" builds an `ssh` command from the profile (host, port, user, key file) and
   opens Terminal.app / iTerm2 / custom (setting). Passwords are never passed; key auth or
   the user types it. Hidden entirely in `APPSTORE` builds.
+- Since M15.5 this is one branch of the Settings ▸ Terminal dispatch — see Embedded
+  terminal below.
+
+## Embedded terminal (M15.5, ADR-023 — both builds)
+
+- **One setting, one entry point**: the Terminal toolbar button and the profile
+  context menu's "Open Terminal" dispatch on Settings ▸ Terminal — "Ferry's built-in
+  terminal" (default on macOS 15+) opens the embedded terminal; Terminal.app / iTerm2 /
+  custom command do the M15 hand-off (Direct only; the App Store build hides them).
+- **SSH profiles only** (SFTP/SCP) — FTP/FTPS show no terminal entry points (no shell).
+  Remote shells only; Ferry never spawns local processes (sandbox-safe).
+- **macOS 15+** — the SSH library's PTY API carries the same availability gate as SCP
+  (ADR-020/023). On macOS 14: Settings disables the built-in option with "Requires
+  macOS 15"; Direct falls back to Terminal.app, the App Store build disables the
+  entry points with the explainer.
+- **Session**: every terminal (docked panel or window) is its own SSH session built by
+  `SSHClientFactory` — identical host-key TOFU, reuses the profile's resolved
+  credential, never re-prompts. Independent of the browser's session and of tunnels.
+- **End states**: `exit`/EOF (any exit code) and user close read as a clean end (the
+  ended banner with Restart Session); a dropped SSH session or refused shell reads as
+  a failure with a specific message. A server that forces a non-shell command (e.g.
+  SFTP-only) yields a session that ends on input — never a hang.
+- **Privacy (rule 6)**: nothing typed or displayed in a terminal is ever logged;
+  scrollback lives only in the emulator's memory and dies with the session's view.
 
 ## Sandbox strategy (both distributions from day one)
 

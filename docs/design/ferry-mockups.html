@@ -392,6 +392,41 @@
   .stab.on { color: var(--accent); font-weight: 600; }
   .stab.on .sico { filter: none; }
   .settings-body { padding: 22px 30px 26px; background: var(--content-bg); }
+
+  /* ---------- Embedded terminal (M15.5) ---------- */
+  .termpanel { border-top: 1px solid var(--border-strong); background: var(--panel-bg); display: flex; flex-direction: column; }
+  .term-head {
+    display: flex; align-items: center; gap: 10px; padding: 5px 12px;
+    font-size: 12px; font-weight: 600; color: var(--muted);
+    border-bottom: 1px solid var(--border);
+  }
+  .term-head .endpoint { font-weight: 400; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px; }
+  .term-head .tstate { font-size: 11px; font-weight: 600; color: var(--ok); }
+  .term-head .tstate.off { color: var(--faint); font-weight: 400; }
+  .term-head .actions { margin-left: auto; display: flex; gap: 4px; }
+  .term-head .actions .tbtn { padding: 2px 7px; font-size: 10px; }
+  .term-screen {
+    background: var(--input-bg); color: var(--text);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11.5px; line-height: 1.55;
+    padding: 8px 12px; white-space: pre; overflow: hidden;
+  }
+  .term-screen .p { color: var(--ok); font-weight: 600; }      /* user@host */
+  .term-screen .dir { color: var(--accent); font-weight: 600; } /* working dir */
+  .term-screen .out { color: var(--muted); }
+  .term-screen .cursor { display: inline-block; width: 7px; background: var(--accent); color: transparent; }
+  .term-ended {
+    display: flex; align-items: center; gap: 10px; padding: 7px 12px;
+    background: var(--accent-soft); font-size: 12px; color: var(--text);
+    border-top: 1px solid var(--border);
+  }
+  .term-ended .tbtn { padding: 3px 10px; }
+  .radio {
+    width: 13px; height: 13px; border: 1px solid var(--border-strong); border-radius: 50%;
+    margin-top: 2px; flex: 0 0 13px; background: var(--input-bg); position: relative;
+  }
+  .radio.on { border-color: var(--accent); }
+  .radio.on::after { content: ""; position: absolute; inset: 2.5px; border-radius: 50%; background: var(--accent); }
+  .check.dis { opacity: .45; }
 </style>
 
 <header class="page-header">
@@ -408,6 +443,7 @@
     <button data-target="s-tunnels">4 · Tunnel manager</button>
     <button data-target="s-settings">5 · Settings</button>
     <button data-target="s-icon">6 · App icon</button>
+    <button data-target="s-terminal">7 · Terminal</button>
   </div>
 </nav>
 
@@ -862,6 +898,198 @@
       <li>These are <b>direction concepts</b>, not final artwork. macOS expects a 1024 px master with the rounded-square shape drawn into the artwork (with standard margins) and an <code>.icns</code>/asset-catalog set down to 16 px — produced in M17, ideally with a designer pass.</li>
       <li>The chosen concept ships as the development icon from M1 so test builds are recognizable in the Dock.</li>
       <li>The icon's gradient becomes the brand accent already used across the mockups (sea-teal <code>#0d6e8c</code> light / <code>#35b3d4</code> dark); choosing C would shift the brand to navy + cyan.</li>
+    </ol>
+  </div>
+</section>
+
+<!-- ============ 7. EMBEDDED TERMINAL (M15.5 — approved 2026-07-18) ============ -->
+<section class="screen" id="s-terminal">
+  <h2>Embedded terminal — panel &amp; setting</h2>
+  <p class="sub">Added in M15.5, approved 2026-07-18 (ADR-023). A shell on the connected server, docked as a collapsible panel below the panes. The existing toolbar Terminal button opens it when Settings ▸ Terminal is set to Ferry's built-in terminal; external choices keep M15's hand-off behavior. The panel can pop out into its own window (third mock), and that same window opens directly from a profile's context menu as a terminal-only connection — no browser needed.</p>
+
+  <div class="mock-wrap"><div class="window mock">
+    <div class="titlebar"><div class="lights"><span class="r"></span><span class="y"></span><span class="g"></span></div><div class="title">Ferry</div><div class="spacer"></div></div>
+    <div class="wintabs">
+      <div class="wintab active"><span class="dot"></span> prod-web-01</div>
+      <div class="wintab"><span class="dot off"></span> pi.home</div>
+      <div class="wintab newtab">＋</div>
+    </div>
+    <div class="toolbar">
+      <div class="tgroup"><button class="tbtn"><span class="ico">‹</span></button><button class="tbtn"><span class="ico">›</span></button></div>
+      <button class="tbtn"><span class="ico">⬆︎</span> Upload</button>
+      <button class="tbtn"><span class="ico">⬇︎</span> Download</button>
+      <button class="tbtn"><span class="ico">📁</span> New Folder</button>
+      <button class="tbtn"><span class="ico">↻</span> Refresh</button>
+      <button class="tbtn"><span class="ico">🔗</span> Linked</button>
+      <div class="flex"></div>
+      <button class="tbtn"><span class="ico">🛠</span> Tunnels</button>
+      <button class="tbtn primary" aria-pressed="true"><span class="ico">＞_</span> Terminal</button>
+      <span class="searchfield">🔍 Filter…</span>
+    </div>
+
+    <div class="body-split" style="min-height:0">
+      <aside class="sidebar">
+        <h4>Connections</h4>
+        <div class="sideitem folder"><span class="caret">▾</span> Work</div>
+        <div class="sideitem conn selected">prod-web-01 <span class="proto">SFTP</span></div>
+        <div class="sideitem conn">staging <span class="proto">SFTP</span></div>
+        <div class="sideitem folder"><span class="caret">▸</span> Clients</div>
+        <div class="sideitem folder"><span class="caret">▸</span> Personal</div>
+        <h4>This Mac</h4>
+        <div class="sideitem conn">Home</div>
+        <div class="sideitem conn">Projects</div>
+      </aside>
+
+      <div class="dual">
+        <div class="panes">
+          <div class="pane">
+            <div class="pane-head">
+              <span class="scope">Local</span>
+              <span class="crumbs">~ <span class="sep">›</span> Projects <span class="sep">›</span> <b>website</b></span>
+              <span class="mini"><button class="tbtn">👁</button><button class="tbtn">⋯</button></span>
+            </div>
+            <table class="files">
+              <thead><tr><th class="sorted" style="width:44%">Name</th><th style="width:16%">Size</th><th style="width:26%">Modified</th><th>Kind</th></tr></thead>
+              <tbody>
+                <tr><td><span class="fico">📁</span> assets</td><td class="num">—</td><td class="num">Yesterday, 18:22</td><td class="num">Folder</td></tr>
+                <tr><td><span class="fico">📄</span> index.html</td><td class="num">14 KB</td><td class="num">Today, 11:48</td><td class="num">HTML</td></tr>
+                <tr><td><span class="fico">📄</span> app.js</td><td class="num">96 KB</td><td class="num">Today, 11:47</td><td class="num">JavaScript</td></tr>
+              </tbody>
+            </table>
+            <div class="pane-status">3 items <span class="right">412 GB free</span></div>
+          </div>
+
+          <div class="pane">
+            <div class="pane-head">
+              <span class="scope" style="color: var(--ok)">Remote · prod-web-01</span>
+              <span class="crumbs">/ <span class="sep">›</span> var <span class="sep">›</span> www <span class="sep">›</span> <b>html</b></span>
+              <span class="mini"><button class="tbtn">👁</button><button class="tbtn">⋯</button></span>
+            </div>
+            <table class="files">
+              <thead><tr><th class="sorted" style="width:38%">Name</th><th style="width:13%">Size</th><th style="width:23%">Modified</th><th style="width:14%">Perms</th><th>Owner</th></tr></thead>
+              <tbody>
+                <tr><td><span class="fico">📁</span> assets</td><td class="num">—</td><td class="num">Jul 4, 22:10</td><td class="perm">drwxr-xr-x</td><td class="num">www-data</td></tr>
+                <tr><td><span class="fico">📄</span> index.html</td><td class="num">13 KB</td><td class="num">Jul 2, 10:06</td><td class="perm">-rw-r--r--</td><td class="num">www-data</td></tr>
+                <tr><td><span class="fico">📄</span> app.js</td><td class="num">94 KB</td><td class="num">Jul 2, 10:06</td><td class="perm">-rw-r--r--</td><td class="num">www-data</td></tr>
+              </tbody>
+            </table>
+            <div class="pane-status">3 items <span class="right">SFTP · OpenSSH 9.6</span></div>
+          </div>
+        </div>
+
+        <div class="termpanel">
+          <div class="term-head">
+            <span>＞_ Terminal</span>
+            <span class="endpoint">deploy@prod-web-01</span>
+            <span class="tstate">● shell running</span>
+            <div class="actions"><button class="tbtn" title="Open in separate window">⧉</button><button class="tbtn">⌄</button><button class="tbtn">✕</button></div>
+          </div>
+          <div class="term-screen">Last login: Fri Jul 18 11:52:03 2026 from 198.51.100.7
+<span class="p">deploy@prod-web-01</span>:<span class="dir">~</span>$ cd /var/www/html
+<span class="p">deploy@prod-web-01</span>:<span class="dir">/var/www/html</span>$ ls
+app.js  assets  css  hero.jpg  index.html  robots.txt
+<span class="p">deploy@prod-web-01</span>:<span class="dir">/var/www/html</span>$ sudo systemctl reload nginx
+<span class="out">[sudo] password for deploy:</span>
+<span class="p">deploy@prod-web-01</span>:<span class="dir">/var/www/html</span>$ <span class="cursor">▮</span></div>
+        </div>
+
+        <div class="queue">
+          <div class="queue-head">Transfers <span class="count">1 active</span> <span class="collapse">⌃</span></div>
+        </div>
+
+        <div class="statusbar"><span class="ok">● Connected</span><span>prod-web-01 · deploy@203.0.113.14:22 · SFTP</span><span>latency 12 ms</span><span style="margin-left:auto">1 tunnel active</span></div>
+      </div>
+    </div>
+  </div></div>
+
+  <div style="height:26px"></div>
+
+  <div class="mock-wrap"><div class="window medium mock">
+    <div class="titlebar"><div class="lights"><span class="r"></span><span class="y"></span><span class="g"></span></div><div class="title">Terminal panel — session ended state (detail)</div><div class="spacer"></div></div>
+    <div class="termpanel" style="border-top:none">
+      <div class="term-head">
+        <span>＞_ Terminal</span>
+        <span class="endpoint">deploy@prod-web-01</span>
+        <span class="tstate off">session ended</span>
+        <div class="actions"><button class="tbtn" title="Open in separate window">⧉</button><button class="tbtn">⌄</button><button class="tbtn">✕</button></div>
+      </div>
+      <div class="term-screen"><span class="p">deploy@prod-web-01</span>:<span class="dir">/var/www/html</span>$ exit
+logout</div>
+      <div class="term-ended"><span>The shell session ended.</span><div style="flex:1"></div><button class="tbtn">↻ Restart Session</button></div>
+    </div>
+  </div></div>
+
+  <div style="height:26px"></div>
+
+  <div class="mock-wrap"><div class="window medium mock">
+    <div class="titlebar"><div class="lights"><span class="r"></span><span class="y"></span><span class="g"></span></div><div class="title">Terminal — prod-web-01</div><div class="spacer"></div></div>
+    <div class="termpanel" style="border-top:none">
+      <div class="term-head">
+        <span>＞_ Terminal</span>
+        <span class="endpoint">deploy@prod-web-01</span>
+        <span class="tstate">● shell running</span>
+        <div class="actions"><button class="tbtn">⇤ Dock in Window</button></div>
+      </div>
+      <div class="term-screen">Last login: Fri Jul 18 12:04:56 2026 from 198.51.100.7
+<span class="p">deploy@prod-web-01</span>:<span class="dir">~</span>$ journalctl -u nginx -f
+<span class="out">Jul 18 12:05:02 prod-web-01 nginx[812]: 203.0.113.7 "GET /index.html" 200</span>
+<span class="out">Jul 18 12:05:04 prod-web-01 nginx[812]: 203.0.113.9 "GET /app.js" 200</span>
+<span class="out">Jul 18 12:05:07 prod-web-01 nginx[812]: 203.0.113.4 "GET /hero.jpg" 200</span>
+<span class="cursor">▮</span></div>
+    </div>
+  </div></div>
+
+  <div style="height:26px"></div>
+
+  <div class="mock-wrap"><div class="window medium mock">
+    <div class="titlebar"><div class="lights"><span class="r"></span><span class="y"></span><span class="g"></span></div><div class="title">Settings</div><div class="spacer"></div></div>
+    <div class="settings-tabs">
+      <div class="stab"><span class="sico">⚙️</span> General</div>
+      <div class="stab"><span class="sico">⇅</span> Transfers</div>
+      <div class="stab"><span class="sico">🔑</span> Keys</div>
+      <div class="stab on"><span class="sico">＞_</span> Terminal</div>
+      <div class="stab"><span class="sico">🧪</span> Advanced</div>
+    </div>
+    <div class="settings-body">
+      <div class="frm">
+        <label>Open terminal sessions in</label>
+        <div class="check"><span class="radio on"></span> Ferry's built-in terminal</div>
+        <label></label>
+        <div class="check"><span class="radio"></span> Terminal.app</div>
+        <label></label>
+        <div class="check"><span class="radio"></span> iTerm2</div>
+        <label></label>
+        <div class="check"><span class="radio"></span> Custom command</div>
+        <label></label>
+        <input class="in" value="" placeholder="e.g.  open -a Ghostty  (receives the ssh command)" readonly style="max-width:340px;opacity:.55">
+        <div class="hint">External terminals are launched with an <b>ssh</b> command built from the profile — passwords are never passed; use key auth or type it there.</div>
+
+        <div class="divider"></div>
+
+        <label>Built-in terminal font</label>
+        <div class="row-flex"><input class="in" value="SF Mono" readonly style="width:160px"><input class="in short" value="12" readonly><span style="font-size:12px;color:var(--faint)">pt</span></div>
+        <label>Scrollback</label>
+        <div class="row-flex"><input class="in short" value="10 000" readonly><span style="font-size:12px;color:var(--faint)">lines</span></div>
+        <div class="hint">Scrollback is kept <b>in memory only</b> — nothing you type or see is ever written to disk.</div>
+      </div>
+    </div>
+    <div class="sheet-foot"><div class="flex"></div><span style="font-size:11.5px;color:var(--faint)">Changes apply immediately</span></div>
+  </div></div>
+
+  <div class="notes">
+    <h3>Review notes — Embedded terminal (M15.5, approved 2026-07-18)</h3>
+    <ol>
+      <li><b>Placement</b> — the default is a collapsible panel docked below the panes, above the transfer queue (both can be open; each collapses independently) — the payoff of embedding is a shell next to your files. Height is draggable at the panel's top edge; state (open/closed, height, docked/windowed) is per connection tab.</li>
+      <li><b>Pop-out (⧉)</b> — moves the <i>same live shell</i> to its own window (third mock): the SSH session and scrollback are untouched, so a running <code>tail -f</code> survives the move. "⇤ Dock in Window" reverses it. Precedent: the tunnel manager is already a per-connection auxiliary window.</li>
+      <li><b>One button, one setting</b> — the existing toolbar Terminal button (accent-filled while the panel is open) dispatches on Settings ▸ Terminal: built-in opens this panel; Terminal.app / iTerm2 / custom command keep the M15 external hand-off. Built-in is the default on macOS 15+.</li>
+      <li><b>Terminal-only connections</b> — an <b>Open Terminal</b> item in the sidebar profile context menu (SSH profiles only) opens a shell <i>without</i> connecting the browser, honoring the same setting: built-in → the standalone window (third mock, with "Dock in Window" hidden — there is no browser tab to dock into); external → the M15 hand-off. Same host-key + credential flow as a normal connect.</li>
+      <li><b>SSH profiles only</b> — the Terminal button and the Open Terminal menu item appear for SFTP/SCP connections and are absent for FTP/FTPS (like Tunnels; FTP has no shell).</li>
+      <li><b>Session &amp; credentials</b> — every terminal (panel or window) is its own SSH session with the same host-key trust and the resolved credential: no second password prompt, nothing typed or displayed is ever logged, scrollback lives in memory only.</li>
+      <li><b>Lifecycle</b> — the shell starts when the panel/window first opens; <code>exit</code> (or a dropped session) shows the ended state (second mock) with Restart Session. Closing the panel (✕) or the window terminates the shell after a confirm if a command is running; disconnecting or closing the tab terminates a docked terminal silently (a popped-out window stays — it owns its session).</li>
+      <li><b>macOS 15+ only</b> (same SSH-library gate as SCP): on macOS 14 the built-in option is disabled in Settings with a "Requires macOS 15" explainer — Direct builds fall back to Terminal.app; the App Store build (which has no external option) disables the toolbar button and menu item with the same explainer.</li>
+      <li><b>App Store build</b> — the three external choices are hidden entirely (launching other apps is Direct-only); built-in is the only and default behavior.</li>
+      <li><b>Appearance</b> — the terminal follows the app theme (light/dark) with the standard ANSI palette; SF Mono, size configurable. Check both themes with the toggle.</li>
+      <li><b>Scope fence</b> — Ferry's terminal is a convenience, not a terminal app: deliberately <b>no</b> terminal tabs, split panes, color themes, or keybinding editors — font and scrollback only. Recorded in ADR-023 so scope stays bounded.</li>
     </ol>
   </div>
 </section>
