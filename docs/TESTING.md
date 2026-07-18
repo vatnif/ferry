@@ -112,6 +112,15 @@ against it.
   typed failure, bounded terminate mid-command, restart after exit; plus the
   forced-command server (:2222) pinned to "never hangs, ends on input". All
   `@available(macOS 15)` like the SCP suite (Citadel's `withPTY` gate).
+- M15.5 (checkpoint C): `preflight` integration tests (success / typed auth failure /
+  `hostKeyUnknown` against a scratch store — terminal-only connects prompt BEFORE a
+  window opens); bridge view-reuse identity (pop-out contract); and the UI e2e
+  `testEmbeddedTerminalTouchShowsFileInRemotePane` — connect to :2223, open the panel,
+  `touch` a nonce file in the real shell, refresh the remote pane and see the row,
+  `rm` it, close via the live-shell confirm. XCUITest gotchas: a container
+  `accessibilityIdentifier` clobbers all child identifiers (don't identify the panel
+  wrapper); the toolbar Terminal Toggle surfaces as a **checkbox**, not a button;
+  confirmation buttons again live under `app.windows` (Touch Bar duplicate, ADR-015).
 
 ## M9 additions (112 kit tests + 4 UI, all green)
 

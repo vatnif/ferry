@@ -27,8 +27,14 @@ tab 7 "Terminal" added in M15.5, approved 2026-07-18, ADR-023).
   protocol-level test replaces it. The tunnels row (saved-count + Edit…) still opens the
   full manager only from screen 1's Tunnels button in M14; editing tunnels from the
   connection sheet is a later refinement.
-- Screen 7 (embedded terminal, M15.5): **approved 2026-07-18** (mockup tab 7, ADR-023).
-  Implementation pending (checkpoints B/C in progress).
+- Screen 7 (embedded terminal, M15.5): **approved 2026-07-18** (mockup tab 7, ADR-023)
+  and **implemented** — docked panel (header states, resize drag, collapse/close with
+  live-shell confirm, ended banner + Restart), ⧉ pop-out window with "Dock in Window",
+  profile context-menu Open Terminal (terminal-only window), macOS-14 explainer.
+  Pending until their milestones: the Settings ▸ Terminal picker UI (M16 settings
+  window) and the external hand-off choices (M15) — built-in is the only dispatch
+  target for now; the scrollback-lines setting also waits for M16 (SwiftTerm recomputes
+  its options on resize, needs care).
 - Screen 3 (host keys): **live (M11)** — TOFU first-contact prompt (🔑, selectable
   fingerprint box, "Remember this key" default-on) and the changed-key alarm (⚠️,
   Disconnect primary, Replace gated behind a second confirmation). Plus the connect-time

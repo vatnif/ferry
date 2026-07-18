@@ -145,9 +145,14 @@ struct SidebarItemMenu: View {
     let itemID: UUID
 
     var body: some View {
-        if model.library.profile(withID: itemID) != nil {
+        if let profile = model.library.profile(withID: itemID) {
             Button("Edit…") { model.editorContext = .init(profileID: itemID) }
             Button("Duplicate") { model.duplicateProfile(itemID) }
+            if profile.scheme == .sftp || profile.scheme == .scp {
+                // Screen 7 note 4: a shell with no browser (SSH only — FTP
+                // has none). macOS-14 explainer lives in openTerminal.
+                Button("Open Terminal") { model.openTerminal(profileID: itemID) }
+            }
             MoveToMenu(itemID: itemID)
             Divider()
             Button("Delete…", role: .destructive) { confirmDelete() }

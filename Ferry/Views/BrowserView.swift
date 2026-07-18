@@ -6,9 +6,12 @@ import FerryCore
 /// arrives in M8; tabs in M16.
 struct BrowserView: View {
     @Environment(ConnectionManagerModel.self) private var model
+    @Environment(\.openWindow) private var openWindow
     let session: BrowserSession
 
     @State private var newFolderName: String?
+    /// Baseline height while dragging the terminal panel's resize handle.
+    @State private var terminalDragBase: CGFloat?
     /// Conflicts awaiting the user's per-file decision (DOMAIN.md: Ask is
     /// the default exists-policy); the alert walks this list front to back,
     /// with Replace All / Skip All applying to the rest.
@@ -30,6 +33,27 @@ struct BrowserView: View {
                     onDropItems: { items, sourcePane in transfer(items, from: sourcePane) },
                     onDropURLs: { urls, destinationPane in importFiles(urls, into: destinationPane) })
                 .frame(minWidth: 300)
+            }
+            // Embedded terminal (screen 7): docked below the panes, above the
+            // transfer queue; hidden while popped out into its own window.
+            if #available(macOS 15.0, *), let terminal = session.terminal,
+               terminal.isPanelVisible, !terminal.isWindowed {
+                terminalResizeHandle(terminal)
+                TerminalPanelView(
+                    controller: terminal,
+                    onPopOut: {
+                        terminal.isWindowed = true
+                        model.registerTerminalWindow(terminal)
+                        openWindow(id: "terminal", value: terminal.id)
+                    },
+                    onCollapse: { terminal.isPanelVisible = false },
+                    onClose: {
+                        terminal.isPanelVisible = false
+                        Task { await terminal.shutdown() }
+                    })
+                .frame(height: terminal.panelHeight)
+                // No container identifier: SwiftUI would propagate it to every
+                // child, clobbering the panel controls' own identifiers.
             }
             if !session.queue.rows.isEmpty {
                 Divider()
@@ -140,6 +164,16 @@ struct BrowserView: View {
                 .accessibilityIdentifier("browser.tunnels")
             }
 
+            // SSH profiles only (screen 7 note 5) — FTP/FTPS have no shell.
+            if session.profile.scheme == .sftp || session.profile.scheme == .scp {
+                Toggle(isOn: terminalPanelBinding) {
+                    Label("Terminal", systemImage: "terminal")
+                }
+                .toggleStyle(.button)
+                .help("Open a shell on the server")
+                .accessibilityIdentifier("browser.terminal")
+            }
+
             TextField("Filter", text: $session.filterText, prompt: Text("Filter"))
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 150)
@@ -157,6 +191,54 @@ struct BrowserView: View {
 
     private var linkedBinding: Binding<Bool> {
         Binding(get: { session.linked }, set: { session.setLinked($0) })
+    }
+
+    // MARK: Embedded terminal (screen 7, M15.5)
+
+    /// The Terminal toolbar toggle: accent-filled while the docked panel is
+    /// open. When the terminal is popped out, clicking raises its window
+    /// instead. On macOS 14 the built-in terminal is unavailable (the SSH
+    /// library's PTY gate, ADR-023) — explain rather than half-work.
+    private var terminalPanelBinding: Binding<Bool> {
+        Binding(
+            get: {
+                guard #available(macOS 15.0, *), let terminal = session.terminal else { return false }
+                return terminal.isPanelVisible && !terminal.isWindowed
+            },
+            set: { open in
+                guard #available(macOS 15.0, *), let terminal = session.terminal else {
+                    model.errorMessage = "The built-in terminal requires macOS 15 or later."
+                    return
+                }
+                if terminal.isWindowed {
+                    openWindow(id: "terminal", value: terminal.id)
+                    return
+                }
+                terminal.isPanelVisible = open
+                if open { terminal.ensureStarted() }
+            })
+    }
+
+    /// Thin grab area above the panel; dragging resizes it (mockup note 1).
+    @available(macOS 15.0, *)
+    private func terminalResizeHandle(_ terminal: TerminalController) -> some View {
+        Divider()
+            .overlay(
+                Rectangle()
+                    .fill(Color.clear)
+                    .frame(height: 8)
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 1)
+                            .onChanged { value in
+                                let base = terminalDragBase ?? terminal.panelHeight
+                                terminalDragBase = base
+                                terminal.panelHeight = min(600, max(120, base - value.translation.height))
+                            }
+                            .onEnded { _ in terminalDragBase = nil })
+                    .onHover { hovering in
+                        if hovering { NSCursor.resizeUpDown.push() } else { NSCursor.pop() }
+                    })
     }
 
     // MARK: Status bar

@@ -31,6 +31,28 @@ final class ConnectionManagerModel {
     /// Non-nil presents a neutral notice alert (e.g. import results).
     var noticeMessage: String?
 
+    /// Terminal windows (pop-out + terminal-only, screen 7), keyed by
+    /// controller id. Type-erased so this macOS-14 class can hold the
+    /// macOS-15-only `TerminalController`s; use the gated accessors.
+    private var terminalWindowStorage: [UUID: Any] = [:]
+    /// Set to ask the UI to open the terminal window scene for this
+    /// controller (models can't call `openWindow`; MainWindow observes this).
+    var pendingTerminalWindowID: UUID?
+
+    @available(macOS 15.0, *)
+    func terminalWindow(_ id: UUID) -> TerminalController? {
+        terminalWindowStorage[id] as? TerminalController
+    }
+
+    @available(macOS 15.0, *)
+    func registerTerminalWindow(_ controller: TerminalController) {
+        terminalWindowStorage[controller.id] = controller
+    }
+
+    func removeTerminalWindow(_ id: UUID) {
+        terminalWindowStorage.removeValue(forKey: id)
+    }
+
     private let store: ConnectionStore
     let vault: CredentialVault
     /// Trust anchor for SSH host keys (TOFU). Same data dir as connections.json.
@@ -80,10 +102,20 @@ final class ConnectionManagerModel {
         var hosts: [ImportedSSHHost]
     }
 
+    /// What a resolved credential opens: the browser session, or a
+    /// terminal-only window (screen 7 note 4, ADR-023). Carried through the
+    /// password/passphrase/host-key prompts so their continuations land on
+    /// the right path.
+    enum ConnectIntent {
+        case browser
+        case terminal
+    }
+
     struct PasswordPrompt: Identifiable {
         let id = UUID()
         var profileID: UUID
         var profileName: String
+        var intent: ConnectIntent = .browser
     }
 
     struct KeyPassphrasePrompt: Identifiable {
@@ -95,6 +127,7 @@ final class ConnectionManagerModel {
         var pem: Data
         /// True when a previous attempt's passphrase was rejected.
         var incorrect: Bool
+        var intent: ConnectIntent = .browser
     }
 
     struct HostKeyPrompt: Identifiable {
@@ -106,6 +139,7 @@ final class ConnectionManagerModel {
         var stored: [HostKeyInfo]
         /// The credential to reuse on the retry after the user trusts the key.
         var credential: SSHAuthCredential
+        var intent: ConnectIntent = .browser
         var isChanged: Bool { !stored.isEmpty }
     }
 
@@ -332,34 +366,55 @@ final class ConnectionManagerModel {
             errorMessage = "SCP connections require macOS 15 or later. Use SFTP for this server on this Mac."
             return
         }
+        resolveCredential(profile: profile, intent: .browser)
+    }
 
+    /// Sidebar context menu "Open Terminal" (screen 7 note 4): a shell with no
+    /// browser. Resolves the credential through the same prompts as `connect`,
+    /// then preflights and opens a terminal window instead of a session.
+    func openTerminal(profileID: UUID) {
+        guard let profile = library.profile(withID: profileID) else { return }
+        guard profile.scheme == .sftp || profile.scheme == .scp else { return }
+        guard #available(macOS 15.0, *) else {
+            // Same SSH-library gate as SCP (ADR-023). The external-terminal
+            // fallback arrives with the Open-in-Terminal milestone (M15).
+            errorMessage = "The built-in terminal requires macOS 15 or later."
+            return
+        }
+        resolveCredential(profile: profile, intent: .terminal)
+    }
+
+    /// Shared credential resolution for both intents: stored secret → go,
+    /// otherwise the matching prompt (which carries the intent forward).
+    private func resolveCredential(profile: ConnectionProfile, intent: ConnectIntent) {
         switch profile.authMethod {
         case .password:
             if let stored = (try? vault.retrieve(role: .password, profileID: profile.id)) ?? nil {
-                startConnection(profile: profile, credential: .password(stored))
+                startResolved(profile: profile, credential: .password(stored), intent: intent)
             } else {
-                passwordPrompt = PasswordPrompt(profileID: profile.id, profileName: profile.name)
+                passwordPrompt = PasswordPrompt(profileID: profile.id, profileName: profile.name,
+                                                intent: intent)
             }
         case .publicKey(let path):
-            connectWithKey(profile: profile, path: path)
+            connectWithKey(profile: profile, path: path, intent: intent)
         case .agent:
             infoMessage = "SSH-agent authentication is planned for a later release. Edit the connection to use a key file or password for now."
         }
     }
 
-    /// Continuation of `connect` after the user typed a password.
-    func connectWithTypedPassword(_ password: String, profileID: UUID, remember: Bool) {
-        guard let profile = library.profile(withID: profileID) else { return }
+    /// Continuation of `connect`/`openTerminal` after the user typed a password.
+    func connectWithTypedPassword(_ password: String, prompt: PasswordPrompt, remember: Bool) {
+        guard let profile = library.profile(withID: prompt.profileID) else { return }
         if remember {
             try? vault.store(password, role: .password, profileID: profile.id)
         }
-        startConnection(profile: profile, credential: .password(password))
+        startResolved(profile: profile, credential: .password(password), intent: prompt.intent)
     }
 
     /// Resolves an SSH-key credential: read the key file, then attempt with any
     /// stored passphrase. The connect flow prompts for a passphrase only if the
     /// key turns out to be encrypted and the stored one is missing/wrong.
-    private func connectWithKey(profile: ConnectionProfile, path: String) {
+    private func connectWithKey(profile: ConnectionProfile, path: String, intent: ConnectIntent) {
         let pem: Data
         do {
             pem = try Data(contentsOf: URL(fileURLWithPath: (path as NSString).expandingTildeInPath))
@@ -368,8 +423,9 @@ final class ConnectionManagerModel {
             return
         }
         let storedPassphrase = (try? vault.retrieve(role: .keyPassphrase, profileID: profile.id)) ?? nil
-        startConnection(profile: profile,
-                        credential: .privateKey(pem: pem, passphrase: storedPassphrase))
+        startResolved(profile: profile,
+                      credential: .privateKey(pem: pem, passphrase: storedPassphrase),
+                      intent: intent)
     }
 
     /// Continuation after the user typed a key passphrase.
@@ -379,8 +435,9 @@ final class ConnectionManagerModel {
         if remember {
             try? vault.store(passphrase, role: .keyPassphrase, profileID: profile.id)
         }
-        startConnection(profile: profile,
-                        credential: .privateKey(pem: prompt.pem, passphrase: passphrase))
+        startResolved(profile: profile,
+                      credential: .privateKey(pem: prompt.pem, passphrase: passphrase),
+                      intent: prompt.intent)
     }
 
     /// The user approved an unknown host key (TOFU) — retry the connection. When
@@ -394,10 +451,11 @@ final class ConnectionManagerModel {
                 errorMessage = "Could not save the host key: \(error.localizedDescription)"
                 return
             }
-            startConnection(profile: prompt.profile, credential: prompt.credential)
+            startResolved(profile: prompt.profile, credential: prompt.credential,
+                          intent: prompt.intent)
         } else {
-            startConnection(profile: prompt.profile, credential: prompt.credential,
-                            sessionTrusted: prompt.offered)
+            startResolved(profile: prompt.profile, credential: prompt.credential,
+                          sessionTrusted: prompt.offered, intent: prompt.intent)
         }
     }
 
@@ -410,7 +468,20 @@ final class ConnectionManagerModel {
             errorMessage = "Could not update the host key: \(error.localizedDescription)"
             return
         }
-        startConnection(profile: prompt.profile, credential: prompt.credential)
+        startResolved(profile: prompt.profile, credential: prompt.credential, intent: prompt.intent)
+    }
+
+    /// The credential is resolved — open what the intent asked for.
+    private func startResolved(profile: ConnectionProfile, credential: SSHAuthCredential,
+                               sessionTrusted: HostKeyInfo? = nil, intent: ConnectIntent) {
+        switch intent {
+        case .browser:
+            startConnection(profile: profile, credential: credential, sessionTrusted: sessionTrusted)
+        case .terminal:
+            if #available(macOS 15.0, *) {
+                startTerminalOnly(profile: profile, credential: credential, sessionTrusted: sessionTrusted)
+            }
+        }
     }
 
     private func startConnection(profile: ConnectionProfile, credential: SSHAuthCredential,
@@ -423,6 +494,42 @@ final class ConnectionManagerModel {
             startSFTPConnection(profile: profile, credential: credential, sessionTrusted: sessionTrusted)
         case .scp:
             startSCPConnection(profile: profile, credential: credential, sessionTrusted: sessionTrusted)
+        }
+    }
+
+    /// Terminal-only connect (screen 7 note 4): preflight trust + auth so the
+    /// TOFU/credential prompts run BEFORE any window exists, then register a
+    /// standalone controller and ask the UI to open its window. Deliberately
+    /// leaves `connectionPhase` alone — a browser session may be live.
+    @available(macOS 15.0, *)
+    private func startTerminalOnly(profile: ConnectionProfile, credential: SSHAuthCredential,
+                                   sessionTrusted: HostKeyInfo?) {
+        Task {
+            do {
+                try await TerminalSession.preflight(host: profile.host,
+                                                    port: profile.port,
+                                                    username: profile.username,
+                                                    credential: credential,
+                                                    hostKeyStore: hostKeyStore,
+                                                    systemKnownHosts: systemKnownHosts,
+                                                    sessionTrusted: sessionTrusted)
+                let controller = TerminalController(profile: profile,
+                                                    credential: credential,
+                                                    hostKeyStore: hostKeyStore,
+                                                    systemKnownHosts: systemKnownHosts,
+                                                    sessionTrusted: sessionTrusted,
+                                                    standalone: true)
+                controller.isWindowed = true
+                registerTerminalWindow(controller)
+                pendingTerminalWindowID = controller.id
+                controller.ensureStarted()
+            } catch let error as RemoteSourceError {
+                handleConnectError(error, profile: profile, credential: credential, intent: .terminal)
+            } catch let error as SSHKeyLoadError {
+                handleKeyError(error, profile: profile, credential: credential, intent: .terminal)
+            } catch {
+                errorMessage = "Could not open a terminal on \(profile.host): \(error.localizedDescription)"
+            }
         }
     }
 
@@ -441,7 +548,10 @@ final class ConnectionManagerModel {
                 let tunnels = makeTunnelController(profile: profile, credential: credential,
                                                    sessionTrusted: sessionTrusted)
                 let session = BrowserSession(profile: profile, remote: sftp, bookmarks: nil,
-                                             tunnels: tunnels)
+                                             tunnels: tunnels,
+                                             terminal: makeDockedTerminal(profile: profile,
+                                                                          credential: credential,
+                                                                          sessionTrusted: sessionTrusted))
                 await session.start()
                 connectionPhase = .connected(session)
             } catch let error as RemoteSourceError {
@@ -480,7 +590,10 @@ final class ConnectionManagerModel {
                 let tunnels = makeTunnelController(profile: profile, credential: credential,
                                                    sessionTrusted: sessionTrusted)
                 let session = BrowserSession(profile: profile, remote: scp, bookmarks: nil,
-                                             tunnels: tunnels)
+                                             tunnels: tunnels,
+                                             terminal: makeDockedTerminal(profile: profile,
+                                                                          credential: credential,
+                                                                          sessionTrusted: sessionTrusted))
                 await session.start()
                 connectionPhase = .connected(session)
             } catch let error as RemoteSourceError {
@@ -546,8 +659,10 @@ final class ConnectionManagerModel {
 
     private func handleConnectError(_ error: RemoteSourceError,
                                     profile: ConnectionProfile,
-                                    credential: SSHAuthCredential) {
-        connectionPhase = .idle
+                                    credential: SSHAuthCredential,
+                                    intent: ConnectIntent = .browser) {
+        // A failed terminal-only connect must not disturb a live browser session.
+        if intent == .browser { connectionPhase = .idle }
         switch error {
         case .authenticationFailed:
             errorMessage = authFailureMessage(profile: profile, credential: credential)
@@ -555,10 +670,10 @@ final class ConnectionManagerModel {
             errorMessage = "Could not connect to \(profile.host):\(String(profile.port)) — \(detail)"
         case .hostKeyUnknown(let offered):
             hostKeyPrompt = HostKeyPrompt(profile: profile, offered: offered,
-                                          stored: [], credential: credential)
+                                          stored: [], credential: credential, intent: intent)
         case .hostKeyChanged(let stored, let offered):
             hostKeyPrompt = HostKeyPrompt(profile: profile, offered: offered,
-                                          stored: stored, credential: credential)
+                                          stored: stored, credential: credential, intent: intent)
         case .tlsFailed(let detail):
             // TLS is an FTPS concern; an SSH connect shouldn't produce it.
             errorMessage = "Unexpected TLS error connecting to \(profile.host): \(detail)"
@@ -567,8 +682,9 @@ final class ConnectionManagerModel {
 
     private func handleKeyError(_ error: SSHKeyLoadError,
                                 profile: ConnectionProfile,
-                                credential: SSHAuthCredential) {
-        connectionPhase = .idle
+                                credential: SSHAuthCredential,
+                                intent: ConnectIntent = .browser) {
+        if intent == .browser { connectionPhase = .idle }
         guard case .privateKey(let pem, _) = credential else {
             errorMessage = "The key could not be used: \(error.localizedDescription)"
             return
@@ -577,11 +693,11 @@ final class ConnectionManagerModel {
         case .passphraseRequired:
             keyPassphrasePrompt = KeyPassphrasePrompt(profileID: profile.id,
                                                       profileName: profile.name,
-                                                      pem: pem, incorrect: false)
+                                                      pem: pem, incorrect: false, intent: intent)
         case .incorrectPassphrase:
             keyPassphrasePrompt = KeyPassphrasePrompt(profileID: profile.id,
                                                       profileName: profile.name,
-                                                      pem: pem, incorrect: true)
+                                                      pem: pem, incorrect: true, intent: intent)
         case .unsupportedKeyType(let label):
             errorMessage = "This key isn’t supported: \(label). Ferry supports OpenSSH-format ed25519 and RSA keys."
         case .malformed:
@@ -602,7 +718,33 @@ final class ConnectionManagerModel {
     func disconnect() {
         guard let session = connectionPhase.session else { return }
         connectionPhase = .idle
+        // Screen 7 note 7: disconnecting ends a docked terminal silently; a
+        // popped-out window stays — it owns its dedicated session — but can
+        // no longer re-dock (its tab is gone).
+        if #available(macOS 15.0, *), let terminal = session.terminal {
+            if terminal.isWindowed {
+                terminal.canRedock = false
+            } else {
+                Task { await terminal.shutdown() }
+            }
+        }
         Task { await session.disconnect() }
+    }
+
+    /// The docked terminal for an SSH browser session (screen 7): built
+    /// eagerly like the tunnel controller — its SSH session dials only when
+    /// the panel first opens, so it's free until used. nil on macOS 14 (the
+    /// PTY API's availability gate, ADR-023) and the toolbar explains why.
+    private func makeDockedTerminal(profile: ConnectionProfile,
+                                    credential: SSHAuthCredential,
+                                    sessionTrusted: HostKeyInfo?) -> Any? {
+        guard #available(macOS 15.0, *) else { return nil }
+        return TerminalController(profile: profile,
+                                  credential: credential,
+                                  hostKeyStore: hostKeyStore,
+                                  systemKnownHosts: systemKnownHosts,
+                                  sessionTrusted: sessionTrusted,
+                                  standalone: false)
     }
 
     // MARK: Tunnels (M14)

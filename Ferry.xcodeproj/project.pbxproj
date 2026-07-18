@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		FE0000000000000000000042 /* FerryCore in Frameworks */ = {isa = PBXBuildFile; productRef = FE0000000000000000000041 /* FerryCore */; };
+		FE0000000000000000000044 /* FerryTerminalUI in Frameworks */ = {isa = PBXBuildFile; productRef = FE0000000000000000000043 /* FerryTerminalUI */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -58,6 +59,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				FE0000000000000000000042 /* FerryCore in Frameworks */,
+				FE0000000000000000000044 /* FerryTerminalUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -110,6 +112,7 @@
 			name = Ferry;
 			packageProductDependencies = (
 				FE0000000000000000000041 /* FerryCore */,
+				FE0000000000000000000043 /* FerryTerminalUI */,
 			);
 			productName = Ferry;
 			productReference = FE0000000000000000000004 /* Ferry.app */;
@@ -519,6 +522,10 @@
 		FE0000000000000000000041 /* FerryCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = FerryCore;
+		};
+		FE0000000000000000000043 /* FerryTerminalUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = FerryTerminalUI;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

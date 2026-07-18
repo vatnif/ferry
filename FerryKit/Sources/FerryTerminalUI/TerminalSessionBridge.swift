@@ -30,7 +30,10 @@ extension TerminalSession: TerminalSessionDriving {}
 @MainActor
 public final class TerminalSessionBridge {
     private let session: any TerminalSessionDriving
-    private(set) weak var view: TerminalView?
+    /// Bridge-owned: the same live `TerminalView` (emulator buffer included)
+    /// is re-hosted when the terminal moves between the docked panel and a
+    /// pop-out window (screen 7 note 2) — so it must outlive any single host.
+    private(set) var view: TerminalView?
     private var pump: Task<Void, Never>?
 
     /// Title from the shell (OSC 0/2) — the panel/window header shows it.
@@ -43,8 +46,24 @@ public final class TerminalSessionBridge {
         self.session = session
     }
 
+    /// Returns the bridge's terminal view, creating and wiring it on first
+    /// call. Later calls return the *same instance* (with the font refreshed),
+    /// which is what lets pop-out/re-dock move a live shell without losing
+    /// the emulator buffer — SwiftUI re-hosts the identical NSView.
+    public func makeOrReuseView(font: NSFont) -> TerminalView {
+        if let view {
+            if view.font != font { view.font = font }
+            return view
+        }
+        let view = TerminalView(frame: .zero)
+        view.font = font
+        view.configureNativeColors()
+        attach(to: view)
+        return view
+    }
+
     /// Wires the view and starts pumping session output into it. Re-attaching
-    /// (the pop-out ↔ re-dock move re-hosts the same view) is harmless.
+    /// is harmless.
     public func attach(to view: TerminalView) {
         self.view = view
         view.terminalDelegate = self

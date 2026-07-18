@@ -6,6 +6,7 @@ import FerryCore
 /// replaces it in M7.
 struct MainWindow: View {
     @Environment(ConnectionManagerModel.self) private var model
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         @Bindable var model = model
@@ -50,6 +51,13 @@ struct MainWindow: View {
         } message: {
             Text(model.noticeMessage ?? "")
         }
+        // Models can't call openWindow — terminal-only connects (screen 7)
+        // request their window through this hand-off.
+        .onChange(of: model.pendingTerminalWindowID) { _, id in
+            guard let id else { return }
+            model.pendingTerminalWindowID = nil
+            openWindow(id: "terminal", value: id)
+        }
     }
 
     private var errorPresented: Binding<Bool> {
@@ -92,9 +100,7 @@ private struct PasswordPromptSheet: View {
                     .keyboardShortcut(.cancelAction)
                 Button("Connect") {
                     dismiss()
-                    model.connectWithTypedPassword(password,
-                                                   profileID: prompt.profileID,
-                                                   remember: remember)
+                    model.connectWithTypedPassword(password, prompt: prompt, remember: remember)
                 }
                 .keyboardShortcut(.defaultAction)
                 .disabled(password.isEmpty)

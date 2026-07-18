@@ -82,6 +82,29 @@ public actor TerminalSession {
         (self.output, self.outputContinuation) = AsyncStream<Data>.makeStream()
     }
 
+    // MARK: Preflight
+
+    /// Validates host trust + authentication and immediately closes — nothing
+    /// is kept. Terminal-only connections (screen 7: a shell with no browser)
+    /// call this BEFORE opening a window, so the TOFU/credential prompts run
+    /// through the app's normal connect flow: throws `hostKeyUnknown`/
+    /// `hostKeyChanged`/`authenticationFailed`/`SSHKeyLoadError` exactly like
+    /// the browser backends' `connect` (SSHClientFactory is the shared path).
+    public static func preflight(host: String,
+                                 port: Int = 22,
+                                 username: String,
+                                 credential: SSHAuthCredential,
+                                 hostKeyStore: HostKeyStore,
+                                 systemKnownHosts: KnownHostsFile? = nil,
+                                 sessionTrusted: HostKeyInfo? = nil) async throws {
+        let parameters = SSHConnectionParameters(host: host, port: port, username: username,
+                                                 credential: credential, hostKeyStore: hostKeyStore,
+                                                 systemKnownHosts: systemKnownHosts,
+                                                 sessionTrusted: sessionTrusted)
+        let client = try await SSHClientFactory.connect(parameters)
+        try? await client.close()
+    }
+
     // MARK: State stream
 
     /// State stream; replays the current state on subscription (the

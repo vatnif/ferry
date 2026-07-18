@@ -184,6 +184,43 @@ final class TerminalSessionIntegrationTests: XCTestCase {
         await session.terminate()
     }
 
+    func testPreflightSucceedsWithValidCredentials() async throws {
+        // Terminal-only connects preflight trust+auth before opening a window.
+        try await TerminalSession.preflight(host: TestServers.host,
+                                            port: Int(TestServers.scpPort),
+                                            username: TestServers.username,
+                                            credential: .password(TestServers.password),
+                                            hostKeyStore: TestServers.sharedHostKeyStore)
+    }
+
+    func testPreflightThrowsTypedAuthFailure() async throws {
+        do {
+            try await TerminalSession.preflight(host: TestServers.host,
+                                                port: Int(TestServers.scpPort),
+                                                username: TestServers.username,
+                                                credential: .password("definitely-wrong"),
+                                                hostKeyStore: TestServers.sharedHostKeyStore)
+            XCTFail("expected authenticationFailed")
+        } catch RemoteSourceError.authenticationFailed {
+            // expected — the app maps this to its standard auth alert
+        }
+    }
+
+    func testPreflightThrowsHostKeyUnknownOnFirstContact() async throws {
+        // A scratch store has no trust → the TOFU prompt must fire (thrown,
+        // not swallowed into a session state).
+        do {
+            try await TerminalSession.preflight(host: TestServers.host,
+                                                port: Int(TestServers.scpPort),
+                                                username: TestServers.username,
+                                                credential: .password(TestServers.password),
+                                                hostKeyStore: TestServers.scratchHostKeyStore())
+            XCTFail("expected hostKeyUnknown")
+        } catch RemoteSourceError.hostKeyUnknown {
+            // expected — first contact against an empty trust store
+        }
+    }
+
     func testForcedCommandServerDoesNotHang() async throws {
         // :2222 (atmoz) forces internal-sftp: the shell request succeeds but
         // the forced command speaks binary SFTP, not a shell — same as

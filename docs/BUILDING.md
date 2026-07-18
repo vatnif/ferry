@@ -13,6 +13,11 @@
   the `CFTP` SwiftPM target — ADR-019); it resolves against the SDK's `libcurl.tbd` at
   link time and macOS's `/usr/lib/libcurl` at runtime. Nothing to install; works in both
   the Direct and sandboxed App Store builds (libcurl is a system dylib).
+- **Metal toolchain** (one-time: `xcodebuild -downloadComponent MetalToolchain`) —
+  SwiftTerm (M15.5, ADR-023) ships a `.metal` shader that Xcode compiles as a package
+  resource; without the component the app targets fail with "cannot execute tool
+  'metal'". `swift test` in FerryKit doesn't need it (SwiftPM skips the shader).
+  Installed on this machine 2026-07-18.
 
 ## Build & run
 

@@ -21,11 +21,9 @@ public struct SSHTerminalView: NSViewRepresentable {
     }
 
     public func makeNSView(context: Context) -> TerminalView {
-        let view = TerminalView(frame: .zero)
-        view.font = font
-        view.configureNativeColors()
-        bridge.attach(to: view)
-        return view
+        // The bridge owns the view: hosting it here after a pop-out/re-dock
+        // re-parents the SAME live emulator (buffer intact), per screen 7.
+        bridge.makeOrReuseView(font: font)
     }
 
     public func updateNSView(_ view: TerminalView, context: Context) {

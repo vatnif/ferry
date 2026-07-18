@@ -203,6 +203,13 @@ final class BrowserSession {
     /// Port-forward manager (SSH-based profiles only; nil for FTP/FTPS). Runs
     /// its own SSH session — see `TunnelEngine` (M14).
     let tunnels: TunnelController?
+    /// The embedded terminal (screen 7, M15.5) — SSH profiles on macOS 15+
+    /// only, nil otherwise. Type-erased because `TerminalController` is
+    /// macOS-15-gated and this class isn't; use the `terminal` accessor.
+    private let terminalStorage: Any?
+
+    @available(macOS 15.0, *)
+    var terminal: TerminalController? { terminalStorage as? TerminalController }
     /// The live remote connection (SFTP or FTP/FTPS) — held via the composed
     /// protocol so the session is backend-agnostic (M12).
     private let remoteConnection: any FileSystemSource & SupervisedConnection
@@ -232,10 +239,12 @@ final class BrowserSession {
     init(profile: ConnectionProfile,
          remote: any FileSystemSource & SupervisedConnection,
          bookmarks: SecurityScopedBookmarkStore?,
-         tunnels: TunnelController? = nil) {
+         tunnels: TunnelController? = nil,
+         terminal: Any? = nil) {
         self.profile = profile
         self.remoteConnection = remote
         self.tunnels = tunnels
+        self.terminalStorage = terminal
         self.local = PaneModel(kind: .local, source: LocalFileSource(bookmarks: bookmarks))
         self.remote = PaneModel(kind: .remote, source: remote)
         self.supervisor = profile.keepAlive ? ConnectionSupervisor(connection: remote) : nil

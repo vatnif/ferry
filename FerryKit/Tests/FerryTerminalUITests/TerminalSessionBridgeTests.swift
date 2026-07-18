@@ -106,6 +106,16 @@ final class TerminalSessionBridgeTests: XCTestCase {
         XCTAssertEqual(title, "deploy@prod-web-01: ~")
     }
 
+    func testMakeOrReuseViewReturnsTheSameLiveInstance() {
+        // The pop-out ↔ re-dock contract (screen 7): re-hosting must get the
+        // SAME view back so the emulator buffer survives the move.
+        let bridge = TerminalSessionBridge(session: StubSession())
+        let first = bridge.makeOrReuseView(font: .monospacedSystemFont(ofSize: 12, weight: .regular))
+        let second = bridge.makeOrReuseView(font: .monospacedSystemFont(ofSize: 14, weight: .regular))
+        XCTAssertTrue(first === second)
+        XCTAssertEqual(second.font.pointSize, 14, "font refreshes on reuse")
+    }
+
     func testFeedReachesTerminalViewWhenNoSinkInstalled() async throws {
         // One real end-to-end feed: the emulator's buffer shows the text.
         let session = StubSession()

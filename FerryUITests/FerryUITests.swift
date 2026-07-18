@@ -542,4 +542,89 @@ final class FerryUITests: XCTestCase {
         app.buttons["browser.disconnect"].click()
         XCTAssertTrue(connectButton.waitForExistence(timeout: 5))
     }
+
+    /// M15.5 end-to-end (screen 7): connect over SFTP to the exec-capable
+    /// server (:2223, full OpenSSH — atmoz on :2222 forbids shells), open the
+    /// embedded terminal from the toolbar, run `touch` in the real shell, and
+    /// see the file appear in the remote pane — proving the whole loop without
+    /// scraping terminal text. Built-in terminal is macOS 15+ (ADR-023).
+    @MainActor
+    func testEmbeddedTerminalTouchShowsFileInRemotePane() throws {
+        try XCTSkipUnless(scpServerUp, "SSH/SCP test server not running — testinfra/start.sh")
+        guard #available(macOS 15.0, *) else {
+            throw XCTSkip("The embedded terminal requires macOS 15+")
+        }
+        let app = launchIsolatedApp()
+
+        app.buttons["sidebar.newConnection"].click()
+        let nameField = app.textFields["editor.name"]
+        XCTAssertTrue(nameField.waitForExistence(timeout: 5))
+        nameField.click(); nameField.typeText("docker-terminal")
+
+        let hostField = app.textFields["editor.host"]
+        hostField.click(); hostField.typeText("127.0.0.1")
+        let portField = app.textFields["editor.port"]
+        portField.click(); portField.typeKey("a", modifierFlags: .command); portField.typeText("2223")
+        let userField = app.textFields["editor.username"]
+        userField.click(); userField.typeText("ferry")
+        app.buttons["editor.save"].click()
+
+        let connectButton = app.buttons["detail.connect"]
+        XCTAssertTrue(connectButton.waitForExistence(timeout: 5))
+        connectButton.click()
+        let passwordField = app.secureTextFields["passwordPrompt.password"]
+        XCTAssertTrue(passwordField.waitForExistence(timeout: 5))
+        passwordField.click(); passwordField.typeText("ferrypass")
+        app.buttons["passwordPrompt.connect"].click()
+        trustHostKeyIfPrompted(app)
+        XCTAssertTrue(app.staticTexts["browser.status.connected"].waitForExistence(timeout: 20))
+
+        // Open the terminal panel; its dedicated SSH session reuses the trust
+        // and credential just resolved — no second prompt (rule 6).
+        // The toolbar control is a Toggle (accent-filled while open), which
+        // the accessibility tree exposes as a checkbox, not a button.
+        let terminalToggle = app.checkBoxes["browser.terminal"].firstMatch
+        let terminalControl = terminalToggle.waitForExistence(timeout: 5)
+            ? terminalToggle
+            : app.descendants(matching: .any)["browser.terminal"].firstMatch
+        XCTAssertTrue(terminalControl.waitForExistence(timeout: 5),
+                      "the Terminal toolbar control should exist for SSH profiles")
+        terminalControl.click()
+        let runningState = app.staticTexts["terminal.state.running"].firstMatch
+        XCTAssertTrue(runningState.waitForExistence(timeout: 20), "the shell should reach running")
+
+        // Type into the live shell: click inside the terminal area (just below
+        // the header's state label — SwiftTerm's NSView takes keys on click).
+        func clickTerminalArea() {
+            runningState.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+                .withOffset(CGVector(dx: 0, dy: 80))
+                .click()
+        }
+        clickTerminalArea()
+        let marker = "ui-term-\(Int.random(in: 10_000...99_999)).txt"
+        app.typeText("touch '/home/ferry/\(marker)'\n")
+
+        // The file the shell created appears in the remote pane on refresh.
+        app.buttons["browser.refresh"].click()
+        var fileRow = app.staticTexts[marker].firstMatch
+        if !fileRow.waitForExistence(timeout: 5) {
+            app.buttons["browser.refresh"].click()
+            fileRow = app.staticTexts[marker].firstMatch
+            XCTAssertTrue(fileRow.waitForExistence(timeout: 10),
+                          "the file touched in the terminal should list in the remote pane")
+        }
+
+        // Clean the server up through the same shell, then close the terminal
+        // (✕ confirms while the shell is live) and disconnect.
+        clickTerminalArea()
+        app.typeText("rm '/home/ferry/\(marker)'\n")
+        app.buttons["terminal.close"].click()
+        // Confirmation buttons must be queried under windows — a Touch Bar
+        // duplicate otherwise trips firstMatch (ADR-015).
+        let endSession = app.windows.buttons["End Session"].firstMatch
+        if endSession.waitForExistence(timeout: 3) { endSession.click() }
+
+        app.buttons["browser.disconnect"].click()
+        XCTAssertTrue(connectButton.waitForExistence(timeout: 5))
+    }
 }

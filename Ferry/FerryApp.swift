@@ -20,5 +20,13 @@ struct FerryApp: App {
                     .keyboardShortcut("i", modifiers: [.command, .shift])
             }
         }
+
+        // Standalone terminal windows (screen 7, M15.5): pop-outs and
+        // terminal-only sessions, keyed by controller id.
+        WindowGroup("Terminal", id: "terminal", for: UUID.self) { $controllerID in
+            TerminalWindowView(controllerID: controllerID)
+                .environment(model)
+        }
+        .defaultSize(width: 640, height: 400)
     }
 }

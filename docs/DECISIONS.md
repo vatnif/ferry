@@ -564,3 +564,17 @@ bookmarks without a second connect UI.
 **Scope fence** (recorded to keep the terminal from creeping into an iTerm2 competitor):
 deliberately **no** terminal tabs, split panes, color themes, or keybinding editors —
 font and scrollback settings only. Revisiting this fence requires a new ADR.
+
+**Sequencing note (checkpoint C, M15.5 shipped before M15/M16).** Because the external
+hand-off (M15) and the settings window (M16) don't exist yet, the built-in terminal is
+the **only** dispatch target for now: the toolbar button and Open Terminal menu item
+open it directly, and on macOS 14 they explain "requires macOS 15" with no external
+fallback until M15 lands. The Settings ▸ Terminal picker (built-in/external) and the
+scrollback-lines setting arrive with M16 (scrollback needs care: SwiftTerm recomputes
+`TerminalOptions` on every resize, discarding a custom value). Terminal-only connects
+run `TerminalSession.preflight` (public FerryCore API added for this) so TOFU/auth
+prompts fire through the normal connect flow BEFORE a window opens. One deviation from
+mockup note 7: closing a terminal *window* ends the shell without a confirm — SwiftUI
+provides no clean window-should-close hook; the docked panel's ✕ does confirm while the
+shell is live. **Build prerequisite**: SwiftTerm's Metal shader needs the Xcode Metal
+toolchain component (BUILDING.md).

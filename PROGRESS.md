@@ -24,14 +24,48 @@
 | M14 | Tunneling | done (committed 7938556) |
 | M14.5 | Remote port forwarding | done (committed a4899a2) |
 | M15 | Open in Terminal | todo |
-| M15.5 | Embedded terminal (SwiftTerm) | **in progress** — A approved; B (FerryKit) **awaiting review**; C (app UI) todo |
+| M15.5 | Embedded terminal (SwiftTerm) | A+B done (committed d7971a8); **C (app UI) awaiting review** |
 | M16 | Tabs & polish | todo |
 | M17 | Packaging (sign/notarize/DMG/Sparkle) | todo |
 | M18 | Sale readiness | todo |
 
 Backlog (post-v1): see `docs/ROADMAP.md`.
 
-## Current state of the code (M15.5 checkpoint B — awaiting review, NOT committed)
+## Current state of the code (M15.5 checkpoint C — awaiting review, NOT committed)
+
+- **The embedded terminal is live in the app** (screen 7; A+B committed d7971a8).
+  App target now links the **`FerryTerminalUI`** product (one pbxproj product-dependency
+  edit — the hand-authored project's first since M1).
+- **`TerminalController`** (@Observable, `@available(macOS 15)`): owns the
+  `TerminalSession` + bridge (which owns the live SwiftTerm view — pop-out re-hosts the
+  *same* emulator, buffer intact, pinned by a unit test), mirrors the state stream,
+  start/restart/shutdown. `BrowserSession` carries it type-erased (`Any?` + gated
+  accessor) because the class itself stays macOS 14.
+- **Docked panel** in `BrowserView` below the panes (screen 7): header (`＞_ Terminal` ·
+  endpoint mono · ● state · ⧉/⌄/✕), drag-resizable height (120–600), ended banner with
+  Restart Session, ✕ confirms while the shell is live. Toolbar **Terminal toggle**
+  (SSH profiles only, accent-filled while open; raises the window when popped out;
+  macOS-14 explainer otherwise).
+- **Pop-out & terminal-only windows**: new `WindowGroup(id: "terminal", for: UUID.self)`
+  scene + `TerminalWindowView`; controllers registered on the model
+  (`terminalWindowStorage`, type-erased; `pendingTerminalWindowID` hand-off because
+  models can't call `openWindow`). Pop-out keeps the live shell; "⇤ Dock in Window"
+  reverses; a popped-out window survives disconnect (`canRedock` flips off). Sidebar
+  context menu gained **Open Terminal** (SSH profiles): resolves the credential through
+  the SAME prompts as connect (`ConnectIntent` threaded through
+  Password/KeyPassphrase/HostKey prompts), then **`TerminalSession.preflight`** (new
+  public FerryCore API) validates TOFU + auth BEFORE the window opens.
+- **Sequencing** (ADR-023 note): built-in is the only dispatch target until M15
+  (external hand-off) and M16 (Settings picker + scrollback setting) land. Known
+  deviation: closing a terminal *window* skips the live-shell confirm (no SwiftUI
+  window-should-close hook); the panel ✕ confirms.
+- **Build prerequisite**: SwiftTerm's Metal shader → one-time
+  `xcodebuild -downloadComponent MetalToolchain` (BUILDING.md; installed 2026-07-18).
+- Tests: **276 kit tests + 11 XCUITests, all green** (+3 preflight integration, +1
+  bridge view-reuse, +1 UI e2e: open panel → `touch` in the real shell → row appears in
+  the remote pane → `rm` → confirmed close). Both flavors build.
+
+## Earlier state (M15.5 checkpoint B — superseded by C above)
 
 - **The embedded terminal's engine + view bridge are built and green** (ADR-023;
   checkpoint A mockups approved 2026-07-18, screen 7 now binding).
@@ -436,6 +470,16 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
 
 ## Session log
 
+- **2026-07-18 (e)** — M15.5 checkpoint C built (terminal app UI). A+B committed
+  (d7971a8) on user approval. `FerryTerminalUI` linked into the app (pbxproj product
+  dependency); `TerminalController` + docked panel + pop-out/terminal-only windows +
+  sidebar Open Terminal + `ConnectIntent` prompt threading + `TerminalSession.preflight`
+  (kit addition so terminal-only TOFU/auth prompts fire pre-window). Bridge now owns the
+  TerminalView (`makeOrReuseView`) so pop-out re-hosts the same live emulator. Metal
+  toolchain component installed (SwiftTerm's shader; BUILDING.md). UI-test war stories
+  (TESTING.md): container identifiers clobber children; Toggle = checkbox; Touch Bar
+  duplicate again. 276 kit + 11 UI tests green; both flavors build. **Checkpoint C
+  awaiting review — not committed.**
 - **2026-07-18 (d)** — M15.5 checkpoint B built (terminal engine + bridge). SwiftTerm
   1.14.0 added (MIT verified; new `FerryTerminalUI` product so FerryCore stays UI-free;
   LICENSING.md updated). `TerminalSession` actor over Citadel `withPTY` (dedicated
