@@ -197,6 +197,106 @@ enum TestServers {
         throw lastError ?? RemoteSourceError.connectionFailed("exhausted retries")
     }
 
+    // MARK: Tunnels (M14)
+
+    /// Ensures the SSH/exec server's (:2223) host key is trusted in the shared
+    /// store, so a `TunnelEngine` (which connects its own session lazily) never
+    /// hits a TOFU prompt. Uses the SFTP subsystem the exec container also
+    /// exposes, so it works on macOS 14 (unlike the SCP path).
+    static func trustSSHExecHostKey() async throws {
+        let store = sharedHostKeyStore
+        do {
+            // Either the key is already trusted (connect succeeds) or this is
+            // first contact (throws hostKeyUnknown → trust and we're done).
+            let source = try await SFTPSource.connect(host: host, port: Int(scpPort),
+                                                      username: username,
+                                                      credential: .password(password),
+                                                      hostKeyStore: store)
+            await source.disconnect()
+        } catch RemoteSourceError.hostKeyUnknown(let info) {
+            try store.trust(info, host: host, port: Int(scpPort))
+        }
+    }
+
+    /// A `TunnelEngine` pointed at the exec server (:2223), password auth,
+    /// sharing the trusted host-key store. Call `trustSSHExecHostKey()` first.
+    static func makeTunnelEngine() -> TunnelEngine {
+        TunnelEngine(host: host, port: Int(scpPort), username: username,
+                     credential: .password(password), hostKeyStore: sharedHostKeyStore)
+    }
+
+    /// Binds a loopback socket to port 0, reads the OS-assigned port, and frees
+    /// it — a race-tolerant way to pick a listen port for a tunnel test.
+    static func freeLocalPort() -> UInt16 {
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        defer { close(fd) }
+        var addr = sockaddr_in()
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = 0
+        addr.sin_addr.s_addr = inet_addr(host)
+        _ = withUnsafePointer(to: &addr) { ptr in
+            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        var bound = sockaddr_in()
+        var len = socklen_t(MemoryLayout<sockaddr_in>.size)
+        _ = withUnsafeMutablePointer(to: &bound) { ptr in
+            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                getsockname(fd, $0, &len)
+            }
+        }
+        return UInt16(bigEndian: bound.sin_port)
+    }
+
+    /// Drives a SOCKS5 CONNECT to `targetHost:targetPort` through the local
+    /// proxy on `proxyPort`, returning the target's greeting (or nil on any
+    /// framing failure). Synchronous raw sockets, like `readGreeting`.
+    static func socksConnectGreeting(proxyPort: UInt16, targetHost: String, targetPort: UInt16,
+                                     timeoutSeconds: Int = 4) -> String? {
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        guard fd >= 0 else { return nil }
+        defer { close(fd) }
+        var tv = timeval(tv_sec: timeoutSeconds, tv_usec: 0)
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+
+        var addr = sockaddr_in()
+        addr.sin_family = sa_family_t(AF_INET)
+        addr.sin_port = proxyPort.bigEndian
+        addr.sin_addr.s_addr = inet_addr(host)
+        let connected = withUnsafePointer(to: &addr) { ptr in
+            ptr.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+            }
+        }
+        guard connected == 0 else { return nil }
+
+        func send(_ bytes: [UInt8]) -> Bool {
+            bytes.withUnsafeBytes { Foundation.send(fd, $0.baseAddress, bytes.count, 0) == bytes.count }
+        }
+        func recv(_ count: Int) -> [UInt8]? {
+            var buffer = [UInt8](repeating: 0, count: count)
+            let n = Foundation.recv(fd, &buffer, count, 0)
+            guard n == count else { return nil }
+            return buffer
+        }
+
+        // Greeting → method selection.
+        guard send([0x05, 0x01, 0x00]), let method = recv(2), method == [0x05, 0x00] else { return nil }
+        // CONNECT request (IPv4).
+        let octets = targetHost.split(separator: ".").compactMap { UInt8($0) }
+        guard octets.count == 4 else { return nil }
+        var request: [UInt8] = [0x05, 0x01, 0x00, 0x01]
+        request += octets
+        request += [UInt8(targetPort >> 8), UInt8(targetPort & 0xFF)]
+        guard send(request), let reply = recv(10), reply[0] == 0x05, reply[1] == 0x00 else { return nil }
+
+        var greeting = [UInt8](repeating: 0, count: 256)
+        let n = Foundation.recv(fd, &greeting, greeting.count, 0)
+        guard n > 0 else { return nil }
+        return String(decoding: greeting[0..<n], as: UTF8.self)
+    }
+
     /// Standard gate for every integration test: returns the greeting, or
     /// handles the servers-down case (skip locally, fail when
     /// FERRY_REQUIRE_TEST_SERVERS=1, e.g. in CI).

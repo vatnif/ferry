@@ -21,13 +21,58 @@
 | M11 | Key auth & host trust | done (checkpoint A ffd7233, checkpoint B a008639) |
 | M12 | FTP/FTPS via libcurl | done (committed 7223169) |
 | M13 | SCP | done (committed 6b1e981) |
-| M14 | Tunneling | todo |
+| M14 | Tunneling | **awaiting review** |
 | M15 | Open in Terminal | todo |
 | M16 | Tabs & polish | todo |
 | M17 | Packaging (sign/notarize/DMG/Sparkle) | todo |
 | M18 | Sale readiness | todo |
 
 Backlog (post-v1): see `docs/ROADMAP.md`.
+
+## Current state of the code (M14 — awaiting review)
+
+- **Port forwarding works end-to-end for Local + SOCKS** over the M11 SSH stack (Citadel;
+  host-key TOFU + password/key auth via `SSHClientFactory`) — ADR-021. New FerryCore
+  `Tunnel/` module: **`TunnelEngine`** (actor; observable status stream, start/stop/stopAll,
+  auto-start), **`GlueHandler`** (canonical swift-nio bidirectional splice — backpressure via
+  read-gating, half-closure, teardown), and **`SOCKSProxy`** (pure SOCKS5 parser +
+  `SOCKSServerHandler` negotiator).
+- **Local forward**: a loopback `ServerBootstrap` listener; each accepted connection opens a
+  Citadel `direct-tcpip` channel to a fixed destination reachable from the server, spliced by a
+  `GlueHandler` pair. **SOCKS**: same listener + a per-connection SOCKS5 (CONNECT, no-auth)
+  handshake picks the target. **Not macOS-15-gated** — `direct-tcpip` needs no `withExec`
+  (unlike SCP), so tunnels work on macOS 14.
+- **Main technical risk resolved (ADR-021)**: Citadel 0.12.1 exposes **no** public client API
+  for **remote** forwarding (`tcpip-forward` — `SSHClient.session` is internal). Per user
+  sign-off, Remote is **deferred to the backlog**: still savable/editable (mockup shows the
+  row), but starting one reports `failed("Remote port forwarding isn't supported yet.")`.
+- **Single event loop is the key design constraint**: the engine's SSH client, its `direct-tcpip`
+  forwards, and the listener sockets all run on one **dedicated single-thread group** (new
+  optional `group:` param on `SSHClientFactory.connect`), so a glue pair can touch both channel
+  contexts directly. Glue **ordering** avoids dropping the server's opening bytes — the
+  local-side glue is installed before the SSH channel is created; for SOCKS the SSH channel's
+  reads are held until the success reply is sent, then both sides are primed.
+- **Dedicated tunnel session** (not shared with the browser): `TunnelEngine` opens its own SSH
+  session (identical trust/auth, reuses the resolved credential → no second prompt), lazily on
+  first tunnel start. Decoupled lifecycle; a multiplexed `SSHSessionManager` is backlogged.
+- **App**: `TunnelController` (@Observable) wraps the engine; `BrowserSession` holds one for
+  SSH-based profiles (nil for FTP/FTPS) and auto-starts enabled tunnels on connect when the
+  profile opts in. New **`TunnelManagerSheet`** (screen 4 table: Active toggle / Type pill /
+  Listen / Destination / Status / Edit + "auto-start on connect" footer) and **`TunnelEditorSheet`**
+  (add/edit form — new UI, ADR-021). A **Tunnels toolbar button** (SSH only) opens it; the
+  status bar shows the **active-tunnel count**. `ConnectionManagerModel` persists tunnel edits.
+- **Schema**: `TunnelConfiguration` (M2) unchanged. `ConnectionProfile` gained an **optional**
+  `autoStartTunnels: Bool?` (nil ⇒ on) for the footer checkbox — backward-compatible, **no
+  `connections.json` schemaVersion bump**.
+- **Sandbox**: `com.apple.security.network.server` added to `Ferry-AppStore.entitlements`
+  (per user sign-off) — Local/SOCKS listeners *accept* connections, which the sandbox gates on
+  it. Both flavors build (Direct + AppStore).
+- **Test infra**: no new container — the M13 exec server (`testinfra/ssh-exec`, :2223) already
+  has `AllowTcpForwarding yes`.
+- Tests: **240 kit tests + 10 XCUITests, all green** (+17 kit / +1 UI over M13) — SOCKS parser
+  unit vectors; a tunnel op suite (local + SOCKS TCP round-trip reading the server's own sshd
+  banner back through the tunnel, port-in-use, stop-releases-port, auto-start, remote-
+  unsupported) against :2223; and a UI walk-through opening the manager and adding a tunnel.
 
 ## Current state of the code (M13 — done, committed 6b1e981)
 
@@ -334,12 +379,14 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
 
 ## Next steps
 
-1. **Review M13**, then commit on approval (two-commit pattern: work commit, then a "Mark
-   M13 done in PROGRESS.md" commit recording the hash).
-2. **M14 — Tunneling** (`TunnelEngine` + tunnel manager UI, screen 4: local/remote/SOCKS,
-   auto-start). The new exec-capable :2223 SSH server also supports future exec-based
-   features (M15 Open in Terminal).
-3. Backlog: FTPS **certificate-trust prompt** (TLS analogue of host-key TOFU, for self-
+1. **Review M14**, then commit on approval (two-commit pattern: work commit `M14: …`, then a
+   "Mark M14 done in PROGRESS.md" commit recording the work commit's hash).
+   - Note for review: two items changed the mockups/schema and are flagged in ADR-021 —
+     **Remote forwarding is deferred** (savable but not runnable) and the **tunnel add/edit
+     form** is new UI; both were signed off. `network.server` was added to the App Store build.
+2. **M15 — Open in Terminal** (Direct only). The exec-capable :2223 SSH server supports it.
+3. Backlog: **Remote port forwarding** + a multiplexed `SSHSessionManager` (ADR-021); FTPS
+   **certificate-trust prompt** (TLS analogue of host-key TOFU, for self-
    signed/private-CA servers — deferred from M12, ADR-019); FTP connection pooling
    (`CURLSH`) to avoid a login per op; per-file `MDTM` for precise FTP mtimes; remote→Finder
    file-promise drag (`NSFilePromiseProvider`, M10); route `~/.ssh` reads through the
@@ -347,6 +394,23 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
 
 ## Session log
 
+- **2026-07-18** — M14 built (Tunneling — Local + SOCKS port forwards, ADR-021). New FerryCore
+  `Tunnel/` module: **`TunnelEngine`** (actor; own dedicated single-thread event-loop group +
+  own SSH session via `SSHClientFactory`, opened lazily; observable status stream;
+  start/stop/stopAll/auto-start; live connection counts), **`GlueHandler`** (canonical swift-nio
+  bidirectional channel splice), **`SOCKSProxy`** (pure SOCKS5 parser + negotiator). Local
+  forwarding rides Citadel's public `direct-tcpip`; SOCKS layers a self-implemented SOCKS5
+  server over it. **Main risk resolved**: Citadel 0.12.1 has no public client `tcpip-forward`,
+  so **Remote forwarding is deferred to backlog (user sign-off)** — savable/editable but reports
+  not-supported. Not macOS-15-gated (no `withExec`). App: `TunnelController` (@Observable),
+  `TunnelManagerSheet` (screen 4) + `TunnelEditorSheet` (new UI, signed off), Tunnels toolbar
+  button + status-bar count; `BrowserSession` holds a controller for SSH profiles and
+  auto-starts on connect; `ConnectionManagerModel` persists tunnel edits. `ConnectionProfile`
+  gained optional `autoStartTunnels` (no schemaVersion bump). `network.server` added to the App
+  Store entitlements (user sign-off). Glue **ordering** fix during dev: install the local-side
+  glue before the SSH channel exists (and hold SOCKS SSH reads until the reply is sent) so the
+  server's opening banner isn't dropped. 240 kit + 10 UI tests green (+17/+1); both flavors
+  build. **Awaiting review.**
 - **2026-07-18** — M13 built (SCP over an SSH exec channel, ADR-020). New FerryCore
   `SCPSource` (actor) reuses the M11 SSH stack via a new **`SSHClientFactory`** (host-key
   TOFU + password/key auth extracted from `SFTPSource` so both share one audited connect).

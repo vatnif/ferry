@@ -381,3 +381,59 @@ against the existing atmoz/sftp server; it can't — atmoz forces `internal-sftp
 (`testinfra/ssh-exec`, :2223) with the **same** ferry/ferrypass creds + client key, so the
 app's auth paths are identical. It also serves future exec-based features (M15). **Re-run
 `testinfra/start.sh` after pulling M13** (it builds the new image).
+
+## 2026-07-18 — ADR-021: Tunneling — TunnelEngine, forwarding modes, sandbox (M14)
+**Citadel forwarding capabilities (the milestone's main risk — investigated first).** In
+Citadel 0.12.1 the only client-side forwarding primitive that's public is
+`SSHClient.createDirectTCPIPChannel` (a `direct-tcpip` channel — outbound TCP through the
+server). **Remote forwarding** (the `tcpip-forward` global request + server-opened
+`forwarded-tcpip` channels) is not reachable: `SSHClient.session` is `private(set)`/internal,
+so the underlying `NIOSSHHandler.sendTCPForwardingRequest` (which exists in swift-nio-ssh) can't
+be called, and the inbound-channel registration is internal too. **SOCKS** isn't in Citadel at
+all.
+**Modes shipped (user decision 2026-07-18).**
+- **Local** — a loopback `ServerBootstrap` listener; each accepted connection opens a
+  `direct-tcpip` channel to a fixed destination reachable from the server.
+- **SOCKS** — same listener, but a per-connection SOCKS5 (RFC 1928, CONNECT only, no-auth)
+  handshake picks the target, which is then reached via `direct-tcpip`. Ferry implements the
+  SOCKS server itself (`SOCKSProxy` pure parser + `SOCKSServerHandler`).
+- **Remote — deferred to backlog.** With no public Citadel API and no macOS-14-safe way to drop
+  to NIOSSH without vendoring a Citadel patch, remote forwarding is deferred with the user's
+  sign-off. It stays a **savable/editable** tunnel type (the mockup shows a Remote row), but
+  starting one reports `failed("Remote port forwarding isn't supported yet.")`. This is a
+  deviation from mockup screen 4's live Remote row — recorded here per rule 3.
+**Not macOS-15-gated (unlike SCP).** `direct-tcpip` needs no `withExec`, so `TunnelEngine`
+works on macOS 14. Only SCP byte transfers force the macOS 15 gate (ADR-020).
+**Single event loop + glue.** The engine, its SSH channel, every `direct-tcpip` forward, and
+the listener sockets all run on **one dedicated single-thread `MultiThreadedEventLoopGroup`**
+(threaded through a new optional `group:` param on `SSHClientFactory.connect`). That co-location
+is what lets a `GlueHandler` pair splice a local connection to its SSH channel by touching both
+`ChannelHandlerContext`s directly (the canonical swift-nio glue: backpressure via read-gating,
+half-closure, teardown). **Ordering matters:** the local-side glue is installed *before* the SSH
+channel is created so the server's opening bytes aren't dropped; for SOCKS the SSH channel's
+reads are held (autoRead off) until the success reply is sent, then both sides are primed.
+**Dedicated tunnel session (not shared with the browser).** `TunnelEngine` opens its **own** SSH
+session via `SSHClientFactory` — identical host-key TOFU + auth, reusing the already-resolved
+credential so there's no second prompt — rather than sharing `SFTPSource`/`SCPSource`'s private
+`SSHClient`. Rationale: decoupled lifecycle (tunnels don't depend on what's being browsed, or on
+SFTP-vs-SCP), and it matches how each SSH backend already owns its client. The connection is
+lazy — the session is only opened when a tunnel actually starts, so it's free when a profile has
+no enabled tunnels. A full multiplexed `SSHSessionManager` (one session for SFTP + tunnels +
+exec, as ARCHITECTURE.md aspires to) is left as future work.
+**Sandbox — network.server added (user decision 2026-07-18).** Local & SOCKS forwards bind a
+loopback listener socket and *accept* connections, which the App Sandbox permits only with
+`com.apple.security.network.server`. It was added to `Ferry-AppStore.entitlements`; the Direct
+build is unsandboxed. Remote forwards would listen on the server, needing nothing here (moot
+while deferred). DOMAIN.md → Sandbox strategy updated (it previously reasoned only about remote
+tunnels).
+**Schema — one additive, backward-compatible profile field.** `TunnelConfiguration` (fixed in
+M2) needed no change. `ConnectionProfile` gained `autoStartTunnels: Bool?` (nil ⇒ treated as
+true) to back screen 4's "start automatically on connect" checkbox. It's optional, so profiles
+written before M14 still decode — **no `connections.json` schemaVersion bump**.
+**New UI beyond the mockups (signed off).** Screen 4's manager table is implemented as drawn;
+the **tunnel add/edit form** (`TunnelEditorSheet`) behind its Add/Edit buttons isn't in the
+mockups — approved as the natural editor, recorded here per rule 3.
+**Test infra.** No new container: the M13 exec server (`testinfra/ssh-exec`, :2223) already has
+`AllowTcpForwarding yes`. Integration tests prove a real round trip by forwarding to the
+server's own sshd (`127.0.0.1:22`) and reading the SSH banner back through the tunnel (local +
+SOCKS), plus port-in-use, stop-releases-port, auto-start, and remote-unsupported.

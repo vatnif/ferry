@@ -16,13 +16,16 @@ their written form. Any change requires user approval + an ADR. Approved 2026-07
   sheet, Quick Look (local in place / remote via temp download), and Finder drag & drop
   (drop files onto a pane to transfer; drag local files out to Finder).
   Notes: drag handle is the file icon (whole-row drag breaks double-click, ADR-013); local
-  items vend a file URL, remote items a string payload (ADR-015). Pending: tabs (M16),
-  tunnel count in status bar (M14), within-folder drag reorder (M16), remote→Finder
-  promise drag (backlog). Status bar shows first-listing round-trip instead of continuous
-  latency for now.
+  items vend a file URL, remote items a string payload (ADR-015). The **Tunnels toolbar
+  button** (SSH profiles only) and the **active-tunnel count** in the status bar are live
+  (M14). Pending: tabs (M16), within-folder drag reorder (M16), remote→Finder
+  promise drag (backlog), Terminal button (M15). Status bar shows first-listing round-trip
+  instead of continuous latency for now.
 - Screen 2 (connection sheet): live since M4; SSH-key + agent auth rows are wired (M11 —
   key auth live; agent reports "planned"); "Test Connection" is a TCP probe until a
-  protocol-level test replaces it; tunnels row is a placeholder until M14.
+  protocol-level test replaces it. The tunnels row (saved-count + Edit…) still opens the
+  full manager only from screen 1's Tunnels button in M14; editing tunnels from the
+  connection sheet is a later refinement.
 - Screen 3 (host keys): **live (M11)** — TOFU first-contact prompt (🔑, selectable
   fingerprint box, "Remember this key" default-on) and the changed-key alarm (⚠️,
   Disconnect primary, Replace gated behind a second confirmation). Plus the connect-time

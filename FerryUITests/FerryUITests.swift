@@ -133,6 +133,62 @@ final class FerryUITests: XCTestCase {
         XCTAssertTrue(connectButton.waitForExistence(timeout: 5))
     }
 
+    /// M14: with an SSH connection live, the Tunnels toolbar button opens the
+    /// tunnel manager (screen 4); adding a local forward through the editor
+    /// lands a row in the table.
+    @MainActor
+    func testTunnelManagerOpensAndAddsTunnel() throws {
+        try XCTSkipUnless(sftpServerUp, "SFTP test server not running — testinfra/start.sh")
+        let app = launchIsolatedApp()
+
+        app.buttons["sidebar.newConnection"].click()
+        let nameField = app.textFields["editor.name"]
+        XCTAssertTrue(nameField.waitForExistence(timeout: 5))
+        nameField.click(); nameField.typeText("docker-sftp")
+        let hostField = app.textFields["editor.host"]
+        hostField.click(); hostField.typeText("127.0.0.1")
+        let portField = app.textFields["editor.port"]
+        portField.click(); portField.typeKey("a", modifierFlags: .command); portField.typeText("2222")
+        let userField = app.textFields["editor.username"]
+        userField.click(); userField.typeText("ferry")
+        app.buttons["editor.save"].click()
+
+        let connectButton = app.buttons["detail.connect"]
+        XCTAssertTrue(connectButton.waitForExistence(timeout: 5))
+        connectButton.click()
+        let passwordField = app.secureTextFields["passwordPrompt.password"]
+        XCTAssertTrue(passwordField.waitForExistence(timeout: 5))
+        passwordField.click(); passwordField.typeText("ferrypass")
+        app.buttons["passwordPrompt.connect"].click()
+        trustHostKeyIfPrompted(app)
+        XCTAssertTrue(app.staticTexts["browser.status.connected"].waitForExistence(timeout: 15))
+
+        // Open the tunnel manager from the toolbar.
+        let tunnelsButton = app.buttons["browser.tunnels"]
+        XCTAssertTrue(tunnelsButton.waitForExistence(timeout: 5))
+        tunnelsButton.click()
+
+        // Empty state → Add opens the editor.
+        let addButton = app.buttons["tunnels.add"]
+        XCTAssertTrue(addButton.waitForExistence(timeout: 5))
+        addButton.click()
+
+        // Fill a local forward (default type Local, listen host prefilled).
+        let listenPort = app.textFields["tunnelEditor.listenPort"]
+        XCTAssertTrue(listenPort.waitForExistence(timeout: 5))
+        listenPort.click(); listenPort.typeText("15432")
+        let destHost = app.textFields["tunnelEditor.destHost"]
+        destHost.click(); destHost.typeText("db.internal")
+        let destPort = app.textFields["tunnelEditor.destPort"]
+        destPort.click(); destPort.typeText("5432")
+        app.buttons["tunnelEditor.save"].click()
+
+        // The new tunnel shows in the table (Listen column).
+        XCTAssertTrue(app.staticTexts["127.0.0.1:15432"].waitForExistence(timeout: 5),
+                      "the added tunnel should appear in the manager table")
+        XCTAssertTrue(app.staticTexts["db.internal:5432"].exists)
+    }
+
     /// M11: first contact with a server shows the TOFU host-key dialog with a
     /// fingerprint; trusting it lets the connection proceed.
     @MainActor

@@ -438,7 +438,10 @@ final class ConnectionManagerModel {
                                                         systemKnownHosts: systemKnownHosts,
                                                         sessionTrusted: sessionTrusted,
                                                         displayName: profile.name)
-                let session = BrowserSession(profile: profile, remote: sftp, bookmarks: nil)
+                let tunnels = makeTunnelController(profile: profile, credential: credential,
+                                                   sessionTrusted: sessionTrusted)
+                let session = BrowserSession(profile: profile, remote: sftp, bookmarks: nil,
+                                             tunnels: tunnels)
                 await session.start()
                 connectionPhase = .connected(session)
             } catch let error as RemoteSourceError {
@@ -474,7 +477,10 @@ final class ConnectionManagerModel {
                                                       systemKnownHosts: systemKnownHosts,
                                                       sessionTrusted: sessionTrusted,
                                                       displayName: profile.name)
-                let session = BrowserSession(profile: profile, remote: scp, bookmarks: nil)
+                let tunnels = makeTunnelController(profile: profile, credential: credential,
+                                                   sessionTrusted: sessionTrusted)
+                let session = BrowserSession(profile: profile, remote: scp, bookmarks: nil,
+                                             tunnels: tunnels)
                 await session.start()
                 connectionPhase = .connected(session)
             } catch let error as RemoteSourceError {
@@ -597,5 +603,61 @@ final class ConnectionManagerModel {
         guard let session = connectionPhase.session else { return }
         connectionPhase = .idle
         Task { await session.disconnect() }
+    }
+
+    // MARK: Tunnels (M14)
+
+    /// Builds the port-forward manager for an SSH-based session. The engine
+    /// opens its own SSH session lazily (only when a tunnel actually starts),
+    /// reusing the resolved credential + trust exactly as the browser session
+    /// did (ADR-021) — so no second prompt.
+    private func makeTunnelController(profile: ConnectionProfile,
+                                      credential: SSHAuthCredential,
+                                      sessionTrusted: HostKeyInfo?) -> TunnelController {
+        let engine = TunnelEngine(host: profile.host,
+                                  port: profile.port,
+                                  username: profile.username,
+                                  credential: credential,
+                                  hostKeyStore: hostKeyStore,
+                                  systemKnownHosts: systemKnownHosts,
+                                  sessionTrusted: sessionTrusted)
+        return TunnelController(engine: engine)
+    }
+
+    func addTunnel(_ tunnel: TunnelConfiguration, toProfileID id: UUID) {
+        updateTunnels(profileID: id) { $0.append(tunnel) }
+    }
+
+    func updateTunnel(_ tunnel: TunnelConfiguration, inProfileID id: UUID) {
+        updateTunnels(profileID: id) { tunnels in
+            if let index = tunnels.firstIndex(where: { $0.id == tunnel.id }) {
+                tunnels[index] = tunnel
+            }
+        }
+    }
+
+    func removeTunnel(_ tunnelID: UUID, fromProfileID id: UUID) {
+        updateTunnels(profileID: id) { $0.removeAll { $0.id == tunnelID } }
+    }
+
+    func setTunnelEnabled(_ tunnelID: UUID, _ enabled: Bool, inProfileID id: UUID) {
+        updateTunnels(profileID: id) { tunnels in
+            if let index = tunnels.firstIndex(where: { $0.id == tunnelID }) {
+                tunnels[index].isEnabled = enabled
+            }
+        }
+    }
+
+    func setAutoStartTunnels(_ on: Bool, inProfileID id: UUID) {
+        guard var profile = library.profile(withID: id) else { return }
+        profile.autoStartTunnels = on
+        mutate { $0.updateProfile(profile) }
+    }
+
+    private func updateTunnels(profileID id: UUID,
+                               _ change: (inout [TunnelConfiguration]) -> Void) {
+        guard var profile = library.profile(withID: id) else { return }
+        change(&profile.tunnels)
+        mutate { $0.updateProfile(profile) }
     }
 }

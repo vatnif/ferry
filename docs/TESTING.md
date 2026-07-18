@@ -98,7 +98,9 @@ against it.
 - M13: SCP suite (list/stat/home/byte-exact down+round-trip/offset-skip/mkdir/delete/rename/
   chmod/wrong-password) against :2223; engine round-trip + concurrent + folder uploads;
   exec-blocked server (:2222) reports a clear error; upload resume rejected
-- M14: `curl` through forwarded ports
+- M14: TCP round trip through a local forward and through the SOCKS proxy (read the
+  server's own sshd banner back via `127.0.0.1:22`), port-in-use, stop releases the port,
+  auto-start, remote-unsupported — against :2223 (`AllowTcpForwarding yes`)
 
 ## M9 additions (112 kit tests + 4 UI, all green)
 
@@ -173,6 +175,22 @@ against it.
 - `FerryUITests/testConnectBrowseAndDownloadAgainstFTPServer`: create an FTP connection
   through the UI (picks the FTP protocol segment), connect via the password prompt (no
   host-key TOFU for FTP), browse into fixtures, download through the queue, disconnect.
+
+## M14 additions (240 kit tests + 10 UI, all green)
+
+- `FerryCoreTests/SOCKSProxyTests` (unit, no server): the pure SOCKS5 parser — greeting
+  (no-auth / multi-method / incomplete / wrong-version), CONNECT for IPv4 / domain / IPv6,
+  need-more-data at every boundary, non-CONNECT command + unknown address-type rejections,
+  and reply framing.
+- `FerryIntegrationTests/TunnelIntegrationTests` (against :2223, `AllowTcpForwarding yes`):
+  local-forward round trip (forward `127.0.0.1:22` on the server side and read the SSH
+  banner back through the tunnel) + stop-releases-the-port; SOCKS5 round trip (drive the
+  handshake by hand to the same target); port-in-use reports a clear failure; `startEnabled`
+  brings up enabled tunnels and skips disabled ones; a Remote tunnel reports not-supported.
+  Host key is pre-trusted via the exec server's SFTP subsystem (macOS-14-safe).
+- `FerryUITests/testTunnelManagerOpensAndAddsTunnel`: connect over SFTP, open the tunnel
+  manager from the toolbar, add a local forward through the editor, and see the row land in
+  the table.
 
 ## Suite inventory (M1–M8)
 

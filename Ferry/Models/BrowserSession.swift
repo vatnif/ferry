@@ -200,6 +200,9 @@ final class BrowserSession {
     let local: PaneModel
     let remote: PaneModel
     let queue: TransferQueueModel
+    /// Port-forward manager (SSH-based profiles only; nil for FTP/FTPS). Runs
+    /// its own SSH session — see `TunnelEngine` (M14).
+    let tunnels: TunnelController?
     /// The live remote connection (SFTP or FTP/FTPS) — held via the composed
     /// protocol so the session is backend-agnostic (M12).
     private let remoteConnection: any FileSystemSource & SupervisedConnection
@@ -228,9 +231,11 @@ final class BrowserSession {
 
     init(profile: ConnectionProfile,
          remote: any FileSystemSource & SupervisedConnection,
-         bookmarks: SecurityScopedBookmarkStore?) {
+         bookmarks: SecurityScopedBookmarkStore?,
+         tunnels: TunnelController? = nil) {
         self.profile = profile
         self.remoteConnection = remote
+        self.tunnels = tunnels
         self.local = PaneModel(kind: .local, source: LocalFileSource(bookmarks: bookmarks))
         self.remote = PaneModel(kind: .remote, source: remote)
         self.supervisor = profile.keepAlive ? ConnectionSupervisor(connection: remote) : nil
@@ -283,6 +288,13 @@ final class BrowserSession {
             }
             await supervisor.start()
         }
+
+        // Bring up saved tunnels the profile opted into auto-starting. The
+        // tunnel engine only opens its (dedicated) SSH session if there's an
+        // enabled tunnel to run, so this is free when there are none.
+        if let tunnels, profile.autoStartsTunnels {
+            tunnels.startEnabled(profile.tunnels)
+        }
     }
 
     private func applyHealth(_ state: ConnectionSupervisor.State) {
@@ -311,6 +323,7 @@ final class BrowserSession {
     func disconnect() async {
         supervisorTask?.cancel()
         await supervisor?.stop()
+        await tunnels?.shutdown()
         await remoteConnection.disconnect()
     }
 

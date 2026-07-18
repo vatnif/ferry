@@ -1,5 +1,6 @@
 @preconcurrency import Citadel
 import Foundation
+import NIOPosix
 import NIOSSH
 
 /// Everything needed to establish (and silently re-establish) an authenticated
@@ -38,7 +39,15 @@ enum SSHClientFactory {
     /// `.authenticationFailed` on bad credentials, `SSHKeyLoadError` when a key
     /// can't be parsed (e.g. a passphrase is needed), and `.connectionFailed`
     /// otherwise.
-    static func connect(_ parameters: SSHConnectionParameters) async throws -> SSHClient {
+    ///
+    /// `group` pins the client to a specific event-loop group. `SFTPSource`/
+    /// `SCPSource` leave it at Citadel's shared singleton, but `TunnelEngine`
+    /// (M14) passes a dedicated single-thread group so the SSH channel, its
+    /// direct-tcpip forwards, and the local listener all share one event loop —
+    /// which lets the port-forward glue touch both channels' contexts directly
+    /// (ADR-021).
+    static func connect(_ parameters: SSHConnectionParameters,
+                        group: MultiThreadedEventLoopGroup = .singleton) async throws -> SSHClient {
         var trusted = (try? parameters.hostKeyStore.trustedKeys(host: parameters.host,
                                                                 port: parameters.port)) ?? []
         if let systemKnownHosts = parameters.systemKnownHosts {
@@ -60,7 +69,8 @@ enum SSHClientFactory {
                 port: parameters.port,
                 authenticationMethod: authMethod,
                 hostKeyValidator: .custom(validator),
-                reconnect: .never)
+                reconnect: .never,
+                group: group)
         } catch {
             // A rejected, untrusted host key is the reason for the failure —
             // classify it as unknown (first contact) vs. changed (MITM risk).

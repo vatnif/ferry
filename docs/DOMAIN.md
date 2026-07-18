@@ -179,10 +179,21 @@ listing, stat, mkdir, delete, rename, or chmod. So Ferry splits the surface:
 
 ## Tunnels (M14)
 
-- Types: Local (listen locally → remote dest), Remote (listen remotely → local dest),
-  Dynamic SOCKS. Saved per profile; optional auto-start on connect; live start/stop.
-- Reuse the profile's SSH session. Errors (port in use, refusal) surface inline in the
-  tunnel manager's status column.
+- Types: **Local** (listen locally → destination reachable from the server), **Dynamic SOCKS**
+  (loopback SOCKS5 proxy; per-connection target), and **Remote** (listen on the server →
+  local dest) — **Remote is deferred to the backlog** (Citadel 0.12.1 exposes no client
+  `tcpip-forward`, ADR-021). A Remote tunnel is still savable/editable, but starting it reports
+  "not supported yet" in the status column.
+- Saved per profile (`ConnectionProfile.tunnels`); `isEnabled` marks a tunnel for auto-start,
+  and the per-profile `autoStartTunnels` flag (footer checkbox; nil ⇒ on) gates whether enabled
+  tunnels come up on connect. The Active toggle starts/stops a tunnel live while connected.
+- `TunnelEngine` runs a **dedicated SSH session** (its own `SSHClientFactory` connect — same
+  host-key TOFU + auth, reusing the resolved credential so no second prompt), opened lazily the
+  first time a tunnel starts. It's independent of the browser's SFTP/SCP session. Tunnels apply
+  to SSH-based profiles only (SFTP/SCP); FTP/FTPS have no Tunnels button. Not macOS-15-gated —
+  forwarding uses `direct-tcpip`, which needs no `withExec`.
+- Errors (port in use, permission, remote refusal) surface inline in the tunnel manager's
+  status column; the live connection count shows there too.
 
 ## Terminal hand-off (M15, Direct builds only)
 
@@ -200,5 +211,8 @@ listing, stat, mkdir, delete, rename, or chmod. So Ferry splits the surface:
   folder in an open panel; stale bookmarks self-refresh on resolve.
 - Capabilities that can't work sandboxed (ssh-agent, launch Terminal, Sparkle) are gated
   at seams with `#if APPSTORE` or runtime capability checks — degrade, don't crash.
-- Network: outbound client only (`com.apple.security.network.client`). Remote tunnels
-  listen on the *server*, so no server entitlement is needed.
+- Network: outbound client (`com.apple.security.network.client`) **plus**
+  `com.apple.security.network.server` (M14, ADR-021) — Local and SOCKS forwards bind a loopback
+  listener socket and *accept* connections, which the sandbox permits only with the server
+  entitlement. (Remote forwards would listen on the *server* and need nothing here — moot while
+  Remote is deferred.) The Direct build is unsandboxed.

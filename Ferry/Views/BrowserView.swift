@@ -13,6 +13,8 @@ struct BrowserView: View {
     /// the default exists-policy); the alert walks this list front to back,
     /// with Replace All / Skip All applying to the rest.
     @State private var pendingConflicts: [TransferRequest] = []
+    /// Presents the tunnel manager (screen 4).
+    @State private var showTunnels = false
 
     var body: some View {
         @Bindable var session = session
@@ -55,6 +57,12 @@ struct BrowserView: View {
             Text(conflictMessage)
         }
         .toolbar { toolbarContent }
+        .sheet(isPresented: $showTunnels) {
+            if let tunnels = session.tunnels {
+                TunnelManagerSheet(profileID: session.profile.id, controller: tunnels)
+                    .environment(model)
+            }
+        }
         .alert("New Folder", isPresented: newFolderPresented) {
             TextField("Folder name", text: newFolderBinding)
             Button("Cancel", role: .cancel) { newFolderName = nil }
@@ -122,6 +130,16 @@ struct BrowserView: View {
             .help("Sync browsing: navigate both panes together")
             .accessibilityIdentifier("browser.linked")
 
+            if session.tunnels != nil {
+                Button {
+                    showTunnels = true
+                } label: {
+                    Label("Tunnels", systemImage: "point.3.connected.trianglepath.dotted")
+                }
+                .help("Manage port forwards for this connection")
+                .accessibilityIdentifier("browser.tunnels")
+            }
+
             TextField("Filter", text: $session.filterText, prompt: Text("Filter"))
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 150)
@@ -155,6 +173,12 @@ struct BrowserView: View {
                 Label("panes linked", systemImage: "link").foregroundStyle(.secondary)
             }
             Spacer()
+            if let tunnels = session.tunnels, tunnels.activeCount > 0 {
+                Label("\(tunnels.activeCount) tunnel\(tunnels.activeCount == 1 ? "" : "s") active",
+                      systemImage: "point.3.connected.trianglepath.dotted")
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("browser.status.tunnels")
+            }
         }
         .font(.caption)
         .padding(.horizontal, 10)

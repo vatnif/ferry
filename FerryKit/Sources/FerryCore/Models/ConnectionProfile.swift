@@ -19,6 +19,12 @@ public struct ConnectionProfile: Codable, Identifiable, Hashable, Sendable {
     /// Protocol-level no-ops every 30 s + auto-reconnect (DOMAIN.md).
     public var keepAlive: Bool
     public var tunnels: [TunnelConfiguration]
+    /// Whether enabled tunnels start automatically on connect (tunnel manager
+    /// footer checkbox, mockup screen 4). Optional + nil-means-true so profiles
+    /// saved before M14 still decode without a schemaVersion bump (ADR-021).
+    public var autoStartTunnels: Bool?
+    /// Convenience: treat a legacy/unset value as "on".
+    public var autoStartsTunnels: Bool { autoStartTunnels ?? true }
 
     /// UI restoration state — updated on disconnect, not user-edited.
     public var lastLocalPath: String?
@@ -38,6 +44,7 @@ public struct ConnectionProfile: Codable, Identifiable, Hashable, Sendable {
                 localStartPath: String? = nil,
                 keepAlive: Bool = true,
                 tunnels: [TunnelConfiguration] = [],
+                autoStartTunnels: Bool? = nil,
                 lastLocalPath: String? = nil,
                 lastRemotePath: String? = nil,
                 createdAt: Date = Date(),
@@ -53,6 +60,7 @@ public struct ConnectionProfile: Codable, Identifiable, Hashable, Sendable {
         self.localStartPath = localStartPath
         self.keepAlive = keepAlive
         self.tunnels = tunnels
+        self.autoStartTunnels = autoStartTunnels
         self.lastLocalPath = lastLocalPath
         self.lastRemotePath = lastRemotePath
         self.createdAt = createdAt
