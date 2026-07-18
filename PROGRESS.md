@@ -22,7 +22,7 @@
 | M12 | FTP/FTPS via libcurl | done (committed 7223169) |
 | M13 | SCP | done (committed 6b1e981) |
 | M14 | Tunneling | done (committed 7938556) |
-| M14.5 | Remote port forwarding | **awaiting review** |
+| M14.5 | Remote port forwarding | done (committed a4899a2) |
 | M15 | Open in Terminal | todo |
 | M16 | Tabs & polish | todo |
 | M17 | Packaging (sign/notarize/DMG/Sparkle) | todo |
@@ -30,7 +30,7 @@
 
 Backlog (post-v1): see `docs/ROADMAP.md`.
 
-## Current state of the code (M14.5 — awaiting review; M14 committed 7938556)
+## Current state of the code (M14.5 — done, committed a4899a2)
 
 - **M14.5: Remote port forwarding works end-to-end** (ADR-022). The pinned Citadel 0.12.1
   turned out to ship a public client `tcpip-forward` API after all (via the Wellz26
@@ -392,14 +392,8 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
 
 ## Next steps
 
-1. **Review M14.5** (remote port forwarding, ADR-022), then commit on approval (two-commit
-   pattern: work commit `M14.5: …`, then a "Mark M14.5 done" commit recording the hash).
-   - Note for review: no mockup deviation — this *removes* one (the editor's "Remote isn't
-     supported yet" warning), restoring screen 4's mocked behavior. No new entitlements.
-     LICENSING.md corrected: swift-nio-ssh actually resolves to the Wellz26 fork (Apache-2.0).
-     Testinfra image changed — reviewers must `docker compose up -d --build ssh` once.
-2. **M15 — Open in Terminal** (Direct only). The exec-capable :2223 SSH server supports it.
-3. Backlog: multiplexed `SSHSessionManager` (ADR-021/022); FTPS
+1. **M15 — Open in Terminal** (Direct only). The exec-capable :2223 SSH server supports it.
+2. Backlog: multiplexed `SSHSessionManager` (ADR-021/022); FTPS
    **certificate-trust prompt** (TLS analogue of host-key TOFU, for self-
    signed/private-CA servers — deferred from M12, ADR-019); FTP connection pooling
    (`CURLSH`) to avoid a login per op; per-file `MDTM` for precise FTP mtimes; remote→Finder
@@ -423,7 +417,7 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
   `127.0.0.1:2224 → :18080` mapping (image rebuilt). Tests: `SSHChannelDataCodecTests` +
   `TunnelRemoteValidationTests` (unit), remote round trip / stop-releases-server-port /
   refusal / live-count integration tests — full `swift test` green, Ferry-Direct builds.
-  **Awaiting user review — not committed.**
+  **Approved & committed a4899a2.**
 - **2026-07-18** — M14 built (Tunneling — Local + SOCKS port forwards, ADR-021). New FerryCore
   `Tunnel/` module: **`TunnelEngine`** (actor; own dedicated single-thread event-loop group +
   own SSH session via `SSHClientFactory`, opened lazily; observable status stream;
