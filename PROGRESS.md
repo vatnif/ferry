@@ -25,13 +25,13 @@
 | M14.5 | Remote port forwarding | done (committed a4899a2) |
 | M15 | Open in Terminal | done (committed d500ac3) |
 | M15.5 | Embedded terminal (SwiftTerm) | done (A+B d7971a8, C 6410384) |
-| M16 | Tabs & polish | **awaiting review** (A ec114e2 · B c6942fb · C Polish — help/acks/dark-mode/errors, built) |
+| M16 | Tabs & polish | **done** (A ec114e2 · B c6942fb · C 2f3b553) |
 | M17 | Packaging (sign/notarize/DMG/Sparkle) | todo |
 | M18 | Sale readiness | todo |
 
 Backlog (post-v1): see `docs/ROADMAP.md`.
 
-## Current state of the code (M16 checkpoint C — Polish — built, awaiting review)
+## Current state of the code (M16 checkpoint C — Polish — done, committed 2f3b553)
 
 - **The final M16 checkpoint** (approved 2026-07-19: A Settings · B Tabs · **C Polish**). Four
   workstreams: a dark-mode conformance audit, an error-message voice pass, an **Acknowledgements**
@@ -64,8 +64,8 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
   secrets are interpolated (rule 6).
 - **Both flavors build** (Direct + AppStore). Tests: **341 kit (+7 `HelpContentTests`) + 16
   XCUITests (+2: Help ▸ Ferry Help window, Help ▸ Acknowledgements… window), all green.** The
-  Settings-hosted UI stays covered by the TESTING.md manual checklist (ADR-025). **Awaiting
-  review — nothing committed.**
+  Settings-hosted UI stays covered by the TESTING.md manual checklist (ADR-025). **Approved &
+  committed (2f3b553) — M16 complete.**
 
 ## Current state of the code (M16 checkpoint B — Tabs — done, committed c6942fb)
 
@@ -637,7 +637,7 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
   (+2 Help/Acknowledgements windows) green; both flavors build; app confirmed to launch in dark
   mode (headless screenshots blocked by TCC → manual visual checklist in TESTING.md). Docs
   updated (DESIGN/DECISIONS ADR-028/LICENSING/TESTING/ROADMAP/ARCHITECTURE/PROGRESS).
-  **Awaiting review — nothing committed.**
+  **Approved & committed (2f3b553) — M16 complete.** Follow-up marks M16 done in PROGRESS.md.
 - **2026-07-19 (c)** — M16 **checkpoint B built** (Tabs, ADR-027). Early decisions signed off:
   reopen reconnects all saved tabs; closing a tab with running transfers confirms; last-tab-close
   keeps the window with an empty tab; affordances = ＋/⌘T/⌘-double-click + per-tab ✕/⌘W. Refactor:
