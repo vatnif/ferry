@@ -25,13 +25,13 @@
 | M14.5 | Remote port forwarding | done (committed a4899a2) |
 | M15 | Open in Terminal | done (committed d500ac3) |
 | M15.5 | Embedded terminal (SwiftTerm) | done (A+B d7971a8, C 6410384) |
-| M16 | Tabs & polish | **in progress** (A Settings ✅ awaiting review · B Tabs · C Polish) |
+| M16 | Tabs & polish | **in progress** (A Settings done ec114e2 · B Tabs · C Polish) |
 | M17 | Packaging (sign/notarize/DMG/Sparkle) | todo |
 | M18 | Sale readiness | todo |
 
 Backlog (post-v1): see `docs/ROADMAP.md`.
 
-## Current state of the code (M16 checkpoint A — awaiting review, nothing committed)
+## Current state of the code (M16 checkpoint A — done, committed ec114e2)
 
 - **The Settings window is live** (screen 5; app menu / ⌘,) — a standard SwiftUI
   `Settings { }` scene with the five-tab strip General · Transfers · Keys · Terminal ·
@@ -71,7 +71,7 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
   2, bridge scrollback 1) + 11 XCUITests, all green.** The Settings window itself isn't
   XCUITest-openable in this harness (the SwiftUI `Settings` scene doesn't route via ⌘,/menu
   under automation) — covered by a **TESTING.md manual checklist** (M15 precedent); the settings
-  logic is unit-tested. **Nothing committed — awaiting review.**
+  logic is unit-tested. **Approved & committed (ec114e2).**
 
 ## Current state of the code (M15 — done, committed d500ac3)
 
@@ -566,8 +566,8 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
   stashing to clean main (passed) then re-testing. The SwiftUI `Settings` scene doesn't open
   under XCUITest (⌘,/menu don't route via automation) → Settings covered by a TESTING.md manual
   checklist (M15 precedent). 317 kit (+14) + 11 UI green; both flavors build. Docs updated
-  (DESIGN/DOMAIN/DECISIONS ADR-025+026/TESTING/ROADMAP/PROGRESS + mockups). **Awaiting review —
-  nothing committed.**
+  (DESIGN/DOMAIN/DECISIONS ADR-025+026/TESTING/ROADMAP/PROGRESS + mockups). **Approved &
+  committed (ec114e2).**
 - **2026-07-19** — M15 built (Open in Terminal — external hand-off, ADR-024). The external
   branch of the ADR-023 dispatch: the Terminal toolbar control + sidebar Open Terminal now
   dispatch on the terminal-choice setting (built-in → M15.5 panel/window; Terminal.app /
