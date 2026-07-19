@@ -484,7 +484,7 @@ public actor TunnelEngine {
             return "The server refused to forward port \(listenPort) — it may be in use on the server, or forwarding may be disabled (AllowTcpForwarding)."
         }
         if case SSHClientError.channelCreationFailed = error {
-            return "Couldn’t establish the remote forward for port \(listenPort)."
+            return "Could not establish the remote forward for port \(listenPort)."
         }
         return String(describing: error)
     }

@@ -588,7 +588,7 @@ final class ConnectionManagerModel {
     /// its own host-key TOFU against `~/.ssh/known_hosts`, not Ferry's store.
     func launchExternalTerminal(_ terminal: ExternalTerminal, profile: ConnectionProfile) {
         #if APPSTORE
-        errorMessage = "Opening an external terminal isn't available in this build."
+        errorMessage = "Opening an external terminal isn’t available in this build."
         #else
         let keyPath: String?
         if case .publicKey(let path) = profile.authMethod { keyPath = path } else { keyPath = nil }
@@ -898,7 +898,7 @@ final class ConnectionManagerModel {
         case .connectionFailed(let detail):
             errorMessage = "Could not connect to \(profile.host):\(String(profile.port)) — \(detail)"
         case .tlsFailed(let detail):
-            errorMessage = "The secure (TLS) connection to \(profile.host) failed: \(detail). The server's certificate may be untrusted, or the TLS mode (implicit vs. explicit) may not match the port."
+            errorMessage = "The secure (TLS) connection to \(profile.host) failed: \(detail). The server’s certificate may be untrusted, or the TLS mode (implicit vs. explicit) may not match the port."
         case .hostKeyUnknown, .hostKeyChanged:
             errorMessage = "Unexpected host-key error on an FTP connection."
         }

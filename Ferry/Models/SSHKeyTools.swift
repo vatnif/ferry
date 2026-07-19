@@ -63,7 +63,7 @@ enum SSHKeyTools {
             switch self {
             case .alreadyExists(let name): return "A key named “\(name)” already exists in ~/.ssh."
             case .keygenFailed(let detail): return detail.isEmpty ? "ssh-keygen failed." : detail
-            case .notAPrivateKey: return "That file doesn't look like an OpenSSH or PEM private key."
+            case .notAPrivateKey: return "That file doesn’t look like an OpenSSH or PEM private key."
             }
         }
     }

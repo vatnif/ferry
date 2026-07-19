@@ -810,3 +810,46 @@ attempt with the ✕ as an `.overlay` button **on top of** the chip button faile
 buttons get merged in accessibility and the ✕ couldn't be found. The ✕ is conditionally present
 only on the active/hovered chip (a `Color.clear` placeholder reserves its width), so exactly one ✕
 is queryable at a time.
+
+## 2026-07-19 — ADR-028: In-app help & acknowledgements (M16 checkpoint C)
+
+**Status: approved 2026-07-19** (placement/format signed off before build). Adds the two
+Help-menu windows that M16 called for — a minimal user guide and the license-notices screen —
+neither of which is in the M0 mockups, so they are recorded here per rule 3.
+
+**Placement — standalone Help-menu windows, not Settings tabs.** Both are `Window` scenes
+opened from the Help menu (which `CommandGroup(replacing: .help)` takes over from the default
+help item). The deciding factor was testability: the SwiftUI `Settings` scene does not open
+under XCUITest in this harness (ADR-025), whereas a standalone window is fully drivable — so
+the new UI gets real automated coverage instead of a manual-only checklist. It is also the more
+macOS-conventional home for help/acknowledgements. (Options weighed: a 6th Settings tab, or
+both; user chose the Help-menu window.)
+
+**Format — native SwiftUI, not a bundled doc.** The guide is a static SwiftUI window rather
+than a bundled Markdown/HTML file opened in Help Viewer or a browser: it is theme-aware,
+XCUITest-drivable, and carries no doc-packaging or sandbox-file-open concerns. Scope is
+deliberately minimal (ROADMAP.md M16): prose topics incl. the `.ferrypart`/resume explainer,
+plus a keyboard-shortcut reference. A searchable/contextual help system stays backlog item 9.
+
+**Pure, testable content.** The windows only render value models in FerryCore —
+`HelpContent` (topics + `HelpShortcut` reference) and `Acknowledgements`
+(`Acknowledgement` + `DependencyLicense`, with reproducible license bodies). `HelpContentTests`
+pins integrity: every acknowledgement has a copyright line and a commercially-redistributable
+license (rule 4 — a GPL/LGPL/etc. entry would fail the build), the list covers LICENSING.md's
+inventory, and the shortcut list documents the M16-B tab affordances. This keeps the notice
+screen honest against `docs/LICENSING.md` without a human diff.
+
+**One ADR, not two.** Help and acknowledgements are a single polish workstream landing
+together (user decision), so they share this entry.
+
+**Error-message consistency (same checkpoint, no separate ADR).** User-facing error/info/notice
+strings were swept for one voice: apostrophes normalized to typographic curly `’` (matching the
+curly quotes already used for interpolated paths/names; the shell-quoting literals in
+`TerminalLaunch.swift` were left untouched), and the four `Couldn’t …` strings folded into the
+dominant `Could not …` form. The three alert channels (`errorMessage` / `infoMessage` "Not yet
+available" / `noticeMessage`) stay distinct. No secrets are ever interpolated (rule 6).
+
+**Dark-mode audit (same checkpoint).** Audited screen-by-screen against the mockups in both
+themes; **no code changes were needed** — the UI already uses semantic/adaptive colors and the
+one fixed-RGB color (the SOCKS pill `#7a5fd0`) matches the mockup CSS, which also pins it in
+both themes. Appearance stays applied via `NSApp.appearance` (ADR-025).

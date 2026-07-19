@@ -28,7 +28,7 @@ struct GeneralSettingsView: View {
                         }
                     }
                 }
-                Text("The local pane opens here when a connection doesn't set its own start folder.")
+                Text("The local pane opens here when a connection doesn’t set its own start folder.")
                     .font(.caption).foregroundStyle(.secondary)
 
                 Picker("Appearance", selection: $appearanceRaw) {
@@ -43,7 +43,7 @@ struct GeneralSettingsView: View {
             Section("On launch") {
                 Toggle("Reopen the connections that were open last time", isOn: $reopenLastConnections)
                     .accessibilityIdentifier("settings.general.reopen")
-                Text("Reconnects each tab; you're prompted for any credential that isn't saved in the Keychain.")
+                Text("Reconnects each tab; you’re prompted for any credential that isn’t saved in the Keychain.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 

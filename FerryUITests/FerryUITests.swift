@@ -736,4 +736,47 @@ final class FerryUITests: XCTestCase {
         app.buttons["tabStrip.close.0"].click()
         XCTAssertTrue(connectButton.waitForExistence(timeout: 5))
     }
+
+    /// Help ▸ Ferry Help opens the in-app user guide (M16 checkpoint C,
+    /// ADR-028): a standalone window, so — unlike the Settings scene (ADR-025) —
+    /// it is drivable here. Verifies the guide renders its title, the
+    /// .ferrypart/resume explainer, and the keyboard-shortcut reference. Needs
+    /// no server.
+    @MainActor
+    func testHelpMenuOpensGuideWindow() throws {
+        let app = launchIsolatedApp()
+        XCTAssertTrue(app.staticTexts["Connections"].waitForExistence(timeout: 10))
+
+        // "Ferry Help" also names the window it opens, so scope the query to the
+        // open Help menu's descendants to hit the menu item unambiguously.
+        let helpMenu = app.menuBars.menuBarItems["Help"]
+        helpMenu.click()
+        let helpItem = helpMenu.menuItems["Ferry Help"]
+        XCTAssertTrue(helpItem.waitForExistence(timeout: 5))
+        helpItem.click()
+
+        XCTAssertTrue(app.staticTexts["help.title"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Resuming interrupted transfers"].waitForExistence(timeout: 5),
+                      "the guide must include the .ferrypart/resume explainer")
+        // The shortcut reference lists the M16-B tab affordances.
+        XCTAssertTrue(app.staticTexts["New tab"].exists)
+    }
+
+    /// Help ▸ Acknowledgements… opens the license-notices window (M16
+    /// checkpoint C, ADR-028) listing the bundled dependencies. Needs no server.
+    @MainActor
+    func testHelpMenuOpensAcknowledgementsWindow() throws {
+        let app = launchIsolatedApp()
+        XCTAssertTrue(app.staticTexts["Connections"].waitForExistence(timeout: 10))
+
+        app.menuBars.menuBarItems["Help"].click()
+        let acksItem = app.menuItems["Acknowledgements…"]
+        XCTAssertTrue(acksItem.waitForExistence(timeout: 5))
+        acksItem.click()
+
+        XCTAssertTrue(app.staticTexts["acknowledgements.title"].waitForExistence(timeout: 5))
+        // A couple of the bundled dependencies are named.
+        XCTAssertTrue(app.staticTexts["Citadel"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["SwiftTerm"].exists)
+    }
 }

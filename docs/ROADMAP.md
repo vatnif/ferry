@@ -56,7 +56,9 @@ Workflow per milestone: implement → unit + integration tests pass → docs upd
   tabs, terminal font/scrollback, transfer policies configurable; ADR-025/026) · **B Tabs**
   (done — screen-1 connection tab strip: N per-tab sessions/window, `OrderedTabs` +
   `ConnectionTab`, reopen-N-tabs, within-folder drag reorder; ADR-027) ·
-  **C Polish** (dark-mode audit, error-message pass, acknowledgements, Help menu).
+  **C Polish** (done — dark-mode conformance audit [no code changes: semantic colors
+  already], error-message voice pass, and the Help-menu **Ferry Help** + **Acknowledgements**
+  windows over pure FerryCore content models; ADR-028). **M16 complete.**
 
 ## Phase F — Ship
 - **M17** Packaging: Developer ID, notarization, DMG, Sparkle, production icon, release checklist.

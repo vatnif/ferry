@@ -155,6 +155,50 @@ against it.
    external options are absent and the toolbar button is disabled on macOS 14 with the
    "requires macOS 15" explainer.
 
+## M16 checkpoint C additions (Polish — 341 kit tests + 16 UI, all green)
+
+New unit coverage (headless):
+- `FerryCoreTests/HelpContentTests` (+7): pins the pure help + acknowledgements content —
+  the acknowledgements list covers LICENSING.md's inventory (Citadel / swift-nio-ssh /
+  swift-crypto / SwiftTerm / libcurl / Apple SDKs), every entry has a copyright line and a
+  **commercially-redistributable** license (a forbidden license would fail the build, rule 4),
+  names are unique; the shortcut list documents the M16-B tab affordances (⌘T/⌘W/⌘⇧I/
+  ⌘-double-click) with no duplicates; and a topic explains the `.ferrypart` resume behaviour.
+
+New UI coverage:
+- `FerryUITests` (+2, server-free): `testHelpMenuOpensGuideWindow` (Help ▸ Ferry Help opens
+  the guide window; asserts the title, the `.ferrypart`/resume topic, and a shortcut row) and
+  `testHelpMenuOpensAcknowledgementsWindow` (Help ▸ Acknowledgements… lists Citadel + SwiftTerm).
+  Unlike the Settings scene, these are **standalone `Window` scenes**, so they *are* drivable
+  under XCUITest (ADR-028).
+
+**XCUITest lesson (ADR-028).** The menu item **"Ferry Help"** collides with the window title it
+opens, so a global `app.menuItems["Ferry Help"]` matches multiple elements and `.firstMatch`
+can resolve to an off-screen (INFINITY-point) element that fails to click. Scope the query to the
+open menu instead: `app.menuBars.menuBarItems["Help"].menuItems["Ferry Help"]`.
+
+**Not automated — the dark-mode visual pass + the two new windows' appearance.** The dark-mode
+audit is a code-level conformance check (semantic colors only; see below) plus a human visual
+pass — headless screenshot capture is blocked by macOS screen-recording permission in the test
+harness. The windows' *existence/content* is covered by the two UI tests above.
+
+### M16 checkpoint C manual checklist
+
+1. **Dark mode** — Settings ▸ General ▸ Appearance = Dark, then walk every screen against
+   `docs/design/ferry-mockups.html` (dark tab): sidebar, dual panes, tab strip, toolbar,
+   transfer queue, status bar, terminal panel, every sheet (editor, host-key, tunnels, import,
+   permissions), the Settings window, and the two new Help-menu windows. Repeat in Light and in
+   System. Everything should track the mockups; no washed-out or invisible text/fills.
+2. **Ferry Help** (Help ▸ Ferry Help / ⌘?) — the guide window opens with the prose topics
+   (incl. the `.ferrypart`/resume explainer) and the keyboard-shortcut table; every listed
+   shortcut actually works.
+3. **Acknowledgements** (Help ▸ Acknowledgements…) — lists every bundled dependency with its
+   copyright + license pill; expanding "License" reveals the full text; the list matches
+   `docs/LICENSING.md`.
+4. **Error voice** — trigger a few errors (wrong password, unreachable host, TLS failure): each
+   message is sentence case with a curly apostrophe, names the host/path, is actionable, and
+   never shows a password/passphrase.
+
 ## M16 checkpoint B additions (Tabs — 334 kit tests + 14 UI, all green)
 
 - `FerryCoreTests/OrderedTabsTests` (+17): the pure tab-collection rules — init selection

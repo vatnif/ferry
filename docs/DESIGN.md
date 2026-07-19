@@ -51,8 +51,11 @@ tab 7 "Terminal" added in M15.5, approved 2026-07-18, ADR-023).
   (General · Transfers · Keys · Terminal · Advanced). General/Keys/Advanced are net-new UI
   drawn into the mockups and signed off (ADR-025); the approved Terminal tab (tab 7) is wired
   reactively over M15's storage with font + scrollback (SwiftTerm scrollback caveat retired,
-  ADR-025). The screen-1 connection tab strip is **live (checkpoint B, ADR-027)**. Pending:
-  dark-mode audit + acknowledgements + help (checkpoint C).
+  ADR-025). The screen-1 connection tab strip is **live (checkpoint B, ADR-027)**.
+  **Checkpoint C is complete**: dark-mode conformance audited (no code changes — the UI
+  already used semantic/adaptive colors and the mockup color specs), the error-message
+  voice unified, and the **Acknowledgements** + **Ferry Help** windows added under the Help
+  menu (net-new UI, signed off 2026-07-19, ADR-028). **M16 is complete.**
 
 ## Brand
 
@@ -180,9 +183,35 @@ ADR-023).*
   no terminal tabs, split panes, color themes, or keybinding editors; font and
   scrollback settings only (ADR-023).
 
+## Help menu — Ferry Help + Acknowledgements (M16 checkpoint C — approved 2026-07-19)
+
+*Net-new UI, not in the M0 mockups → signed off 2026-07-19 (rule 3), ADR-028. Both are
+standalone single-instance windows opened from the **Help** menu (which replaces the default
+help item), so — unlike the Settings scene (ADR-025) — they are XCUITest-drivable.*
+
+- **Help ▸ Ferry Help** (⌘?): a minimal in-app user guide — short prose topics (getting
+  connected, transferring files, the **`.ferrypart`/resume explainer**, tabs & windows, the
+  built-in terminal) followed by a **keyboard-shortcut reference** table (incl. the M16-B tab
+  affordances: ⌘T new tab, ⌘W close tab, ⌘-double-click new tab, ⌘⇧I import). Deliberately
+  minimal — a searchable/contextual help system is backlog item 9.
+- **Help ▸ Acknowledgements…**: the license notices for every bundled dependency
+  (name · what Ferry uses it for · copyright · license pill, with the full license text behind
+  a disclosure). Sourced from `docs/LICENSING.md` — satisfies the MIT/Apache-2.0/curl notice
+  obligations (rule 4).
+- **Content is pure + testable.** Both windows only *render* the `HelpContent` and
+  `Acknowledgements` value models in FerryCore; unit tests pin list integrity (every notice has
+  a copyright + an allowed license; the shortcut list covers the tab affordances).
+
 ## Conventions
 
-- Both themes always (system appearance); mockups demonstrate both.
+- Both themes always (system appearance); mockups demonstrate both. Appearance is applied
+  app-wide via `NSApp.appearance` (ADR-025 — never `preferredColorScheme` at the WindowGroup
+  root). **Dark-mode conformance was audited screen-by-screen at M16 checkpoint C**: the UI
+  uses semantic/adaptive colors throughout (`Color.accentColor`, `.secondary`,
+  `Color(nsColor: .controlBackgroundColor/.textBackgroundColor)`, and the semantic status set
+  green/amber/red), so both themes track the mockups without hardcoded overrides. The only
+  fixed-RGB color is the SOCKS type pill (`#7a5fd0`) — which the mockup CSS also pins in both
+  themes, so it is conformant by design.
 - Destructive actions styled red and never the default; dangerous flows need a second step.
 - Errors are specific and actionable (what failed + how to fix), no apologies.
 - Every async action shows progress or state within 100 ms (spinner, badge, or bar).

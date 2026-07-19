@@ -22,6 +22,9 @@ Ferry.app (SwiftUI, @MainActor)
 ├── BrowserView (M7)           dual pane + toolbar + status bar (per selected tab)
 │   └── FileBrowserPane ×2     same component for local & remote panes
 ├── TransferQueueView (M8), TunnelManagerView (M14), Settings (M16)
+├── HelpGuideWindowView + AcknowledgementsWindowView (M16 C, ADR-028)
+│                              standalone Help-menu Window scenes rendering the
+│                              pure HelpContent + Acknowledgements FerryCore models
 └── view models (@Observable, main-actor):
     ├── ConnectionManagerModel  library persistence, vault mediation,
     │                           connect lifecycle; owns tabs:
@@ -73,6 +76,9 @@ FerryCore (FerryKit package)
 ├── SSHConfigImporter                    ~/.ssh/config, known_hosts (read-only) (M11-B)
 ├── FTPListParser                         Unix `ls -l` LIST → FileItem (pure, M12; also
 │                                        parses SCP's `ls -la`/`ls -ld`, M13)
+├── Help/ (M16 C, ADR-028)               pure content for the Help-menu windows:
+│                                        HelpContent (topics + shortcut reference) and
+│                                        Acknowledgements (license notices) — unit-tested
 └── FerryVersion, Logging
 
 CFTP (separate SwiftPM C target)          thin non-variadic shim over the system

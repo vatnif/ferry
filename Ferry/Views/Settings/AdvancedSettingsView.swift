@@ -30,7 +30,7 @@ struct AdvancedSettingsView: View {
             Section("Experimental") {
                 Toggle("Enable experimental features", isOn: $experimental)
                     .accessibilityIdentifier("settings.advanced.experimental")
-                Text("Off by default. Turns on in-progress features that aren't final; they may change or be removed.")
+                Text("Off by default. Turns on in-progress features that aren’t final; they may change or be removed.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 

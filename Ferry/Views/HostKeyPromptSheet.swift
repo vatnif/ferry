@@ -105,7 +105,7 @@ struct HostKeyPromptSheet: View {
                         }
                         Button("Cancel", role: .cancel) {}
                     } message: {
-                        Text("Only do this if you know the server's key legitimately changed. "
+                        Text("Only do this if you know the server’s key legitimately changed. "
                              + "If you are unsure, this could be an attack.")
                     }
                 Spacer()

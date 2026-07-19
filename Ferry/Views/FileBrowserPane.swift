@@ -319,9 +319,9 @@ struct FileBrowserPane: View {
         let hasFolder = deleteTargets.contains(where: \.isDirectory)
         let scope = pane.kind == .local ? "on this Mac" : "on the server"
         if hasFolder {
-            return "Folders are deleted with all their contents. This can't be undone — the items are removed \(scope), not moved to a Trash."
+            return "Folders are deleted with all their contents. This can’t be undone — the items are removed \(scope), not moved to a Trash."
         }
-        return "This can't be undone — the item\(deleteTargets.count == 1 ? " is" : "s are") removed \(scope), not moved to a Trash."
+        return "This can’t be undone — the item\(deleteTargets.count == 1 ? " is" : "s are") removed \(scope), not moved to a Trash."
     }
 
     /// Accepts drops originating from the opposite pane only.

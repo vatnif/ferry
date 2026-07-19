@@ -100,7 +100,7 @@ final class PaneModel: Identifiable {
         let trimmed = newName.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty, trimmed != item.name else { return }
         guard !trimmed.contains("/") else {
-            errorMessage = "A file name can't contain “/”."
+            errorMessage = "A file name can’t contain “/”."
             return
         }
         let parent = (item.path as NSString).deletingLastPathComponent
@@ -176,7 +176,7 @@ final class PaneModel: Identifiable {
         switch sourceError {
         case .notFound: return "“\(path)” does not exist on this side."
         case .notADirectory: return "“\(path)” is not a folder."
-        case .permissionDenied: return "You don't have permission to open “\(path)”."
+        case .permissionDenied: return "You don’t have permission to open “\(path)”."
         case .alreadyExists: return "“\(path)” already exists."
         case .invalidOffset: return "Internal error: invalid file offset."
         case .unsupported(let operation): return "Not available yet: \(operation)."

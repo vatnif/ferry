@@ -27,7 +27,7 @@ struct KnownHostsManagerSheet: View {
             if hosts.isEmpty {
                 ContentUnavailableView("No trusted host keys",
                                        systemImage: "key",
-                                       description: Text("Ferry hasn't stored any host keys yet. Keys you trust when connecting appear here."))
+                                       description: Text("Ferry hasn’t stored any host keys yet. Keys you trust when connecting appear here."))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List {
@@ -81,7 +81,7 @@ struct KnownHostsManagerSheet: View {
             hosts = try store.allTrustedHosts().sorted { $0.endpoint < $1.endpoint }
             loadError = nil
         } catch {
-            loadError = "Couldn't read the known-hosts file."
+            loadError = "Could not read the known-hosts file."
         }
     }
 

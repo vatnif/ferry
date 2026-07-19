@@ -25,11 +25,47 @@
 | M14.5 | Remote port forwarding | done (committed a4899a2) |
 | M15 | Open in Terminal | done (committed d500ac3) |
 | M15.5 | Embedded terminal (SwiftTerm) | done (A+B d7971a8, C 6410384) |
-| M16 | Tabs & polish | **in progress** (A Settings done ec114e2 · B Tabs done c6942fb · C Polish) |
+| M16 | Tabs & polish | **awaiting review** (A ec114e2 · B c6942fb · C Polish — help/acks/dark-mode/errors, built) |
 | M17 | Packaging (sign/notarize/DMG/Sparkle) | todo |
 | M18 | Sale readiness | todo |
 
 Backlog (post-v1): see `docs/ROADMAP.md`.
+
+## Current state of the code (M16 checkpoint C — Polish — built, awaiting review)
+
+- **The final M16 checkpoint** (approved 2026-07-19: A Settings · B Tabs · **C Polish**). Four
+  workstreams: a dark-mode conformance audit, an error-message voice pass, an **Acknowledgements**
+  screen, and a **Help menu** guide. **M16 is complete after this.**
+- **Acknowledgements + Help are new Help-menu windows** (net-new UI, signed off 2026-07-19,
+  ADR-028). `FerryApp` gains two single-instance `Window` scenes (`help`, `acknowledgements`) and
+  a `HelpMenuCommands` (`CommandGroup(replacing: .help)`, reading `openWindow` from the
+  environment) → **Help ▸ Ferry Help** (⌘?) and **Help ▸ Acknowledgements…**. Chosen as
+  standalone windows over Settings tabs specifically because the `Settings` scene isn't
+  XCUITest-openable (ADR-025) but a `Window` is — so the new UI gets real automated coverage.
+- **Pure content in FerryCore `Help/`** (unit-tested): `HelpContent` (prose topics incl. the
+  `.ferrypart`/resume explainer + a `HelpShortcut` keyboard reference covering the M16-B tab
+  affordances) and `Acknowledgements` (`Acknowledgement` + `DependencyLicense` with reproducible
+  MIT/Apache-2.0/curl license bodies, mirroring `docs/LICENSING.md`). The SwiftUI windows only
+  render these models. `HelpContentTests` fails the build if a listed dependency's license isn't
+  policy-allowed (rule 4) or the inventory drops a shipped dependency.
+- **Dark-mode audit — no code changes needed.** An exhaustive color sweep + mockup cross-check
+  found the UI already uses semantic/adaptive colors throughout (`accentColor`, `.secondary`,
+  `Color(nsColor: .controlBackgroundColor/.textBackgroundColor)`, the green/amber/red status
+  set); the one fixed-RGB color (the SOCKS pill `#7a5fd0`) matches the mockup CSS, which pins it
+  in both themes too. Appearance stays applied via `NSApp.appearance` (ADR-025 — never
+  `preferredColorScheme` at the WindowGroup root). Headless screenshotting is blocked by
+  screen-recording permission, so the visual pass is a TESTING.md manual checklist; the app was
+  confirmed to launch cleanly in dark mode.
+- **Error-message voice pass**: apostrophes normalized to typographic curly `’` across all
+  user-facing strings (matching the curly quotes already used for paths; the shell-quoting
+  literals in `TerminalLaunch.swift` were deliberately left as straight `'`), and the four
+  `Couldn’t …` strings folded into the dominant `Could not …`. The three alert channels
+  (`errorMessage` / `infoMessage` "Not yet available" / `noticeMessage`) stay distinct; no
+  secrets are interpolated (rule 6).
+- **Both flavors build** (Direct + AppStore). Tests: **341 kit (+7 `HelpContentTests`) + 16
+  XCUITests (+2: Help ▸ Ferry Help window, Help ▸ Acknowledgements… window), all green.** The
+  Settings-hosted UI stays covered by the TESTING.md manual checklist (ADR-025). **Awaiting
+  review — nothing committed.**
 
 ## Current state of the code (M16 checkpoint B — Tabs — done, committed c6942fb)
 
@@ -571,10 +607,10 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
 
 ## Next steps
 
-1. **M16 checkpoint B — Tabs** — built, awaiting review (see current-state section above).
-   After approval: **checkpoint C — Polish** (dark-mode audit vs mockups, error-message
-   consistency pass, acknowledgements screen with license notices, Help menu → user guide +
-   keyboard-shortcut reference).
+1. **M16 checkpoint C — Polish** — built, awaiting review (see current-state section above).
+   On approval, **M16 is complete** — commit directly to main (milestone precedent, c6942fb)
+   plus the small "Mark M16 done in PROGRESS.md" follow-up. Then **M17 — Packaging**
+   (Developer ID, notarization, DMG, Sparkle, production icon, release checklist).
 2. Backlog: multiplexed `SSHSessionManager` (ADR-021/022); FTPS
    **certificate-trust prompt** (TLS analogue of host-key TOFU, for self-
    signed/private-CA servers — deferred from M12, ADR-019); FTP connection pooling
@@ -584,6 +620,24 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
 
 ## Session log
 
+- **2026-07-19 (d)** — M16 **checkpoint C built** (Polish, ADR-028) — the final M16 checkpoint.
+  Early decisions signed off: Acknowledgements + Help live as **Help-menu standalone windows**
+  (not Settings tabs — chosen for XCUITest-drivability, ADR-025); the guide is a **static SwiftUI
+  window**; **one ADR-028** covers both. Built: FerryCore `Help/` (pure `HelpContent` +
+  `Acknowledgements` models, mirroring LICENSING.md) rendered by `HelpGuideWindowView` /
+  `AcknowledgementsWindowView`; `FerryApp` gains two `Window` scenes + `HelpMenuCommands`
+  (`CommandGroup(replacing: .help)` reading `openWindow`). **Dark-mode audit found no code
+  changes needed** — the UI already uses semantic/adaptive colors and the one fixed color (SOCKS
+  pill `#7a5fd0`) matches the mockup CSS (pinned both themes); appearance stays via
+  `NSApp.appearance`. **Error-voice pass**: apostrophes → curly `’` across user-facing strings
+  (shell-quoting literals in `TerminalLaunch.swift` left alone), `Couldn’t` → `Could not`.
+  **XCUITest lesson (ADR-028)**: "Ferry Help" the menu item collides with the window title →
+  scope the query to `menuBarItems["Help"].menuItems["Ferry Help"]` (a global `.firstMatch`
+  resolves to an off-screen INFINITY-point element). 341 kit (+7 `HelpContentTests`) + 16 UI
+  (+2 Help/Acknowledgements windows) green; both flavors build; app confirmed to launch in dark
+  mode (headless screenshots blocked by TCC → manual visual checklist in TESTING.md). Docs
+  updated (DESIGN/DECISIONS ADR-028/LICENSING/TESTING/ROADMAP/ARCHITECTURE/PROGRESS).
+  **Awaiting review — nothing committed.**
 - **2026-07-19 (c)** — M16 **checkpoint B built** (Tabs, ADR-027). Early decisions signed off:
   reopen reconnects all saved tabs; closing a tab with running transfers confirms; last-tab-close
   keeps the window with an empty tab; affordances = ＋/⌘T/⌘-double-click + per-tab ✕/⌘W. Refactor:

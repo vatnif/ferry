@@ -127,7 +127,7 @@ struct ConnectionEditorSheet: View {
     }
 
     private var keychainHint: some View {
-        Text("Stored in the macOS Keychain — never written to Ferry's files. Leave empty to be asked when connecting.")
+        Text("Stored in the macOS Keychain — never written to Ferry’s files. Leave empty to be asked when connecting.")
             .font(.caption)
             .foregroundStyle(.secondary)
     }

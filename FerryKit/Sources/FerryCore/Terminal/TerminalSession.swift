@@ -319,7 +319,7 @@ enum TerminalEndClassifier {
         case .authenticationFailed:
             return "Authentication failed."
         case .connectionFailed(let reason):
-            return "Couldn’t connect: \(reason)"
+            return "Could not connect: \(reason)"
         case .hostKeyUnknown, .hostKeyChanged:
             // The app resolves trust before opening a terminal; reaching this
             // means the key changed since — never silently accepted.

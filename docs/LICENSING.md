@@ -12,8 +12,9 @@ closed-source redistribution without copyleft obligations.
 - **Forbidden**: GPL (any), LGPL (even dynamically linked — kills App Store flexibility
   and complicates notarized bundles), AGPL, SSPL, BUSL, CC-NC.
   Concretely: **libssh2 (BSD-3) yes, libssh (LGPL) never.**
-- Apache-2.0 obligations: ship a NOTICE/acknowledgements screen (add in M16).
-- MIT/BSD obligations: reproduce copyright notices in the acknowledgements screen.
+- Apache-2.0 obligations: ship a NOTICE/acknowledgements screen — **live since M16
+  checkpoint C** (Help ▸ Acknowledgements…, ADR-028).
+- MIT/BSD obligations: reproduce copyright notices in the acknowledgements screen (done, M16 C).
 
 ### Current dependency inventory
 
@@ -30,7 +31,11 @@ closed-source redistribution without copyleft obligations.
 
 Transitive inventory: `cd FerryKit && swift package show-dependencies` — re-check and
 update this table whenever `Package.swift` or pinned versions change. All names above
-must appear in the acknowledgements screen (M16).
+appear in the acknowledgements screen (Help ▸ Acknowledgements…, M16 checkpoint C) — the
+list is `Acknowledgements.all` in `FerryKit/Sources/FerryCore/Help/Acknowledgements.swift`;
+**keep the two in sync**. `HelpContentTests` fails the build if a listed dependency's license
+is not one this policy allows, or if any of Citadel/swift-nio-ssh/swift-crypto/SwiftTerm/libcurl
+is dropped from the screen.
 
 ### Planned (record here BEFORE adding)
 

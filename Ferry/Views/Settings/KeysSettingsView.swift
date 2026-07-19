@@ -41,14 +41,14 @@ struct KeysSettingsView: View {
                         .accessibilityIdentifier("settings.keys.import")
                     #else
                     Button("Generate…") {}.disabled(true)
-                        .help("Key generation isn't available in the App Store build.")
+                        .help("Key generation isn’t available in the App Store build.")
                     Button("Import…") {}.disabled(true)
-                        .help("Key import isn't available in the App Store build.")
+                        .help("Key import isn’t available in the App Store build.")
                     #endif
                     Button("Reveal in Finder") { revealSSHFolder() }
                         .accessibilityIdentifier("settings.keys.reveal")
                 }
-                Text("Ed25519 and RSA OpenSSH keys. Generating writes a new keypair to **~/.ssh**; passphrases live in the Keychain, never in Ferry's files.")
+                Text("Ed25519 and RSA OpenSSH keys. Generating writes a new keypair to **~/.ssh**; passphrases live in the Keychain, never in Ferry’s files.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 
@@ -68,7 +68,7 @@ struct KeysSettingsView: View {
                             .accessibilityIdentifier("settings.keys.manageHosts")
                     }
                 }
-                Text("Ferry's own trust store. Your **~/.ssh/known_hosts** is also read (never written) so hosts you already know skip the prompt.")
+                Text("Ferry’s own trust store. Your **~/.ssh/known_hosts** is also read (never written) so hosts you already know skip the prompt.")
                     .font(.caption).foregroundStyle(.secondary)
             }
 
@@ -83,7 +83,7 @@ struct KeysSettingsView: View {
             GenerateKeySheet { errorMessage = $0 }
         }
         #endif
-        .alert("Couldn't complete that", isPresented: errorPresented) {
+        .alert("Could not complete that", isPresented: errorPresented) {
             Button("OK", role: .cancel) { errorMessage = nil }
         } message: {
             Text(errorMessage ?? "")
@@ -92,7 +92,7 @@ struct KeysSettingsView: View {
 
     private var keysEmptyMessage: String {
         #if APPSTORE
-        return "No keys found. (The App Store build can't read ~/.ssh.)"
+        return "No keys found. (The App Store build can’t read ~/.ssh.)"
         #else
         return "No keys found in ~/.ssh."
         #endif

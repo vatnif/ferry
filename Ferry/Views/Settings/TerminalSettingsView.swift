@@ -28,7 +28,7 @@ struct TerminalSettingsView: View {
     var body: some View {
         SettingsForm {
             Section("Open terminal sessions in") {
-                RadioRow(title: "Ferry's built-in terminal",
+                RadioRow(title: "Ferry’s built-in terminal",
                          isSelected: preference == .builtIn,
                          isDisabled: !builtInAvailable,
                          note: builtInAvailable ? nil : macOS15Note) {
