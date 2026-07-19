@@ -620,6 +620,12 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
 
 ## Session log
 
+- **2026-07-19 (e)** — **Tab-strip layout fix** (ADR-027 addendum). The checkpoint-B strip
+  rendered mid-window: its horizontal `ScrollView` greedily split the detail column's height with
+  the detail view, centering the chips vertically. `TabStripView` now takes
+  `.fixedSize(horizontal: false, vertical: true)` and moved out of the detail column to sit
+  **above** the `NavigationSplitView` — a thin full-width bar under the title bar, matching the
+  mockup's `.wintabs` (DESIGN.md screen 1: title bar → tabs → sidebar | detail).
 - **2026-07-19 (d)** — M16 **checkpoint C built** (Polish, ADR-028) — the final M16 checkpoint.
   Early decisions signed off: Acknowledgements + Help live as **Help-menu standalone windows**
   (not Settings tabs — chosen for XCUITest-drivability, ADR-025); the guide is a **static SwiftUI

@@ -12,12 +12,12 @@ struct MainWindow: View {
 
     var body: some View {
         @Bindable var model = model
-        NavigationSplitView {
-            SidebarView()
-                .navigationSplitViewColumnWidth(min: 200, ideal: 230)
-        } detail: {
-            VStack(spacing: 0) {
-                TabStripView()
+        VStack(spacing: 0) {
+            TabStripView()
+            NavigationSplitView {
+                SidebarView()
+                    .navigationSplitViewColumnWidth(min: 200, ideal: 230)
+            } detail: {
                 DetailPlaceholderView()
             }
         }

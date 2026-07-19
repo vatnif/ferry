@@ -811,6 +811,14 @@ buttons get merged in accessibility and the ✕ couldn't be found. The ✕ is co
 only on the active/hovered chip (a `Color.clear` placeholder reserves its width), so exactly one ✕
 is queryable at a time.
 
+**Addendum 2026-07-19 — strip placement fix.** As shipped in checkpoint B the strip was mounted
+inside the split view's *detail column* and, being a height-greedy horizontal `ScrollView`, split
+the column's height with the detail view — the chips rendered in the vertical middle of the
+window. Fixed to match the mockup: `TabStripView` now sizes to its content height
+(`.fixedSize(horizontal: false, vertical: true)`) and sits **above** the `NavigationSplitView` in
+`MainWindow`, a thin full-width bar directly under the title bar spanning sidebar and detail
+(`.wintabs`, DESIGN.md screen 1 structure).
+
 ## 2026-07-19 — ADR-028: In-app help & acknowledgements (M16 checkpoint C)
 
 **Status: approved 2026-07-19** (placement/format signed off before build). Adds the two

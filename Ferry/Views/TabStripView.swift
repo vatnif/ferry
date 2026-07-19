@@ -1,7 +1,7 @@
 import SwiftUI
 import FerryCore
 
-/// The connection tab strip above the detail column (DESIGN.md screen 1
+/// The full-width connection tab strip under the title bar (DESIGN.md screen 1
 /// `.wintabs`, M16 checkpoint B / ADR-027): one chip per open connection with a
 /// green (connected) / grey (disconnected) dot, the active chip highlighted, a
 /// per-tab ✕, and a trailing ＋ for a new tab. The sidebar is shared across all
@@ -27,6 +27,9 @@ struct TabStripView: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
         }
+        // A ScrollView greedily fills the offered height; size to the chips
+        // instead so the strip stays a thin bar.
+        .fixedSize(horizontal: false, vertical: true)
         .background(.bar)
         .overlay(alignment: .bottom) { Divider() }
     }
