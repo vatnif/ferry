@@ -39,6 +39,13 @@ public final class TerminalSessionBridge {
     /// Title from the shell (OSC 0/2) — the panel/window header shows it.
     public var onTitleChange: ((String) -> Void)?
 
+    /// Desired scrollback in lines (Settings ▸ Terminal, M16); `nil`/0 disables
+    /// history. Re-asserted after every resize as a safety net — SwiftTerm
+    /// 1.14.0's `resize` preserves `options.scrollback`, but re-applying the
+    /// user's value guarantees it survives any future regression (ADR-025,
+    /// retiring the ADR-023 checkpoint-C caveat).
+    private var desiredScrollback: Int?
+
     /// Test seam: intercepts delivered output instead of feeding the view.
     var outputSink: ((Data) -> Void)?
 
@@ -50,16 +57,27 @@ public final class TerminalSessionBridge {
     /// call. Later calls return the *same instance* (with the font refreshed),
     /// which is what lets pop-out/re-dock move a live shell without losing
     /// the emulator buffer — SwiftUI re-hosts the identical NSView.
-    public func makeOrReuseView(font: NSFont) -> TerminalView {
+    public func makeOrReuseView(font: NSFont, scrollback: Int) -> TerminalView {
         if let view {
             if view.font != font { view.font = font }
+            applyScrollback(scrollback, to: view)
             return view
         }
         let view = TerminalView(frame: .zero)
         view.font = font
         view.configureNativeColors()
+        applyScrollback(scrollback, to: view)
         attach(to: view)
         return view
+    }
+
+    /// Sets the scrollback line count (Settings ▸ Terminal). Called on view
+    /// creation, when the setting changes live, and re-asserted after resizes.
+    /// A value ≤ 0 disables history.
+    public func applyScrollback(_ lines: Int, to view: TerminalView? = nil) {
+        desiredScrollback = lines > 0 ? lines : nil
+        let target = view ?? self.view
+        target?.getTerminal().changeScrollback(desiredScrollback)
     }
 
     /// Wires the view and starts pumping session output into it. Re-attaching
@@ -109,6 +127,11 @@ extension TerminalSessionBridge: @preconcurrency TerminalViewDelegate {
     }
 
     public func sizeChanged(source: TerminalView, newCols: Int, newRows: Int) {
+        // Re-assert the user's scrollback: SwiftTerm 1.14.0 preserves it across
+        // resize, but this makes the guarantee ours, not the library's (ADR-025).
+        if let desiredScrollback {
+            source.getTerminal().changeScrollback(desiredScrollback)
+        }
         let session = self.session
         Task { await session.resize(columns: newCols, rows: newRows) }
     }

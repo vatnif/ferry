@@ -627,4 +627,11 @@ final class FerryUITests: XCTestCase {
         app.buttons["browser.disconnect"].click()
         XCTAssertTrue(connectButton.waitForExistence(timeout: 5))
     }
+
+    // NOTE (M16): the SwiftUI `Settings` scene does not open under XCUITest in
+    // this harness — neither ⌘, nor the app-menu item routes to it via
+    // automation (it works for real users). The Settings window is therefore
+    // verified by the manual checklist in docs/TESTING.md, and the settings
+    // *logic* is unit-tested in FerryCore (AppSettingsTests, HostKeyStore
+    // enumeration, TransferNaming) and FerryTerminalUITests (scrollback).
 }

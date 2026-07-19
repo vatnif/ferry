@@ -42,8 +42,13 @@ tab 7 "Terminal" added in M15.5, approved 2026-07-18, ADR-023).
   fingerprint box, "Remember this key" default-on) and the changed-key alarm (⚠️,
   Disconnect primary, Replace gated behind a second confirmation). Plus the connect-time
   key-passphrase prompt for encrypted keys. Pending in this screen: `~/.ssh/config` Import…
-  and `~/.ssh/known_hosts` pre-trust (M11 checkpoint B). Screen 4 (tunnels): pending M14.
-  Screen 5 (settings): pending M16.
+  and `~/.ssh/known_hosts` pre-trust (M11 checkpoint B). Screen 4 (tunnels): live (M14).
+  Screen 5 (settings): **live (M16 checkpoint A)** — the Settings window with all five tabs
+  (General · Transfers · Keys · Terminal · Advanced). General/Keys/Advanced are net-new UI
+  drawn into the mockups and signed off (ADR-025); the approved Terminal tab (tab 7) is wired
+  reactively over M15's storage with font + scrollback (SwiftTerm scrollback caveat retired,
+  ADR-025). Pending: the screen-1 connection tab strip (checkpoint B), dark-mode audit +
+  acknowledgements + help (checkpoint C).
 
 ## Brand
 
@@ -117,6 +122,15 @@ interrupted policy segmented **Resume automatically** (default) / Ask / Restart 
 `.ferrypart` explainer; exists-policy Overwrite / **Ask** / Skip / Rename; retry count
 (3× / 5 s); bandwidth limit + checksum verification (v1.x, may ship hidden); queue-done
 notification. Footer note: "Changes apply immediately."
+
+*Implemented M16 checkpoint A (ADR-025/026).* All five tabs ship. **General / Keys /
+Advanced** were only sketched in the M0 review notes — they were drawn into
+`ferry-mockups.html` screen 5 as M16 proposals and signed off 2026-07-19 (rule 3):
+General (default local folder · Light/Dark/System appearance · reopen-last-connections);
+Keys (SSH key list · Generate/Import [Direct only] · ssh-agent disabled/"planned" · manage
+Ferry's known hosts); Advanced (logging level + reveal · experimental-features flag). The
+**Terminal** tab renders the already-approved tab 7 over M15's storage plus built-in font +
+scrollback. Bandwidth + checksum ship **visible-but-disabled** ("v1.x") rather than hidden.
 
 ## Screen 7 — Embedded terminal (M15.5 — approved 2026-07-18)
 

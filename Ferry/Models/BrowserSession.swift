@@ -248,20 +248,34 @@ final class BrowserSession {
         self.local = PaneModel(kind: .local, source: LocalFileSource(bookmarks: bookmarks))
         self.remote = PaneModel(kind: .remote, source: remote)
         self.supervisor = profile.keepAlive ? ConnectionSupervisor(connection: remote) : nil
-        // DOMAIN.md: default 3 concurrent transfers per connection.
-        self.queue = TransferQueueModel(engine: TransferEngine(maxConcurrent: 3))
+        // Engine tunables come from Settings ▸ Transfers (M16, ADR-026),
+        // read once per connection (DOMAIN.md default is 3 concurrent). The
+        // conflict/interrupted policies are re-read at each staging call so
+        // they apply immediately.
+        let settings = TransferSettingsSnapshot.current
+        self.queue = TransferQueueModel(engine: TransferEngine(
+            maxConcurrent: settings.simultaneous,
+            maxAttempts: settings.maxAttempts,
+            retryDelay: settings.retryDelay))
         queue.onCompleted = { [weak self] snapshot in
             guard let self else { return }
             let destination = snapshot.direction == .download ? self.local : self.remote
             Task { await destination.reload() }
+            self.completedSinceIdle += 1
+            self.notifyIfQueueDrained()
         }
         // A transfer that exhausted its retries often means the connection
         // dropped — let the supervisor check and reconnect (DOMAIN.md:
         // in-flight transfers re-queue as resumable; the user retries the
-        // ERROR row once the link is back).
-        queue.onFailed = { [weak self] _ in
-            guard let supervisor = self?.supervisor else { return }
-            Task { await supervisor.noteFailure() }
+        // ERROR row once the link is back). Also re-checks the drain so a queue
+        // whose last event is a failure still notifies for its completed items.
+        queue.onFailed = { [weak self] snapshot in
+            guard let self else { return }
+            FerryLog.error("Transfer failed: \(snapshot.displayName)")
+            self.notifyIfQueueDrained()
+            if let supervisor = self.supervisor {
+                Task { await supervisor.noteFailure() }
+            }
         }
     }
 
@@ -270,6 +284,10 @@ final class BrowserSession {
         let localStart: String
         if let configured = profile.localStartPath, !configured.isEmpty {
             localStart = NSString(string: configured).expandingTildeInPath
+        } else if let folder = Self.defaultLocalFolder {
+            // Settings ▸ General default local folder (M16), used only when the
+            // profile doesn't pin its own local start path.
+            localStart = folder
         } else {
             localStart = (try? await local.source.homeDirectory()) ?? NSHomeDirectory()
         }
@@ -398,73 +416,199 @@ final class BrowserSession {
         PathUtilities.join(base, relative)
     }
 
-    // MARK: Transfers (M8; folders + resume M9)
+    // MARK: Transfers (M8; folders + resume M9; policies M16 / ADR-026)
 
-    /// Enqueues transfers of `items` from `pane` into the opposite pane's
-    /// current directory. Folders enqueue as directory items (the engine
-    /// enumerates them lazily). Items whose destination already exists are
-    /// NOT enqueued — they're returned for the UI's per-file ask dialog
-    /// (DOMAIN.md conflict policy default: Ask). Non-conflicting items use
-    /// `.automatic` mode, so an interrupted download's `.ferrypart` resumes
-    /// without asking (interrupted policy default: resume automatically).
-    func stageTransfers(_ items: [FileItem], from pane: PaneModel) async -> [TransferRequest] {
-        let destinationPane = pane.kind == .local ? remote : local
+    /// An interrupted download whose `.ferrypart` can be resumed — surfaced to
+    /// the UI when the interrupted-transfer policy is **Ask** (Settings ▸
+    /// Transfers). The user picks Resume (continue) or Start Over (restart).
+    struct ResumeDecision: Identifiable {
+        let id = UUID()
+        var request: TransferRequest
+        var partialBytes: Int64
+        var displayName: String { request.displayName }
+    }
+
+    /// What staging produced that still needs a user decision: conflicts (the
+    /// **Ask** exists-policy) and resume decisions (the **Ask** interrupted
+    /// policy). Everything else has already been enqueued.
+    struct StagingResult {
         var conflicts: [TransferRequest] = []
+        var resumeDecisions: [ResumeDecision] = []
+    }
+
+    /// Stages transfers of `items` from `pane` into the opposite pane's current
+    /// directory, applying the Settings ▸ Transfers policies (M16, ADR-026):
+    /// - **exists** policy (destination already present): Overwrite (restart),
+    ///   Ask (returned for the per-file dialog), Skip (dropped), Rename (a
+    ///   `name 2.ext` copy is enqueued).
+    /// - **interrupted** policy (a resumable `.ferrypart` exists, no final
+    ///   file): Resume (automatic), Restart, or Ask (returned as a decision).
+    func stageTransfers(_ items: [FileItem], from pane: PaneModel) async -> StagingResult {
+        let destinationPane = pane.kind == .local ? remote : local
+        let settings = TransferSettingsSnapshot.current
+        var result = StagingResult()
+        var takenNames = Set(destinationPane.items.map(\.name))
+
         for item in items {
-            let request = TransferRequest(
+            var request = TransferRequest(
                 direction: pane.kind == .local ? .upload : .download,
                 kind: item.isDirectory ? .directory : .file,
+                mode: settings.interruptedPolicy.transferMode,
                 source: pane.source, sourcePath: item.path,
                 destination: destinationPane.source,
                 destinationPath: Self.join(destinationPane.path, item.name),
                 displayName: item.name)
-            if (try? await destinationPane.source.stat(path: request.destinationPath)) != nil {
-                conflicts.append(request)
+
+            let destinationExists = (try? await destinationPane.source.stat(path: request.destinationPath)) != nil
+            if destinationExists {
+                switch settings.existsPolicy {
+                case .ask:
+                    result.conflicts.append(request)
+                case .overwrite:
+                    request.mode = .restart
+                    queue.enqueue(request)
+                case .skip:
+                    continue
+                case .rename:
+                    let newName = TransferNaming.deduplicatedName(for: item.name, existing: takenNames)
+                    takenNames.insert(newName)
+                    queue.enqueue(TransferRequest(
+                        direction: request.direction, kind: request.kind, mode: .automatic,
+                        source: request.source, sourcePath: request.sourcePath,
+                        destination: request.destination,
+                        destinationPath: Self.join(destinationPane.path, newName),
+                        displayName: newName))
+                }
             } else {
-                queue.enqueue(request)
+                takenNames.insert(item.name)
+                if settings.interruptedPolicy == .ask,
+                   let bytes = await resumablePartialBytes(for: request) {
+                    result.resumeDecisions.append(ResumeDecision(request: request, partialBytes: bytes))
+                } else {
+                    queue.enqueue(request)
+                }
             }
         }
-        return conflicts
+        return result
     }
 
-    /// Enqueues transfers of files dropped from Finder (or dragged from the
-    /// local pane, which vends file URLs) into `destinationPane`'s directory.
-    /// Uploads when the destination is remote, local copies otherwise. Skips a
-    /// URL already sitting in the destination directory (a no-op self-drop).
-    /// Conflicting names are returned for the same per-file ask dialog as
-    /// `stageTransfers` (DOMAIN.md).
-    func importFiles(_ urls: [URL], into destinationPane: PaneModel) async -> [TransferRequest] {
+    /// Stages files dropped from Finder (or dragged from the local pane, which
+    /// vends file URLs) into `destinationPane`'s directory — uploads to a
+    /// remote destination, local copies otherwise. Skips a URL already in the
+    /// destination directory (a no-op self-drop). Applies the same exists
+    /// policy as `stageTransfers`; interrupted-Ask doesn't apply (these are
+    /// uploads/copies, where a smaller remote file is itself a conflict).
+    func importFiles(_ urls: [URL], into destinationPane: PaneModel) async -> StagingResult {
         let localSource = local.source
         let direction: TransferRequest.Direction = destinationPane.kind == .remote ? .upload : .download
-        var conflicts: [TransferRequest] = []
+        let settings = TransferSettingsSnapshot.current
+        var result = StagingResult()
+        var takenNames = Set(destinationPane.items.map(\.name))
+
         for url in urls {
             let sourcePath = url.path
             let parent = (sourcePath as NSString).deletingLastPathComponent
             if destinationPane.kind == .local, parent == destinationPane.path { continue }
             guard let item = try? await localSource.stat(path: sourcePath) else { continue }
-            let request = TransferRequest(
+            var request = TransferRequest(
                 direction: direction,
                 kind: item.isDirectory ? .directory : .file,
                 source: localSource, sourcePath: sourcePath,
                 destination: destinationPane.source,
                 destinationPath: Self.join(destinationPane.path, item.name),
                 displayName: item.name)
-            if (try? await destinationPane.source.stat(path: request.destinationPath)) != nil {
-                conflicts.append(request)
+
+            let destinationExists = (try? await destinationPane.source.stat(path: request.destinationPath)) != nil
+            if destinationExists {
+                switch settings.existsPolicy {
+                case .ask:
+                    result.conflicts.append(request)
+                case .overwrite:
+                    request.mode = .restart
+                    queue.enqueue(request)
+                case .skip:
+                    continue
+                case .rename:
+                    let newName = TransferNaming.deduplicatedName(for: item.name, existing: takenNames)
+                    takenNames.insert(newName)
+                    queue.enqueue(TransferRequest(
+                        direction: request.direction, kind: request.kind, mode: .automatic,
+                        source: request.source, sourcePath: request.sourcePath,
+                        destination: request.destination,
+                        destinationPath: Self.join(destinationPane.path, newName),
+                        displayName: newName))
+                }
             } else {
+                takenNames.insert(item.name)
                 queue.enqueue(request)
             }
         }
-        return conflicts
+        return result
     }
 
-    /// Second phase after the user chose Replace: restart mode overwrites
-    /// from byte 0 instead of resuming foreign partial data (for folders it
-    /// merge-overwrites same-named children).
+    /// The resumable byte count of a download's `.ferrypart`, or nil when there
+    /// is no valid partial to resume (matching the engine's rule: fresh, ≤ 30
+    /// days, non-empty, not larger than the source). Only downloads have a
+    /// `.ferrypart`; uploads resume via a smaller remote file (a conflict).
+    private func resumablePartialBytes(for request: TransferRequest) async -> Int64? {
+        guard request.direction == .download, request.kind == .file else { return nil }
+        let partialPath = request.destinationPath + TransferEngine.partialSuffix
+        guard let stat = try? await request.destination.stat(path: partialPath),
+              !stat.isDirectory, let size = stat.size, size > 0,
+              Self.isFreshPartial(stat.modifiedAt) else { return nil }
+        if let total = (try? await request.source.stat(path: request.sourcePath))?.size, size > total {
+            return nil
+        }
+        return size
+    }
+
+    private static func isFreshPartial(_ modifiedAt: Date?) -> Bool {
+        guard let modifiedAt else { return true }
+        return Date().timeIntervalSince(modifiedAt) <= 30 * 24 * 3600
+    }
+
+    /// Enqueues Replace choices: restart mode overwrites from byte 0 instead of
+    /// resuming foreign partial data (for folders, merge-overwrites same-named
+    /// children). Also serves the interrupted-Ask "Start Over" choice.
     func enqueueReplacing(_ requests: [TransferRequest]) {
         for var request in requests {
             request.mode = .restart
             queue.enqueue(request)
         }
+    }
+
+    /// Enqueues interrupted-Ask "Resume" choices: automatic mode continues the
+    /// existing `.ferrypart`.
+    func enqueueResuming(_ requests: [TransferRequest]) {
+        for var request in requests {
+            request.mode = .automatic
+            queue.enqueue(request)
+        }
+    }
+
+    // MARK: Settings-derived helpers
+
+    /// Settings ▸ General default local folder, or nil when unset/nonexistent.
+    static var defaultLocalFolder: String? {
+        guard let raw = UserDefaults.standard.string(forKey: AppSettings.Key.defaultLocalFolder),
+              !raw.isEmpty else { return nil }
+        let expanded = NSString(string: raw).expandingTildeInPath
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: expanded, isDirectory: &isDirectory),
+              isDirectory.boolValue else { return nil }
+        return expanded
+    }
+
+    /// Posts the queue-finished notification (Settings ▸ Transfers) once the
+    /// queue drains, counting the transfers that completed since it was last
+    /// idle. Called after each completion (which bumps the counter) and after
+    /// each failure (so a queue ending in a failed item still notifies).
+    private var completedSinceIdle = 0
+    private func notifyIfQueueDrained() {
+        guard queue.activeCount == 0, queue.queuedCount == 0 else { return }
+        let count = completedSinceIdle
+        completedSinceIdle = 0
+        guard count > 0, TransferSettingsSnapshot.current.notifyOnFinished else { return }
+        QueueNotifier.notifyQueueFinished(completed: count)
     }
 }

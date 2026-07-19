@@ -28,6 +28,14 @@ enum TerminalLaunchService {
 
     /// The resolved decision for a Terminal action in this build/OS.
     static func dispatch() -> TerminalDispatch {
+        dispatch(preference: storedPreference, customCommand: storedCustomCommand)
+    }
+
+    /// Resolve against explicit stored values — used by the browser toolbar,
+    /// which reads them via `@AppStorage` so the control re-resolves the moment
+    /// the Settings ▸ Terminal picker changes (M16). Applies the same build
+    /// capabilities as `dispatch()`.
+    static func dispatch(preference: TerminalPreference, customCommand: String) -> TerminalDispatch {
         var builtInAvailable = false
         if #available(macOS 15.0, *) { builtInAvailable = true }
         #if APPSTORE
@@ -35,10 +43,26 @@ enum TerminalLaunchService {
         #else
         let externalAllowed = true
         #endif
-        return TerminalDispatch.resolve(preference: storedPreference,
-                                        customCommand: storedCustomCommand,
+        return TerminalDispatch.resolve(preference: preference,
+                                        customCommand: customCommand,
                                         builtInAvailable: builtInAvailable,
                                         externalAllowed: externalAllowed)
+    }
+
+    /// Whether the built-in terminal is usable in this build/OS — drives the
+    /// Settings picker's macOS-14 "Requires macOS 15" disable and the APPSTORE
+    /// hiding of the external options.
+    static var builtInAvailable: Bool {
+        if #available(macOS 15.0, *) { return true }
+        return false
+    }
+
+    static var externalAllowed: Bool {
+        #if APPSTORE
+        return false
+        #else
+        return true
+        #endif
     }
 }
 

@@ -61,6 +61,46 @@ public struct HostKeyStore: Sendable {
         try !storedInfos(host: host, port: port).isEmpty
     }
 
+    /// One trusted endpoint for the Settings ▸ Keys "Manage known hosts" list
+    /// (M16): the parsed host/port plus the key it trusts. One row per stored
+    /// key (a host with two key types yields two rows), so `remove` clears the
+    /// whole endpoint.
+    public struct TrustedHost: Sendable, Identifiable, Equatable {
+        public let id = UUID()
+        public let host: String
+        public let port: Int
+        public let key: HostKeyInfo
+        /// `host` for port 22, else `host:port` — for display.
+        public var endpoint: String { port == 22 ? host : "\(host):\(port)" }
+    }
+
+    /// Every trusted host in Ferry's own store, for the management UI. Reads
+    /// only Ferry's plaintext file (the user's `~/.ssh/known_hosts` is a
+    /// separate read-only pre-trust source and is not listed here).
+    public func allTrustedHosts() throws -> [TrustedHost] {
+        try entries().flatMap { entry -> [TrustedHost] in
+            guard let info = HostKeyInfo(openSSHLine: entry.openSSH) else { return [] }
+            return entry.hostSpecs.compactMap { spec in
+                guard let (host, port) = Self.parseHostSpec(spec) else { return nil }
+                return TrustedHost(host: host, port: port, key: info)
+            }
+        }
+    }
+
+    /// Inverse of `hostSpec`: `[host]:port` → (host, port); a bare spec → port 22.
+    /// Returns nil for a hashed spec (`|1|…`) or other non-plaintext forms —
+    /// Ferry never writes those, so they simply don't appear in the list.
+    static func parseHostSpec(_ spec: String) -> (host: String, port: Int)? {
+        if spec.hasPrefix("|") { return nil }
+        if spec.hasPrefix("["), let close = spec.firstIndex(of: "]") {
+            let host = String(spec[spec.index(after: spec.startIndex)..<close])
+            let rest = spec[spec.index(after: close)...]
+            guard rest.hasPrefix(":"), let port = Int(rest.dropFirst()) else { return nil }
+            return (host, port)
+        }
+        return (spec, 22)
+    }
+
     // MARK: Writes (public — driven by the user's trust decisions)
 
     /// Records a newly trusted key for the endpoint (TOFU "Trust & Connect").

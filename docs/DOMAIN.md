@@ -134,7 +134,8 @@ listing, stat, mkdir, delete, rename, or chmod. So Ferry splits the surface:
 ## Transfers & queue (M8–M9)
 
 - Queue is global per app, FIFO within a connection, default **3 concurrent transfers per
-  connection** (setting). Directory transfers enumerate lazily — a folder item expands
+  connection** — user-configurable in Settings ▸ Transfers (M16, ADR-026), read at connect
+  time. Directory transfers enumerate lazily — a folder item expands
   when it reaches the front of the queue (destination dir created, one queue item per
   child) and counts as many items.
 - Each item: direction, source → destination, progress, speed (rolling average), ETA,
@@ -150,12 +151,15 @@ listing, stat, mkdir, delete, rename, or chmod. So Ferry splits the surface:
   exists is a conflict (Ferry cannot tell an interrupted upload from a foreign file).
 - **Pause**: stops the item, keeps partial data, badge PAUSED; Resume continues from the
   partial (badge RESUMED). Cancelling keeps partial data for a later automatic resume.
-- **Conflict policy** (file exists): Overwrite / **Ask (default)** / Skip / Rename; the
-  ask-dialog walks conflicts per file with Replace / Replace All / Skip / Skip All
-  (Overwrite/Skip/Rename presets arrive with Settings, M16). Replace on a folder =
-  merge, overwriting same-named children. Interrupted-transfer policy: **Resume
-  automatically (default)** / Ask / Restart (setting arrives M16; default implemented).
-- Failed items retry 3× with 5 s spacing (setting) before showing ERROR — transient
+- **Conflict policy** (file exists), Settings ▸ Transfers (M16, ADR-026): Overwrite /
+  **Ask (default)** / Skip / Rename. Overwrite replaces from byte 0; Ask walks conflicts
+  per file with Replace / Replace All / Skip / Skip All; Skip drops the conflicting items;
+  Rename enqueues a `name 2.ext` copy (Finder-style de-duplication). Replace on a folder =
+  merge, overwriting same-named children. **Interrupted-transfer policy** (a resumable
+  `.ferrypart` exists, no final file): **Resume automatically (default)** / Ask / Restart —
+  Ask prompts Resume / Resume All / Start Over / Skip per item.
+- Failed items retry **N× (default 3, Settings ▸ Transfers)** with 5 s spacing before
+  showing ERROR — transient
   (I/O) errors only; deterministic failures (missing file, permissions) fail immediately.
 - Post-transfer checksum verification (v1.x): only when server supports it; mismatch ⇒ ERROR.
 
@@ -248,6 +252,29 @@ listing, stat, mkdir, delete, rename, or chmod. So Ferry splits the surface:
   SFTP-only) yields a session that ends on input — never a hang.
 - **Privacy (rule 6)**: nothing typed or displayed in a terminal is ever logged;
   scrollback lives only in the emulator's memory and dies with the session's view.
+
+## Settings (M16, ADR-025/026)
+
+The Settings window (screen 5; app menu / ⌘,) persists everything in `UserDefaults` and
+applies changes immediately. Keys, defaults, and typed values are centralized in FerryCore
+`AppSettings` (raw strings are a persistence contract, like `TerminalPreference`).
+
+- **General**: *default local folder* (used as the local pane's start folder only when a
+  profile doesn't set its own), *appearance* Light/Dark/System (applied app-wide via
+  `NSApp.appearance`), *reopen last connections* on launch (restores the connections open at
+  last quit; you're prompted for any non-Keychain credential; skipped under test isolation).
+- **Transfers**: simultaneous transfers, interrupted/exists policies, retry count,
+  queue-done notification (see Transfers above). Bandwidth limit + checksum are v1.x
+  (visible but disabled).
+- **Keys**: lists `~/.ssh` public keys; generate/import keys (Direct only — the sandbox
+  can't reach `~/.ssh` or spawn `ssh-keygen`, so these degrade to empty/disabled in the App
+  Store build); ssh-agent shown disabled (planned, ADR-017); manage Ferry's own trusted
+  host keys (list/forget — the user's `~/.ssh/known_hosts` stays read-only pre-trust).
+- **Terminal**: the built-in/external picker (M15 storage, now reactive) plus built-in font
+  and scrollback (scrollback is memory-only, rule 6). Built-in requires macOS 15; external
+  options are Direct-only.
+- **Advanced**: logging level (off/errors/verbose — never records secrets or terminal bytes,
+  rule 6) and an experimental-features flag.
 
 ## Sandbox strategy (both distributions from day one)
 

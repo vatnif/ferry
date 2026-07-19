@@ -16,8 +16,17 @@ struct BrowserView: View {
     /// the default exists-policy); the alert walks this list front to back,
     /// with Replace All / Skip All applying to the rest.
     @State private var pendingConflicts: [TransferRequest] = []
+    /// Interrupted downloads awaiting a Resume/Start-Over decision (interrupted
+    /// policy == Ask, M16). Presented after any conflicts are resolved.
+    @State private var pendingResumeDecisions: [BrowserSession.ResumeDecision] = []
     /// Presents the tunnel manager (screen 4).
     @State private var showTunnels = false
+    /// Observed so the Terminal toolbar control re-resolves its dispatch the
+    /// moment Settings ▸ Terminal changes (M16).
+    @AppStorage(AppSettings.Key.terminalPreference)
+    private var terminalPreferenceRaw = TerminalPreference.builtIn.rawValue
+    @AppStorage(AppSettings.Key.terminalCustomCommand)
+    private var terminalCustomCommand = ""
 
     var body: some View {
         @Bindable var session = session
@@ -79,6 +88,27 @@ struct BrowserView: View {
             }
         } message: {
             Text(conflictMessage)
+        }
+        .alert("Resume “\(pendingResumeDecisions.first?.displayName ?? "")”?", isPresented: resumePresented) {
+            Button("Resume") {
+                if let first = pendingResumeDecisions.first { session.enqueueResuming([first.request]) }
+                if !pendingResumeDecisions.isEmpty { pendingResumeDecisions.removeFirst() }
+            }
+            if pendingResumeDecisions.count > 1 {
+                Button("Resume All (\(pendingResumeDecisions.count))") {
+                    session.enqueueResuming(pendingResumeDecisions.map(\.request))
+                    pendingResumeDecisions = []
+                }
+            }
+            Button("Start Over", role: .destructive) {
+                if let first = pendingResumeDecisions.first { session.enqueueReplacing([first.request]) }
+                if !pendingResumeDecisions.isEmpty { pendingResumeDecisions.removeFirst() }
+            }
+            Button(pendingResumeDecisions.count > 1 ? "Skip All" : "Skip", role: .cancel) {
+                pendingResumeDecisions = []
+            }
+        } message: {
+            Text(resumeMessage)
         }
         .toolbar { toolbarContent }
         .sheet(isPresented: $showTunnels) {
@@ -197,7 +227,10 @@ struct BrowserView: View {
     /// with the explainer as its tooltip.
     @ViewBuilder
     private var terminalToolbarControl: some View {
-        switch model.terminalDispatch() {
+        let dispatch = TerminalLaunchService.dispatch(
+            preference: TerminalPreference(rawValue: terminalPreferenceRaw) ?? .builtIn,
+            customCommand: terminalCustomCommand)
+        switch dispatch {
         case .builtIn:
             Toggle(isOn: terminalPanelBinding) {
                 Label("Terminal", systemImage: "terminal")
@@ -334,6 +367,21 @@ struct BrowserView: View {
         Binding(get: { !pendingConflicts.isEmpty }, set: { if !$0 { pendingConflicts = [] } })
     }
 
+    /// Resume decisions wait until conflicts are cleared, so only one alert is
+    /// ever on screen.
+    private var resumePresented: Binding<Bool> {
+        Binding(get: { pendingConflicts.isEmpty && !pendingResumeDecisions.isEmpty },
+                set: { if !$0 { pendingResumeDecisions = [] } })
+    }
+
+    private var resumeMessage: String {
+        guard let first = pendingResumeDecisions.first else { return "" }
+        let bytes = ByteCountFormatter.string(fromByteCount: first.partialBytes, countStyle: .file)
+        let base = "A partial download of \(bytes) exists. Resume continues from there; Start Over re-downloads from the beginning."
+        let remaining = pendingResumeDecisions.count - 1
+        return remaining > 0 ? "\(base)\n\(remaining) more after this one." : base
+    }
+
     private var conflictMessage: String {
         guard let first = pendingConflicts.first else { return "" }
         let what = first.kind == .directory
@@ -351,8 +399,7 @@ struct BrowserView: View {
     func transfer(_ items: [FileItem], from pane: PaneModel) {
         guard !items.isEmpty else { return }
         Task {
-            let conflicts = await session.stageTransfers(items, from: pane)
-            if !conflicts.isEmpty { pendingConflicts = conflicts }
+            applyStaging(await session.stageTransfers(items, from: pane))
         }
     }
 
@@ -361,9 +408,15 @@ struct BrowserView: View {
     func importFiles(_ urls: [URL], into destinationPane: PaneModel) {
         guard !urls.isEmpty else { return }
         Task {
-            let conflicts = await session.importFiles(urls, into: destinationPane)
-            if !conflicts.isEmpty { pendingConflicts = conflicts }
+            applyStaging(await session.importFiles(urls, into: destinationPane))
         }
+    }
+
+    /// Surfaces whatever staging left for the user: conflicts first (exists
+    /// policy Ask), then resume decisions (interrupted policy Ask, M16).
+    private func applyStaging(_ result: BrowserSession.StagingResult) {
+        pendingConflicts = result.conflicts
+        pendingResumeDecisions = result.resumeDecisions
     }
 
     // MARK: New folder

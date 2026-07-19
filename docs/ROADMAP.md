@@ -51,7 +51,11 @@ Workflow per milestone: implement → unit + integration tests pass → docs upd
   (`TerminalSession` + `FerryTerminalUI` + tests) · C app UI + XCUITest + docs.
 - **M16** Tabs, settings (screen 5), dark-mode audit vs mockups, error-message pass,
   acknowledgements screen (license notices), minimal in-app help (Help menu → user
-  guide incl. `.ferrypart`/resume explainer + keyboard-shortcut reference).
+  guide incl. `.ferrypart`/resume explainer + keyboard-shortcut reference). **Split into
+  3 checkpoints** (approved 2026-07-19): **A Settings window + wiring** (done — all five
+  tabs, terminal font/scrollback, transfer policies configurable; ADR-025/026) · **B Tabs**
+  (screen-1 connection tab strip: N sessions/window; the architecturally heavy part) ·
+  **C Polish** (dark-mode audit, error-message pass, acknowledgements, Help menu).
 
 ## Phase F — Ship
 - **M17** Packaging: Developer ID, notarization, DMG, Sparkle, production icon, release checklist.

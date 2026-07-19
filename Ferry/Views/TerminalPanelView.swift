@@ -19,11 +19,22 @@ struct TerminalPanelView: View {
 
     @State private var confirmingClose = false
 
+    // Settings ▸ Terminal (M16, ADR-025) — reactive: changing font or
+    // scrollback in Settings updates every open terminal immediately.
+    @AppStorage(AppSettings.Key.terminalFontName)
+    private var fontName = AppSettings.Default.terminalFontName
+    @AppStorage(AppSettings.Key.terminalFontSize)
+    private var fontSize = AppSettings.Default.terminalFontSize
+    @AppStorage(AppSettings.Key.terminalScrollbackLines)
+    private var scrollbackLines = AppSettings.Default.terminalScrollbackLines
+
     var body: some View {
         VStack(spacing: 0) {
             header
             Divider()
-            SSHTerminalView(bridge: controller.bridge)
+            SSHTerminalView(bridge: controller.bridge,
+                            font: TerminalAppearance.font(family: fontName, size: fontSize),
+                            scrollback: scrollbackLines)
                 .accessibilityIdentifier("terminal.view")
             if let ended = controller.endedMessage {
                 endedBanner(ended)

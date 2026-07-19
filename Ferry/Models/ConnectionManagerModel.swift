@@ -18,8 +18,14 @@ final class ConnectionManagerModel {
     var keyPassphrasePrompt: KeyPassphrasePrompt?
     /// Non-nil presents the host-key trust dialog (screen 3: TOFU or changed).
     var hostKeyPrompt: HostKeyPrompt?
-    /// Live connection state shown in the detail column.
-    var connectionPhase: ConnectionPhase = .idle
+    /// Live connection state shown in the detail column. Its transitions
+    /// persist the open-connection list for Settings ▸ General "Reopen last
+    /// connections" (M16); today at most one (tabs extend this in checkpoint B).
+    var connectionPhase: ConnectionPhase = .idle {
+        didSet { persistOpenConnections() }
+    }
+    /// Guards one-shot restore-on-launch.
+    private var didAttemptRestore = false
     /// Non-nil presents the folder-name alert (create or rename).
     var folderPrompt: FolderPrompt?
     /// Non-nil presents the SSH-config import sheet (M11 checkpoint B).
@@ -366,7 +372,31 @@ final class ConnectionManagerModel {
             errorMessage = "SCP connections require macOS 15 or later. Use SFTP for this server on this Mac."
             return
         }
+        FerryLog.debug("Connecting to \(profile.host):\(profile.port) via \(profile.scheme.displayName)")
         resolveCredential(profile: profile, intent: .browser)
+    }
+
+    // MARK: Reopen last connections (Settings ▸ General, M16)
+
+    private func persistOpenConnections() {
+        let ids = connectionPhase.session.map { [$0.profile.id.uuidString] } ?? []
+        UserDefaults.standard.set(ids, forKey: AppSettings.Key.lastOpenConnectionIDs)
+    }
+
+    /// Reconnects the connection open at last quit, if the setting is on. Called
+    /// once from the main window's `onAppear`. Skipped under test isolation
+    /// (`FERRY_DATA_DIR`) so XCUITests never auto-connect. Today restores one
+    /// connection; tabs (checkpoint B) will restore each stored id into a tab.
+    func restoreLastConnectionsIfEnabled() {
+        guard !didAttemptRestore else { return }
+        didAttemptRestore = true
+        guard ProcessInfo.processInfo.environment["FERRY_DATA_DIR"] == nil else { return }
+        let enabled = UserDefaults.standard.object(forKey: AppSettings.Key.reopenLastConnections) as? Bool ?? true
+        guard enabled else { return }
+        let ids = (UserDefaults.standard.array(forKey: AppSettings.Key.lastOpenConnectionIDs) as? [String]) ?? []
+        guard let first = ids.first, let uuid = UUID(uuidString: first),
+              library.profile(withID: uuid) != nil else { return }
+        connect(profileID: uuid)
     }
 
     /// Sidebar context menu "Open Terminal" (screen 7 note 4): a shell with no

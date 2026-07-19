@@ -28,5 +28,12 @@ struct FerryApp: App {
                 .environment(model)
         }
         .defaultSize(width: 640, height: 400)
+
+        // Settings window (screen 5, M16): General · Transfers · Keys ·
+        // Terminal · Advanced. Reached via the app menu (⌘,).
+        Settings {
+            SettingsView()
+                .environment(model)
+        }
     }
 }

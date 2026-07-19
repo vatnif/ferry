@@ -31,6 +31,32 @@ final class HostKeyStoreTests: XCTestCase {
         XCTAssertEqual(try store.trustedKeys(host: "example.com", port: 22).count, 0)
     }
 
+    func testParseHostSpec() {
+        XCTAssertEqual(HostKeyStore.parseHostSpec("example.com")?.host, "example.com")
+        XCTAssertEqual(HostKeyStore.parseHostSpec("example.com")?.port, 22)
+        XCTAssertEqual(HostKeyStore.parseHostSpec("[example.com]:2222")?.host, "example.com")
+        XCTAssertEqual(HostKeyStore.parseHostSpec("[example.com]:2222")?.port, 2222)
+        // Hashed / malformed specs are not listable.
+        XCTAssertNil(HostKeyStore.parseHostSpec("|1|abc=|def="))
+        XCTAssertNil(HostKeyStore.parseHostSpec("[example.com]:notaport"))
+    }
+
+    func testAllTrustedHosts() throws {
+        try store.trust(keyA, host: "example.com", port: 22)
+        try store.trust(keyB, host: "gate.internal", port: 2222)
+        let hosts = try store.allTrustedHosts().sorted { $0.host < $1.host }
+        XCTAssertEqual(hosts.count, 2)
+        XCTAssertEqual(hosts[0].host, "example.com")
+        XCTAssertEqual(hosts[0].port, 22)
+        XCTAssertEqual(hosts[0].endpoint, "example.com")
+        XCTAssertEqual(hosts[1].host, "gate.internal")
+        XCTAssertEqual(hosts[1].port, 2222)
+        XCTAssertEqual(hosts[1].endpoint, "gate.internal:2222")
+        // Removing an endpoint drops it from the list.
+        try store.remove(host: "example.com", port: 22)
+        XCTAssertEqual(try store.allTrustedHosts().count, 1)
+    }
+
     func testTrustRoundTrip() throws {
         try store.trust(keyA, host: "example.com", port: 22)
         XCTAssertTrue(try store.contains(host: "example.com", port: 22))

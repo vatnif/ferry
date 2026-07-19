@@ -25,11 +25,53 @@
 | M14.5 | Remote port forwarding | done (committed a4899a2) |
 | M15 | Open in Terminal | done (committed d500ac3) |
 | M15.5 | Embedded terminal (SwiftTerm) | done (A+B d7971a8, C 6410384) |
-| M16 | Tabs & polish | todo |
+| M16 | Tabs & polish | **in progress** (A Settings ✅ awaiting review · B Tabs · C Polish) |
 | M17 | Packaging (sign/notarize/DMG/Sparkle) | todo |
 | M18 | Sale readiness | todo |
 
 Backlog (post-v1): see `docs/ROADMAP.md`.
+
+## Current state of the code (M16 checkpoint A — awaiting review, nothing committed)
+
+- **The Settings window is live** (screen 5; app menu / ⌘,) — a standard SwiftUI
+  `Settings { }` scene with the five-tab strip General · Transfers · Keys · Terminal ·
+  Advanced. M16 was split into **3 checkpoints** (approved 2026-07-19: A Settings · B Tabs ·
+  C Polish); this is **A**. Full tabs (screen-1 tab strip) is checkpoint **B**; dark-mode
+  audit + acknowledgements + help is **C**.
+- **FerryCore `Settings/AppSettings`** (pure, unit-tested): centralizes the `UserDefaults`
+  key strings (a persistence contract — the two terminal keys keep M15's exact strings),
+  shipping defaults, and the typed enums (`AppearancePreference`, `InterruptedTransferPolicy`,
+  `FileExistsPolicy`, `LoggingLevel`) + the pure `TransferNaming.deduplicatedName` (Rename
+  preset).
+- **Terminal tab** (approved mockup tab 7) rendered over M15's storage, now **reactive**
+  (`@AppStorage`): the browser toolbar's Terminal control re-resolves its dispatch the moment
+  the picker changes. Added built-in **font (family+size)** and **scrollback**, applied live.
+  macOS 14 disables built-in ("Requires macOS 15"); APPSTORE hides the three external options.
+- **Scrollback caveat retired (ADR-025).** ADR-023's "SwiftTerm discards scrollback on
+  resize" note is outdated for the pinned 1.14.0 (`Terminal.resize` preserves
+  `options.scrollback`; public `changeScrollback(_:)` exists). The bridge sets it on view
+  creation and **re-asserts it in the existing `sizeChanged` hook** — Ferry owns the
+  guarantee. Pinned by a bridge test (set → resize → still set).
+- **Transfers tab** (ADR-026): `BrowserSession` reads `TransferSettingsSnapshot` — simultaneous
+  transfers + retry count at connect, and the **exists** (Overwrite/Ask/Skip/**Rename**) and
+  **interrupted** (Resume/Ask/Restart) policies at each staging call (apply-immediately). Ask
+  interrupted prompts Resume/Start-Over. Queue-done `UNUserNotification`. Bandwidth + checksum
+  ship **visible-but-disabled** (v1.x).
+- **General / Keys / Advanced** (net-new UI, drawn into the mockups + signed off 2026-07-19,
+  rule 3 → ADR-025): General — default local folder (feeds the local-pane start fallback),
+  appearance Light/Dark/System (applied app-wide via **`NSApp.appearance`**, not
+  `preferredColorScheme` — the latter at the WindowGroup root broke the launch XCUITest),
+  reopen-last-connections (persisted on `connectionPhase` changes; restored from `onAppear`,
+  skipped under `FERRY_DATA_DIR`). Keys — `~/.ssh` key list (read-only; empty in the sandbox),
+  Generate/Import (Direct only, `ssh-keygen`/copy-in; disabled in APPSTORE), ssh-agent shown
+  disabled (ADR-017), manage Ferry's known hosts (new `HostKeyStore.allTrustedHosts()`).
+  Advanced — logging level over a small `FerryLog` (`os.Logger`, level-gated, never logs
+  secrets/terminal bytes) + Reveal Logs (Console) + experimental flag.
+- **Both flavors build** (Direct + AppStore). Tests: **317 kit (+14: AppSettings 11, HostKeyStore
+  2, bridge scrollback 1) + 11 XCUITests, all green.** The Settings window itself isn't
+  XCUITest-openable in this harness (the SwiftUI `Settings` scene doesn't route via ⌘,/menu
+  under automation) — covered by a **TESTING.md manual checklist** (M15 precedent); the settings
+  logic is unit-tested. **Nothing committed — awaiting review.**
 
 ## Current state of the code (M15 — done, committed d500ac3)
 
@@ -493,10 +535,12 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
 
 ## Next steps
 
-1. **M16 — Tabs & polish**: includes the **Settings window (screen 5)** — which renders
-   the already-approved Settings ▸ Terminal picker (mockup tab 7) over M15's storage,
-   plus the scrollback-lines setting (SwiftTerm option-recompute caveat). Also tabs,
-   dark-mode audit, error-message pass, acknowledgements/help.
+1. **M16 checkpoint A — Settings window** — built, awaiting review (see current-state
+   section above). After approval: **checkpoint B — Tabs** (screen-1 connection tab strip;
+   `connectionPhase` → N sessions/window with per-tab browser/queue/tunnel/terminal — the
+   architecturally heavy part; also within-folder sidebar drag reorder + extend
+   reopen-last-connections to N tabs), then **checkpoint C — Polish** (dark-mode audit vs
+   mockups, error-message consistency pass, acknowledgements screen, Help menu).
 2. Backlog: multiplexed `SSHSessionManager` (ADR-021/022); FTPS
    **certificate-trust prompt** (TLS analogue of host-key TOFU, for self-
    signed/private-CA servers — deferred from M12, ADR-019); FTP connection pooling
@@ -506,6 +550,24 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
 
 ## Session log
 
+- **2026-07-19 (b)** — M16 planned + **checkpoint A built** (Settings window). Split approved
+  (full in-window tabs; 3 checkpoints A Settings · B Tabs · C Polish; all four settings groups
+  wire in v1). General/Keys/Advanced tabs drawn into `ferry-mockups.html` screen 5 and signed
+  off (rule 3). Built: `Settings { }` scene + 5 tabs; FerryCore `AppSettings` (keys/defaults/
+  enums + pure `TransferNaming`); Terminal tab reactive over M15 storage + font + scrollback
+  (ADR-025 — SwiftTerm 1.14.0's public `changeScrollback` retires the ADR-023 caveat,
+  re-asserted in the bridge `sizeChanged` hook); Transfers tab wiring — engine tunables +
+  Overwrite/Skip/**Rename** + interrupted Resume/Ask/Restart + queue-done notification
+  (ADR-026); General (default folder, appearance via `NSApp.appearance`, reopen-last-
+  connections), Keys (key list + Direct-only Generate/Import + known-hosts Manage via new
+  `HostKeyStore.allTrustedHosts`), Advanced (logging via `FerryLog` + experimental flag).
+  **Debug saga**: `preferredColorScheme` at the WindowGroup root broke the app-launch XCUITest
+  (window re-creates) — fixed by applying appearance through `NSApp.appearance`; verified by
+  stashing to clean main (passed) then re-testing. The SwiftUI `Settings` scene doesn't open
+  under XCUITest (⌘,/menu don't route via automation) → Settings covered by a TESTING.md manual
+  checklist (M15 precedent). 317 kit (+14) + 11 UI green; both flavors build. Docs updated
+  (DESIGN/DOMAIN/DECISIONS ADR-025+026/TESTING/ROADMAP/PROGRESS + mockups). **Awaiting review —
+  nothing committed.**
 - **2026-07-19** — M15 built (Open in Terminal — external hand-off, ADR-024). The external
   branch of the ADR-023 dispatch: the Terminal toolbar control + sidebar Open Terminal now
   dispatch on the terminal-choice setting (built-in → M15.5 panel/window; Terminal.app /

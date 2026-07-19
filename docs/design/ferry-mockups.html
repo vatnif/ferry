@@ -783,6 +783,98 @@
     <div class="sheet-foot"><div class="flex"></div><span style="font-size:11.5px;color:var(--faint)">Changes apply immediately</span></div>
   </div></div>
 
+  <!-- ---- General tab (M16, net-new — sign-off pending) ---- -->
+  <h3 style="margin:26px 0 6px">General tab <span style="font-weight:400;color:var(--faint);font-size:13px">— M16, proposed (not in the M0 mockups)</span></h3>
+  <div class="mock-wrap"><div class="window medium mock">
+    <div class="titlebar"><div class="lights"><span class="r"></span><span class="y"></span><span class="g"></span></div><div class="title">Settings — General</div><div class="spacer"></div></div>
+    <div class="settings-tabs">
+      <div class="stab on"><span class="sico">⚙️</span> General</div>
+      <div class="stab"><span class="sico">⇅</span> Transfers</div>
+      <div class="stab"><span class="sico">🔑</span> Keys</div>
+      <div class="stab"><span class="sico">＞_</span> Terminal</div>
+      <div class="stab"><span class="sico">🧪</span> Advanced</div>
+    </div>
+    <div class="settings-body">
+      <div class="frm">
+        <label>Default local folder</label>
+        <div class="row-flex"><input class="in" value="~/Downloads" readonly style="width:220px"><button class="tbtn">Choose…</button></div>
+        <div class="hint">Used as the local pane's starting folder when a connection doesn't set its own.</div>
+
+        <label>Appearance</label>
+        <div class="seg"><span>Light</span><span>Dark</span><span class="on">System</span></div>
+
+        <div class="divider"></div>
+
+        <label>On launch</label>
+        <div class="check"><span class="box on"></span> Reopen the connections that were open last time</div>
+        <div class="hint">Reconnects each tab; you're prompted for any credential that isn't saved in the Keychain.</div>
+      </div>
+    </div>
+    <div class="sheet-foot"><div class="flex"></div><span style="font-size:11.5px;color:var(--faint)">Changes apply immediately</span></div>
+  </div></div>
+
+  <!-- ---- Keys tab (M16, net-new — sign-off pending) ---- -->
+  <h3 style="margin:26px 0 6px">Keys tab <span style="font-weight:400;color:var(--faint);font-size:13px">— M16, proposed (not in the M0 mockups)</span></h3>
+  <div class="mock-wrap"><div class="window medium mock">
+    <div class="titlebar"><div class="lights"><span class="r"></span><span class="y"></span><span class="g"></span></div><div class="title">Settings — Keys</div><div class="spacer"></div></div>
+    <div class="settings-tabs">
+      <div class="stab"><span class="sico">⚙️</span> General</div>
+      <div class="stab"><span class="sico">⇅</span> Transfers</div>
+      <div class="stab on"><span class="sico">🔑</span> Keys</div>
+      <div class="stab"><span class="sico">＞_</span> Terminal</div>
+      <div class="stab"><span class="sico">🧪</span> Advanced</div>
+    </div>
+    <div class="settings-body">
+      <div class="frm">
+        <label>SSH keys</label>
+        <div style="border:1px solid var(--line);border-radius:8px;overflow:hidden;max-width:420px">
+          <div class="row-flex" style="justify-content:space-between;padding:7px 10px;border-bottom:1px solid var(--line)"><span style="font-family:ui-monospace,monospace">id_ed25519</span><span style="font-size:11px;color:var(--faint)">ED25519 · ~/.ssh</span></div>
+          <div class="row-flex" style="justify-content:space-between;padding:7px 10px"><span style="font-family:ui-monospace,monospace">id_rsa</span><span style="font-size:11px;color:var(--faint)">RSA 3072 · ~/.ssh</span></div>
+        </div>
+        <div class="row-flex" style="margin-top:8px"><button class="tbtn">Generate…</button><button class="tbtn">Import…</button><button class="tbtn">Reveal in Finder</button></div>
+        <div class="hint">Ed25519 and RSA OpenSSH keys. Generate writes a new keypair to <b>~/.ssh</b>; passphrases live in the Keychain, never in Ferry's files.</div>
+
+        <label>SSH Agent</label>
+        <div class="check" style="opacity:.5"><span class="box"></span> Authenticate through ssh-agent <span style="font-size:11px">(planned for a later release)</span></div>
+
+        <div class="divider"></div>
+
+        <label>Known hosts</label>
+        <div class="row-flex"><span style="font-size:12px">Ferry trusts <b>12</b> host keys</span><button class="tbtn">Manage…</button></div>
+        <div class="hint">Ferry's own trust store. Your <b>~/.ssh/known_hosts</b> is also read (never written) so hosts you already know skip the prompt.</div>
+      </div>
+    </div>
+    <div class="sheet-foot"><div class="flex"></div><span style="font-size:11.5px;color:var(--faint)">Changes apply immediately</span></div>
+  </div></div>
+
+  <!-- ---- Advanced tab (M16, net-new — sign-off pending) ---- -->
+  <h3 style="margin:26px 0 6px">Advanced tab <span style="font-weight:400;color:var(--faint);font-size:13px">— M16, proposed (not in the M0 mockups)</span></h3>
+  <div class="mock-wrap"><div class="window medium mock">
+    <div class="titlebar"><div class="lights"><span class="r"></span><span class="y"></span><span class="g"></span></div><div class="title">Settings — Advanced</div><div class="spacer"></div></div>
+    <div class="settings-tabs">
+      <div class="stab"><span class="sico">⚙️</span> General</div>
+      <div class="stab"><span class="sico">⇅</span> Transfers</div>
+      <div class="stab"><span class="sico">🔑</span> Keys</div>
+      <div class="stab"><span class="sico">＞_</span> Terminal</div>
+      <div class="stab on"><span class="sico">🧪</span> Advanced</div>
+    </div>
+    <div class="settings-body">
+      <div class="frm">
+        <label>Logging</label>
+        <div class="seg"><span>Off</span><span class="on">Errors</span><span>Verbose</span></div>
+        <div class="row-flex" style="margin-top:8px"><button class="tbtn">Reveal Logs…</button></div>
+        <div class="hint">Diagnostic log. Passwords, key material and terminal contents are <b>never</b> logged (rule 6).</div>
+
+        <div class="divider"></div>
+
+        <label>Experimental</label>
+        <div class="check"><span class="box"></span> Enable experimental features</div>
+        <div class="hint">Off by default. Turns on in-progress features that aren't final; may change or be removed.</div>
+      </div>
+    </div>
+    <div class="sheet-foot"><div class="flex"></div><span style="font-size:11.5px;color:var(--faint)">Changes apply immediately</span></div>
+  </div></div>
+
   <div class="notes">
     <h3>Review notes — Settings</h3>
     <ol>
@@ -790,6 +882,8 @@
       <li><b>Resume policy</b> defaults to automatic — resume is a headline feature, so the default shows it off.</li>
       <li><b>Conflict policy</b> defaults to Ask, with a "apply to all" option in the conflict dialog itself (dialog to be mocked in M7 if you want it).</li>
       <li>Bandwidth limit and checksum verification are v1.x features — included in the mockup so the layout has room, shipped disabled/hidden if the milestone slips.</li>
+      <li><b>General / Keys / Advanced tabs added for M16</b> (2026-07-19, ADR-025) — these were only sketched in note 1 at M0; the three window mocks above are the proposed layouts. All wire in v1 per the user's decision: General (default local folder, Light/Dark/System appearance, reopen-last-connections) · Keys (list/generate/import SSH keys, ssh-agent shown disabled per ADR-017, Ferry known-hosts management) · Advanced (logging level + reveal, experimental-features flag). <b>Sign-off pending.</b></li>
+      <li><b>Transfers tab, v1.x rows:</b> bandwidth limit + checksum ship <b>visible-but-disabled</b> ("v1.x") rather than hidden, so the layout matches the mockup and the roadmap is legible. Overwrite/Skip/Rename conflict presets and the interrupted-policy segmented control become functional in M16.</li>
     </ol>
   </div>
 </section>

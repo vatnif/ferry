@@ -7,6 +7,8 @@ import FerryCore
 struct MainWindow: View {
     @Environment(ConnectionManagerModel.self) private var model
     @Environment(\.openWindow) private var openWindow
+    /// Settings ▸ General appearance (M16), applied app-wide via NSApp.
+    @AppStorage(AppSettings.Key.appearance) private var appearanceRaw = AppSettings.Default.appearance.rawValue
 
     var body: some View {
         @Bindable var model = model
@@ -58,6 +60,12 @@ struct MainWindow: View {
             model.pendingTerminalWindowID = nil
             openWindow(id: "terminal", value: id)
         }
+        // Reopen the connection open at last quit (Settings ▸ General, M16).
+        .onAppear {
+            FerryAppearance.apply(appearanceRaw)
+            model.restoreLastConnectionsIfEnabled()
+        }
+        .onChange(of: appearanceRaw) { _, raw in FerryAppearance.apply(raw) }
     }
 
     private var errorPresented: Binding<Bool> {

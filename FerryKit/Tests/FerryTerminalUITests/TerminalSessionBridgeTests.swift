@@ -110,10 +110,24 @@ final class TerminalSessionBridgeTests: XCTestCase {
         // The pop-out ↔ re-dock contract (screen 7): re-hosting must get the
         // SAME view back so the emulator buffer survives the move.
         let bridge = TerminalSessionBridge(session: StubSession())
-        let first = bridge.makeOrReuseView(font: .monospacedSystemFont(ofSize: 12, weight: .regular))
-        let second = bridge.makeOrReuseView(font: .monospacedSystemFont(ofSize: 14, weight: .regular))
+        let first = bridge.makeOrReuseView(font: .monospacedSystemFont(ofSize: 12, weight: .regular), scrollback: 5000)
+        let second = bridge.makeOrReuseView(font: .monospacedSystemFont(ofSize: 14, weight: .regular), scrollback: 5000)
         XCTAssertTrue(first === second)
         XCTAssertEqual(second.font.pointSize, 14, "font refreshes on reuse")
+    }
+
+    func testScrollbackAppliesAndReasserts() {
+        // The Settings scrollback (M16, ADR-025) reaches the emulator on
+        // creation and survives a resize (the bridge re-asserts it).
+        let bridge = TerminalSessionBridge(session: StubSession())
+        let view = bridge.makeOrReuseView(font: .monospacedSystemFont(ofSize: 12, weight: .regular), scrollback: 7500)
+        XCTAssertEqual(view.getTerminal().options.scrollback, 7500)
+        // A resize used to be able to discard it (ADR-023 caveat) — no longer.
+        bridge.sizeChanged(source: view, newCols: 120, newRows: 40)
+        XCTAssertEqual(view.getTerminal().options.scrollback, 7500)
+        // Live change to a new value.
+        bridge.applyScrollback(2000, to: view)
+        XCTAssertEqual(view.getTerminal().options.scrollback, 2000)
     }
 
     func testFeedReachesTerminalViewWhenNoSinkInstalled() async throws {

@@ -643,3 +643,93 @@ until M15" gap closing.
 `TerminalLaunchService.dispatch()` passes `externalAllowed = false` in the App Store build,
 so every external preference degrades to the built-in terminal (or the macOS-15 explainer)
 — the external options never reach a launcher that isn't compiled in.
+
+## 2026-07-19 — ADR-025: Settings window, net-new tabs, scrollback, appearance (M16 checkpoint A)
+
+**Status: approved 2026-07-19** (checkpoint split + tab designs signed off). This ADR
+covers the Settings window shell and the settings whose *UI* is net-new (rule 3);
+ADR-026 covers the transfer-policy semantics.
+
+**Settings scene.** A standard SwiftUI `Settings { }` scene (app menu / ⌘,) renders the
+icon tab strip General · Transfers · Keys · Terminal · Advanced (DESIGN.md screen 5). Every
+control is `@AppStorage`-backed over keys centralized in FerryCore `AppSettings` (raw key
+strings + defaults + typed enums, pinned by `AppSettingsTests`), so the app's bindings and
+the models that read settings at runtime share one contract. The two terminal keys keep the
+exact strings M15 shipped (`ADR-024`).
+
+**Terminal tab (approved mockup tab 7) wired reactively.** The built-in/Terminal.app/iTerm2/
+custom picker binds to the existing `terminalPreference`/`terminalCustomCommand` storage; the
+browser toolbar's Terminal control now reads the same keys via `@AppStorage` so it
+re-resolves its dispatch the instant the picker changes (M15 left it storage-only/
+non-reactive). macOS 14 disables built-in with the "Requires macOS 15" explainer; the three
+external options are hidden in APPSTORE builds (`TerminalLaunchService.externalAllowed`).
+Added **font (family + size)** and **scrollback**, applied live to open terminals.
+
+**Scrollback — the ADR-023 caveat is retired.** ADR-023's checkpoint-C note warned that
+SwiftTerm recomputes `TerminalOptions` on every resize, discarding a custom scrollback. That
+is **outdated for the pinned SwiftTerm 1.14.0**: `Terminal.resize` only updates `options.cols/
+rows` and never resets `options.scrollback`, and 1.14.0 exposes a public `changeScrollback(_:)`
+(updates `options.scrollback` + resizes the normal buffer). So the built-in terminal sets
+scrollback via `TerminalSessionBridge.applyScrollback` on view creation and **re-asserts it in
+the bridge's existing `sizeChanged` hook** — making the guarantee Ferry's own, not the
+library's, robust to any future regression. Pinned by a `TerminalSessionBridgeTests` case
+(set → resize → still set). Font resolves through `TerminalAppearance.font` (family manager →
+system monospaced fallback) so an unknown family never yields a proportional font.
+
+**Appearance via `NSApp.appearance`, not `preferredColorScheme`.** Light/Dark/System is
+applied app-wide through AppKit (`NSApp.appearance = .aqua / .darkAqua / nil`) from the main
+window's `onAppear`/`onChange`. SwiftUI's `preferredColorScheme` applied at the WindowGroup
+root **re-creates the window and breaks XCUITest's launch snapshot** (the previously-green
+`testAppLaunchesWithSidebarAndEmptyState` failed until this was changed) — AppKit is the
+robust whole-app override and sidesteps that.
+
+**Net-new tabs (rule 3 — signed off, drawn into `ferry-mockups.html` screen 5).**
+- *General*: default local folder (feeds `BrowserSession`'s local start-path fallback),
+  appearance, and **reopen last connections** — the open-connection profile IDs are persisted
+  on `connectionPhase` transitions and restored from the main window's `onAppear` (skipped
+  under `FERRY_DATA_DIR` test isolation). Stored as an *array* so tabs (checkpoint B) restore
+  several; today at most one.
+- *Keys*: lists `~/.ssh` public keys (read-only; empty in the sandbox, like M11's known_hosts/
+  config reads — ADR-017); **Generate…**/**Import…** are Direct-only (`#if !APPSTORE`,
+  `ssh-keygen` / copy-into-`~/.ssh`) and shown disabled in APPSTORE; ssh-agent stays disabled
+  ("planned", ADR-017); **Manage known hosts** lists/forgets entries in Ferry's own store via
+  a new `HostKeyStore.allTrustedHosts()`.
+- *Advanced*: logging level over a small `FerryLog` (`os.Logger` gated by the level; secrets/
+  terminal bytes never logged, rule 6) with "Reveal Logs…" → Console; an experimental-features
+  flag (persisted; gates nothing yet).
+
+**Settings-window automation.** The SwiftUI `Settings` scene does not open under XCUITest in
+this harness (neither ⌘, nor the app-menu item routes to it via automation, though both work
+for real users). Following the M15 precedent for non-automatable UI, the Settings window is
+covered by a **manual checklist in TESTING.md**; the settings *logic* is unit-tested
+(`AppSettingsTests`, `HostKeyStoreTests`, `TerminalSessionBridgeTests`).
+
+## 2026-07-19 — ADR-026: Transfer settings become user-configurable; conflict/interrupted policies (M16 checkpoint A)
+
+**What was hard-coded, now a setting.** `BrowserSession` created `TransferEngine(maxConcurrent:
+3)` with the engine's other tunables at their defaults. It now reads a `TransferSettingsSnapshot`
+(from `UserDefaults` via the `AppSettings` keys) at connection time for **simultaneous transfers**
+and **retry count**, and at each *staging* call for the **exists** and **interrupted** policies
+(so a policy change applies to the next transfer immediately — "Changes apply immediately").
+`retryCount = N` maps to `maxAttempts = N + 1` ("retry N times" = N retries after the first
+attempt); the 5 s spacing stays fixed copy (not user-facing in v1).
+
+**Exists policy (Overwrite / Ask / Skip / Rename).** M8/M9 only implemented **Ask** (the per-file
+conflict dialog) with the presets deferred to here (DOMAIN.md). `stageTransfers`/`importFiles` now
+resolve the policy: Overwrite enqueues with `.restart`; Ask returns the conflicts for the existing
+dialog; Skip drops them; **Rename** enqueues a `name 2.ext` copy via the pure, unit-tested
+`TransferNaming.deduplicatedName` (Finder-style: suffix before the last extension; dotfiles and
+extension-less names get a trailing " N").
+
+**Interrupted policy (Resume / Ask / Restart).** Governs a download with a resumable `.ferrypart`
+and no final file (uploads with a smaller remote file are a *conflict*, handled by the exists
+policy). Resume → `.automatic` (M9 behavior); Restart → `.restart`; **Ask** → the item is returned
+as a `ResumeDecision` and the browser prompts Resume / Resume All / Start Over / Skip. The
+resume-decision alert is presented only after any conflict alert is cleared, so one alert shows at
+a time. `resumablePartialBytes` mirrors the engine's validity rule (fresh ≤ 30 days, non-empty, not
+larger than source).
+
+**Queue-done notification.** When the queue drains after a completion and the setting is on,
+`QueueNotifier` posts a `UNUserNotification` (authorization requested lazily; denied ⇒ silently
+skipped). Bandwidth limit and checksum verification remain **v1.x** — shown **visible-but-disabled**
+(not hidden) so the tab matches the mockup and the roadmap is legible.

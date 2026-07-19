@@ -155,6 +155,47 @@ against it.
    external options are absent and the toolbar button is disabled on macOS 14 with the
    "requires macOS 15" explainer.
 
+## M16 checkpoint A additions (Settings window — 317 kit tests + 11 UI, all green)
+
+New unit coverage (headless):
+- `FerryCoreTests/AppSettingsTests` (+11): the enum + key-string persistence contract, the
+  shipping defaults, interrupted-policy → transfer-mode, `LoggingLevel` ordering, and the
+  pure **Rename**-preset name de-duplication (`TransferNaming.deduplicatedName` — extensions,
+  folders, dotfiles, multi-dot).
+- `FerryCoreTests/HostKeyStoreTests` (+2): `parseHostSpec` (`[host]:port` ↔ host/port, hashed
+  specs rejected) and `allTrustedHosts` enumeration + forget, backing Settings ▸ Keys.
+- `FerryTerminalUITests/TerminalSessionBridgeTests` (+1): scrollback applies on creation,
+  **survives a resize** (the ADR-023 caveat, now retired), and updates live.
+
+**Not headless-testable — the Settings window itself.** The SwiftUI `Settings` scene does not
+open under XCUITest in this harness (neither ⌘, nor the app-menu "Settings…" item routes to it
+via automation, though both work for real users), so there is no automated Settings UI test —
+the settings *logic* is unit-tested above. Regression guard learned here: applying appearance
+with SwiftUI's `preferredColorScheme` at the WindowGroup root **broke the app-launch XCUITest**
+(the window re-creates); appearance is applied via `NSApp.appearance` from the main window
+instead (ADR-025).
+
+### M16 checkpoint A manual checklist (open Settings via ⌘, / app menu)
+
+1. **General** — Choose… sets the default local folder; connecting a profile with no local
+   start path opens the local pane there. Appearance Light/Dark/System re-tints the whole app
+   immediately. Reopen-last-connections: connect a profile, quit, relaunch → it reconnects
+   (prompting for any non-Keychain credential); toggle off → it doesn't.
+2. **Transfers** — set Simultaneous to 1 → only one transfer runs at a time on the next
+   connection. Exists = Overwrite/Skip/Rename → transfer a colliding file and confirm the
+   behavior (Rename makes `name 2.ext`); Ask → the per-file dialog. Interrupted = Ask →
+   interrupt a download then re-drag it → the Resume/Start-Over prompt appears. Turn on
+   "notify when the queue finishes" → a notification posts (grant permission once).
+3. **Keys** — the list shows `~/.ssh/*.pub`; Generate… writes a new keypair (Direct);
+   Import… copies a key in; Manage… lists/forgets Ferry's trusted host keys; ssh-agent is
+   disabled. In the App Store build the list is empty and Generate/Import are disabled.
+4. **Terminal** — switch built-in ↔ Terminal.app/iTerm2/custom → the toolbar Terminal control
+   updates immediately. Change font family/size and scrollback → an open built-in terminal
+   updates live; scrollback survives resizing the panel. macOS 14: built-in is disabled with
+   the "Requires macOS 15" note. App Store build: the three external options are hidden.
+5. **Advanced** — set Logging to Verbose, connect → connect traces appear in Console under
+   subsystem `com.gfragos.Ferry`; Off → nothing. No secret or terminal content ever appears.
+
 ## M9 additions (112 kit tests + 4 UI, all green)
 
 - `FerryCoreTests/TransferEngineResumeTests` (unit, InMemoryFileSource): `.ferrypart`
