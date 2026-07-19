@@ -25,13 +25,13 @@
 | M14.5 | Remote port forwarding | done (committed a4899a2) |
 | M15 | Open in Terminal | done (committed d500ac3) |
 | M15.5 | Embedded terminal (SwiftTerm) | done (A+B d7971a8, C 6410384) |
-| M16 | Tabs & polish | **in progress** (A Settings done ec114e2 · B Tabs awaiting review · C Polish) |
+| M16 | Tabs & polish | **in progress** (A Settings done ec114e2 · B Tabs done c6942fb · C Polish) |
 | M17 | Packaging (sign/notarize/DMG/Sparkle) | todo |
 | M18 | Sale readiness | todo |
 
 Backlog (post-v1): see `docs/ROADMAP.md`.
 
-## Current state of the code (M16 checkpoint B — Tabs — awaiting review, nothing committed)
+## Current state of the code (M16 checkpoint B — Tabs — done, committed c6942fb)
 
 - **The main window is now tabbed** (screen 1 `.wintabs`, ADR-027). `ConnectionManagerModel`'s
   single `connectionPhase` became `tabs: OrderedTabs<ConnectionTab>` — an ordered
@@ -65,7 +65,7 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
   before it via `ConnectionLibrary.move(at:)`; folder rows keep move-into (unchanged).
 - **Both flavors build** (Direct + AppStore). Tests: **334 kit (+17 `OrderedTabsTests`) + 14
   XCUITests (+3: tab open/switch/close, ⌘W-closes-tab-not-window, second-tab independence), all
-  green.** **Awaiting review — nothing committed.**
+  green.** **Approved & committed (c6942fb).**
 
 ## Current state of the code (M16 checkpoint A — done, committed ec114e2)
 
@@ -597,8 +597,8 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
   un-findable (a11y merges overlapping buttons) → two side-by-side buttons per chip
   (`tabStrip.tab.<i>`/`tabStrip.close.<i>`); ⌘W verified to close the active tab, never the
   window. 334 kit (+17) + 14 UI (+3) green; both flavors build.
-  Docs updated (DESIGN/DOMAIN/DECISIONS ADR-027/ARCHITECTURE/TESTING/ROADMAP/PROGRESS). **Awaiting
-  review — nothing committed.**
+  Docs updated (DESIGN/DOMAIN/DECISIONS ADR-027/ARCHITECTURE/TESTING/ROADMAP/PROGRESS).
+  **Approved & committed (c6942fb).**
 - **2026-07-19 (b)** — M16 planned + **checkpoint A built** (Settings window). Split approved
   (full in-window tabs; 3 checkpoints A Settings · B Tabs · C Polish; all four settings groups
   wire in v1). General/Keys/Advanced tabs drawn into `ferry-mockups.html` screen 5 and signed
