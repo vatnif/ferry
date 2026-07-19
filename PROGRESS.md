@@ -23,7 +23,7 @@
 | M13 | SCP | done (committed 6b1e981) |
 | M14 | Tunneling | done (committed 7938556) |
 | M14.5 | Remote port forwarding | done (committed a4899a2) |
-| M15 | Open in Terminal | **awaiting review** |
+| M15 | Open in Terminal | done (committed d500ac3) |
 | M15.5 | Embedded terminal (SwiftTerm) | done (A+B d7971a8, C 6410384) |
 | M16 | Tabs & polish | todo |
 | M17 | Packaging (sign/notarize/DMG/Sparkle) | todo |
@@ -31,7 +31,7 @@
 
 Backlog (post-v1): see `docs/ROADMAP.md`.
 
-## Current state of the code (M15 — awaiting review; nothing committed)
+## Current state of the code (M15 — done, committed d500ac3)
 
 - **The external Terminal hand-off is live** (ADR-024) — the external branch of the
   ADR-023 dispatch, closing the "no fallback until M15" gap. The one Terminal toolbar
