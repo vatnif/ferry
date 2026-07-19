@@ -16,8 +16,12 @@ struct MainWindow: View {
             SidebarView()
                 .navigationSplitViewColumnWidth(min: 200, ideal: 230)
         } detail: {
-            DetailPlaceholderView()
+            VStack(spacing: 0) {
+                TabStripView()
+                DetailPlaceholderView()
+            }
         }
+        .background(closeTabShortcut)
         .sheet(item: $model.editorContext) { context in
             ConnectionEditorSheet(context: context)
         }
@@ -53,6 +57,16 @@ struct MainWindow: View {
         } message: {
             Text(model.noticeMessage ?? "")
         }
+        // Closing a tab with running transfers confirms first (ADR-027).
+        .alert("Transfers are still running", isPresented: tabClosePresented) {
+            Button("Close Anyway", role: .destructive) {
+                if let id = model.pendingTabClose { model.closeTab(id) }
+                model.pendingTabClose = nil
+            }
+            Button("Keep Tab", role: .cancel) { model.pendingTabClose = nil }
+        } message: {
+            Text("This connection still has transfers in its queue. Closing the tab disconnects it and cancels them.")
+        }
         // Models can't call openWindow — terminal-only connects (screen 7)
         // request their window through this hand-off.
         .onChange(of: model.pendingTerminalWindowID) { _, id in
@@ -82,6 +96,21 @@ struct MainWindow: View {
 
     private var folderPromptPresented: Binding<Bool> {
         Binding(get: { model.folderPrompt != nil }, set: { if !$0 { model.folderPrompt = nil } })
+    }
+
+    private var tabClosePresented: Binding<Bool> {
+        Binding(get: { model.pendingTabClose != nil }, set: { if !$0 { model.pendingTabClose = nil } })
+    }
+
+    /// ⌘W closes the active tab (not the window) — the window always keeps at
+    /// least one tab (user decision 2026-07-19), so this never closes it. A
+    /// zero-size hidden button owns the shortcut inside the key window.
+    private var closeTabShortcut: some View {
+        Button("Close Tab") { model.closeSelectedTab() }
+            .keyboardShortcut("w", modifiers: .command)
+            .frame(width: 0, height: 0)
+            .opacity(0)
+            .accessibilityHidden(true)
     }
 }
 

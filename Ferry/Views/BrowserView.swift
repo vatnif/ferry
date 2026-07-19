@@ -8,6 +8,9 @@ struct BrowserView: View {
     @Environment(ConnectionManagerModel.self) private var model
     @Environment(\.openWindow) private var openWindow
     let session: BrowserSession
+    /// The tab hosting this session — the Disconnect toolbar action puts it
+    /// back to the disconnected (grey-dot) state (M16 checkpoint B).
+    let tab: ConnectionTab
 
     @State private var newFolderName: String?
     /// Baseline height while dragging the terminal panel's resize handle.
@@ -205,7 +208,7 @@ struct BrowserView: View {
                 .accessibilityIdentifier("browser.filter")
 
             Button {
-                model.disconnect()
+                model.disconnect(tab)
             } label: {
                 Label("Disconnect", systemImage: "eject")
             }

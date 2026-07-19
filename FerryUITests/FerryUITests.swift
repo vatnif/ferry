@@ -634,4 +634,106 @@ final class FerryUITests: XCTestCase {
     // verified by the manual checklist in docs/TESTING.md, and the settings
     // *logic* is unit-tested in FerryCore (AppSettingsTests, HostKeyStore
     // enumeration, TransferNaming) and FerryTerminalUITests (scrollback).
+
+    // MARK: Tabs (M16 checkpoint B, ADR-027)
+
+    /// The connection tab strip opens tabs (＋), closes them (✕, only the
+    /// active tab shows its ✕), and keeps the window with one empty tab when the
+    /// last tab is closed (user decision 2026-07-19). Needs no server.
+    @MainActor
+    func testTabStripOpensAndClosesTabs() throws {
+        let app = launchIsolatedApp()
+        // Launch: one empty tab, its ✕ present, empty state in the detail.
+        XCTAssertTrue(app.staticTexts["No Connection Selected"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["tabStrip.close.0"].waitForExistence(timeout: 5))
+
+        // ＋ twice → three tabs; the newly-opened tab is active, so its ✕ shows.
+        app.buttons["tabStrip.newTab"].click()
+        XCTAssertTrue(app.buttons["tabStrip.close.1"].waitForExistence(timeout: 5))
+        app.buttons["tabStrip.newTab"].click()
+        XCTAssertTrue(app.buttons["tabStrip.close.2"].waitForExistence(timeout: 5))
+
+        // Close the active (last) tab → selection falls back to the neighbour.
+        app.buttons["tabStrip.close.2"].click()
+        XCTAssertFalse(app.buttons["tabStrip.close.2"].waitForExistence(timeout: 2))
+        XCTAssertTrue(app.buttons["tabStrip.close.1"].waitForExistence(timeout: 5))
+        app.buttons["tabStrip.close.1"].click()
+        XCTAssertTrue(app.buttons["tabStrip.close.0"].waitForExistence(timeout: 5))
+
+        // Closing the last tab keeps the window with a fresh empty tab.
+        app.buttons["tabStrip.close.0"].click()
+        XCTAssertTrue(app.buttons["tabStrip.close.0"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["No Connection Selected"].exists)
+    }
+
+    /// ⌘W closes the active tab, never the window — the window always keeps at
+    /// least one tab (user decision 2026-07-19). Needs no server.
+    @MainActor
+    func testCommandWClosesActiveTabNotWindow() throws {
+        let app = launchIsolatedApp()
+        XCTAssertTrue(app.buttons["tabStrip.close.0"].waitForExistence(timeout: 10))
+        // Open two more tabs → three; the active (last) tab's ✕ is index 2.
+        app.buttons["tabStrip.newTab"].click()
+        app.buttons["tabStrip.newTab"].click()
+        XCTAssertTrue(app.buttons["tabStrip.close.2"].waitForExistence(timeout: 5))
+
+        // ⌘W closes the active tab → two remain, window still up.
+        app.typeKey("w", modifierFlags: .command)
+        XCTAssertTrue(app.buttons["tabStrip.close.1"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["tabStrip.close.2"].exists)
+        XCTAssertTrue(app.windows.firstMatch.exists, "the window must stay open")
+
+        // ⌘W down through the last tab: the window still stays (empty tab kept).
+        app.typeKey("w", modifierFlags: .command)
+        XCTAssertTrue(app.buttons["tabStrip.close.0"].waitForExistence(timeout: 5))
+        app.typeKey("w", modifierFlags: .command)
+        XCTAssertTrue(app.buttons["tabStrip.close.0"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["No Connection Selected"].exists)
+        XCTAssertTrue(app.windows.firstMatch.exists, "closing the last tab must not close the window")
+    }
+
+    /// A connected tab and a new empty tab coexist; the detail column follows
+    /// the selected tab (the live session survives a switch away and back).
+    @MainActor
+    func testSecondTabIsIndependentAndDetailFollowsSelection() throws {
+        try XCTSkipUnless(sftpServerUp, "SFTP test server not running — testinfra/start.sh")
+        let app = launchIsolatedApp()
+
+        app.buttons["sidebar.newConnection"].click()
+        let nameField = app.textFields["editor.name"]
+        XCTAssertTrue(nameField.waitForExistence(timeout: 5))
+        nameField.click(); nameField.typeText("docker-sftp")
+        let hostField = app.textFields["editor.host"]
+        hostField.click(); hostField.typeText("127.0.0.1")
+        let portField = app.textFields["editor.port"]
+        portField.click(); portField.typeKey("a", modifierFlags: .command); portField.typeText("2222")
+        let userField = app.textFields["editor.username"]
+        userField.click(); userField.typeText("ferry")
+        app.buttons["editor.save"].click()
+
+        // Connect the first tab.
+        let connectButton = app.buttons["detail.connect"]
+        XCTAssertTrue(connectButton.waitForExistence(timeout: 5))
+        connectButton.click()
+        let passwordField = app.secureTextFields["passwordPrompt.password"]
+        XCTAssertTrue(passwordField.waitForExistence(timeout: 5))
+        passwordField.click(); passwordField.typeText("ferrypass")
+        app.buttons["passwordPrompt.connect"].click()
+        trustHostKeyIfPrompted(app)
+        XCTAssertTrue(app.staticTexts["browser.status.connected"].waitForExistence(timeout: 15))
+
+        // Open a new (empty) tab: the detail leaves the browser and shows the
+        // selected profile's summary; the live connection's status disappears.
+        app.buttons["tabStrip.newTab"].click()
+        XCTAssertTrue(connectButton.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["browser.status.connected"].exists)
+
+        // Switch back to the first tab → its live session is still there.
+        app.buttons["tabStrip.tab.0"].firstMatch.click()
+        XCTAssertTrue(app.staticTexts["browser.status.connected"].waitForExistence(timeout: 5))
+
+        // Close the connected tab → the empty tab remains.
+        app.buttons["tabStrip.close.0"].click()
+        XCTAssertTrue(connectButton.waitForExistence(timeout: 5))
+    }
 }

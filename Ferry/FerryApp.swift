@@ -16,6 +16,8 @@ struct FerryApp: App {
             // (M11 checkpoint B) — the canonical entry point; the toolbar item
             // may fold into the standard toolbar overflow on narrow windows.
             CommandGroup(after: .newItem) {
+                Button("New Tab") { model.newTab() }
+                    .keyboardShortcut("t", modifiers: .command)
                 Button("Import from SSH Config…") { model.beginSSHConfigImport() }
                     .keyboardShortcut("i", modifiers: [.command, .shift])
             }

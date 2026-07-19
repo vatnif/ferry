@@ -37,7 +37,16 @@ this document, not the other way round.*
   panes in place; in-flight transfers resume via the engine's retry policy or the
   queue's Resume button. All attempts failed ⇒ status bar shows "Connection lost" with
   a manual Reconnect action. Keep-alive and auto-reconnect share the profile flag.
-- Disconnect on tab close; app quit warns if transfers are running.
+- **Tabs (M16 checkpoint B, ADR-027)**: one window holds several connections as tabs; each tab
+  is an independent session (its own panes, queue, tunnels, terminal, and "Linked" state). The
+  detail area follows the selected tab; the sidebar is shared. **Disconnect** (toolbar) returns a
+  tab to the disconnected state (grey dot) keeping its profile so it can reconnect in place.
+  **Closing** a tab (✕ / ⌘W) disconnects *and* removes it; if that tab's queue still has
+  running/queued transfers, closing **confirms first**. Closing the last tab keeps the window with
+  one empty tab. App quit still warns if transfers are running.
+- **Reopen last connections** restores *every* connection open at last quit, one tab each,
+  reconnecting each (prompting for any non-Keychain credential); it persists the connected tabs'
+  profile IDs.
 
 ## Host key trust (SSH) — TOFU
 

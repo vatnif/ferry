@@ -733,3 +733,80 @@ larger than source).
 `QueueNotifier` posts a `UNUserNotification` (authorization requested lazily; denied ⇒ silently
 skipped). Bandwidth limit and checksum verification remain **v1.x** — shown **visible-but-disabled**
 (not hidden) so the tab matches the mockup and the roadmap is legible.
+
+## 2026-07-19 — ADR-027: Connection tabs — a per-tab session collection (M16 checkpoint B)
+
+**Status: approved 2026-07-19** (early decisions signed off before build). Implements the
+screen-1 connection tab strip from the approved mockups (`.wintabs`); the tab-management
+affordances not drawn in the mockup are recorded here per rule 3. **Supersedes ADR-012's
+"single session per window until tabs (M16)".**
+
+**The refactor.** `ConnectionManagerModel` held one `connectionPhase`
+(`.idle`/`.connecting`/`.connected(BrowserSession)`) and every connect *replaced* it. It now
+holds `tabs: OrderedTabs<ConnectionTab>` — an ordered collection with a single selection —
+where each `ConnectionTab` carries its **own** `ConnectionPhase`. A `.connected` tab owns a full
+`BrowserSession`, which since M7–M15.5 already isolates the two panes, the transfer queue, the
+`TunnelController`, the embedded `TerminalController`, and per-session "Linked" sync-browsing —
+so tabs are independent for free. The detail column renders the **selected** tab; the sidebar is
+shared across all tabs (DESIGN.md screen 1).
+
+**Pure core, testable in isolation.** The add/select/close/reorder rules live in a generic
+`OrderedTabs<Element: Identifiable>` value type in FerryCore (unit-tested via a stub element:
+closing the selected tab selects the same-index neighbour, else the new last; index-preserving
+`move`; empty-collection edges). It is deliberately app-type-free (and non-`Sendable` — the
+app's `ConnectionTab` is a main-actor class used only on the main actor).
+
+**Threading the target tab through the async connect flow (the risk).** A connect resolves its
+credential through the password / key-passphrase / host-key prompts — async round-trips through
+the UI. Each prompt now carries the target `tabID` alongside the existing `ConnectIntent`; the
+continuation resolves it back to a live tab and, if that tab was closed meanwhile, **tears the
+freshly-built session down** instead of leaking it (`finishConnect(_:into:)`). The
+terminal-only intent carries no tab and is unchanged.
+
+**Connect placement.** Plain double-click / the detail **Connect** button connect **in the
+selected tab** (disconnecting whatever it held first — "connects in current tab");
+⌘-double-click opens a **new tab** (DESIGN.md). `primaryAction` carries no modifier flags, so
+the ⌘ is read from `NSEvent.modifierFlags` at click time.
+
+**Disconnect vs. close (the mockup's grey-dot state).** The mockup shows a disconnected-but-open
+tab (grey dot). So **Disconnect** (toolbar) puts a tab back to `.idle` *keeping its profile* — it
+renders the profile summary + a Connect button and can reconnect in place. **Closing** a tab
+(per-tab ✕ / ⌘W) disconnects *and* removes it (DOMAIN.md "disconnect on tab close"). Closing a
+tab whose queue still has running/queued transfers **confirms first** ("Close Anyway" / "Keep
+Tab") — the tab-granularity analogue of DOMAIN.md's quit-with-transfers warning. Closing the
+**last** tab keeps the window with one fresh empty tab (so the shared sidebar/window stay) rather
+than closing the window — user decisions 2026-07-19.
+
+**Terminal window plumbing survives a tab.** `terminalWindowStorage` / `pendingTerminalWindowID`
+stay **model-global**, keyed by controller UUID, so the `openWindow` hand-off is independent of
+which tab is active. A popped-out terminal is owned by its tab's `BrowserSession`; on disconnect
+*or* tab close a windowed terminal survives with `canRedock = false` (its tab is gone) while a
+docked one shuts down — the exact rule the old single `disconnect()` applied, now per tab.
+
+**Reopen last connections → N tabs.** Checkpoint A already persisted an *array* of open-connection
+profile IDs (on phase transitions). Restore now reopens **every** saved connection — the first
+reuses the initial empty tab, the rest each open a new tab — reconnecting each exactly as a manual
+connect does (prompting for any non-Keychain credential). Persistence lists the **connected** tabs'
+profile IDs. *Known limitation:* several restored connections that each need an interactive prompt
+share the single prompt slot, so their prompts can coalesce; connections with Keychain-stored
+credentials (the common case) reconnect cleanly in parallel.
+
+**New-tab affordances (rule 3 — signed off, not in the mockup):** the ＋ in the strip, ⌘T (File ▸
+New Tab), and ⌘-double-click from the sidebar. **Close affordances:** a per-tab ✕ (shown on the
+active/hovered chip) and ⌘W (closes the active tab, never the window — the window always keeps ≥1
+tab). ⌘W is owned by a zero-size hidden button carrying the shortcut inside the key window, which
+intercepts before AppKit's window-close.
+
+**Within-folder sidebar drag reorder** (deferred from M4, DESIGN.md). Dropping an item onto a
+**profile row** inserts it just before that row, reusing the existing `.draggable` UUID payload
+and `ConnectionLibrary.move(itemID:toFolder:at:)` (which removes-then-inserts, so a same-parent
+drag from above the target inserts one slot lower). Folder rows keep their move-into-folder drop
+(unchanged); this only adds row-level drop targets, so the existing drop-on-folder / Move-to menu
+paths are untouched.
+
+**Tab-chip accessibility (XCUITest lesson).** A tab chip is two side-by-side `Button`s (select +
+✕) sharing one rounded background, indexed as `tabStrip.tab.<i>` / `tabStrip.close.<i>`. An earlier
+attempt with the ✕ as an `.overlay` button **on top of** the chip button failed: overlapping
+buttons get merged in accessibility and the ✕ couldn't be found. The ✕ is conditionally present
+only on the active/hovered chip (a `Color.clear` placeholder reserves its width), so exactly one ✕
+is queryable at a time.

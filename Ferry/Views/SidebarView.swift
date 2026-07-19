@@ -31,9 +31,12 @@ struct SidebarView: View {
         .contextMenu(forSelectionType: UUID.self) { ids in
             if let id = ids.first { SidebarItemMenu(itemID: id) }
         } primaryAction: { ids in
-            // Double-click a profile ⇒ connect.
+            // Double-click a profile ⇒ connect in the current tab; ⌘-double-click
+            // ⇒ a new tab (DESIGN.md screen 1). primaryAction carries no modifier
+            // flags, so read them from the current event.
             if let id = ids.first, model.library.profile(withID: id) != nil {
-                model.connect(profileID: id)
+                let newTab = NSEvent.modifierFlags.contains(.command)
+                model.connect(profileID: id, inNewTab: newTab)
             }
         }
         .toolbar {
@@ -108,6 +111,14 @@ struct SidebarItemsView: View {
                 .tag(folder.id)
             case .profile(let profile):
                 ProfileRow(profile: profile)
+                    // Within-folder (and cross-folder) drag reorder — deferred
+                    // from M4 to M16 (DESIGN.md). Dropping another item onto a
+                    // profile row inserts it just before that row.
+                    .dropDestination(for: String.self) { ids, _ in
+                        guard let dragged = ids.compactMap(UUID.init(uuidString:)).first else { return false }
+                        model.reorderItem(dragged, before: profile.id)
+                        return true
+                    }
                     .tag(profile.id)
             }
         }

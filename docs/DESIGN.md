@@ -19,9 +19,13 @@ tab 7 "Terminal" added in M15.5, approved 2026-07-18, ADR-023).
   Notes: drag handle is the file icon (whole-row drag breaks double-click, ADR-013); local
   items vend a file URL, remote items a string payload (ADR-015). The **Tunnels toolbar
   button** (SSH profiles only) and the **active-tunnel count** in the status bar are live
-  (M14). Pending: tabs (M16), within-folder drag reorder (M16), remote→Finder
-  promise drag (backlog), Terminal button (M15). Status bar shows first-listing round-trip
-  instead of continuous latency for now.
+  (M14). The Terminal control (M15/M15.5) is live. **Connection tabs are live (M16
+  checkpoint B, ADR-027)**: the `.wintabs` strip above the toolbar — one chip per connection
+  (green dot connected / grey disconnected), active chip highlighted, per-tab ✕, trailing ＋;
+  double-click connects in the current tab, ⌘-double-click / ＋ / ⌘T open a new tab; the sidebar
+  is shared. **Within-folder drag reorder is live (M16)** — drop an item onto a profile row to
+  reposition it. Pending: remote→Finder promise drag (backlog). Status bar shows first-listing
+  round-trip instead of continuous latency for now.
 - Screen 2 (connection sheet): live since M4; SSH-key + agent auth rows are wired (M11 —
   key auth live; agent reports "planned"); "Test Connection" is a TCP probe until a
   protocol-level test replaces it. The tunnels row (saved-count + Edit…) still opens the
@@ -47,8 +51,8 @@ tab 7 "Terminal" added in M15.5, approved 2026-07-18, ADR-023).
   (General · Transfers · Keys · Terminal · Advanced). General/Keys/Advanced are net-new UI
   drawn into the mockups and signed off (ADR-025); the approved Terminal tab (tab 7) is wired
   reactively over M15's storage with font + scrollback (SwiftTerm scrollback caveat retired,
-  ADR-025). Pending: the screen-1 connection tab strip (checkpoint B), dark-mode audit +
-  acknowledgements + help (checkpoint C).
+  ADR-025). The screen-1 connection tab strip is **live (checkpoint B, ADR-027)**. Pending:
+  dark-mode audit + acknowledgements + help (checkpoint C).
 
 ## Brand
 
@@ -71,6 +75,9 @@ queue (docked, collapsible) → status bar.
   Double-click connects in current tab; ⌘-double-click new tab. Context menu:
   Edit / Duplicate / Delete / New Folder. Import… button pulls `~/.ssh/config` (M11).
 - **Tabs**: one per connection; green dot connected, grey disconnected; sidebar shared.
+  Double-click connects in the current tab, ⌘-double-click / ＋ / ⌘T open a new tab; per-tab
+  ✕ / ⌘W closes (disconnecting it; a running queue confirms first; the last tab resets to an
+  empty tab so the window stays). *Implemented M16 checkpoint B (ADR-027).*
 - **Panes**: local left, remote right — same `FileBrowserView`. Sortable columns (Name,
   Size, Modified, Kind; remote adds Perms mono + Owner), clickable breadcrumbs, per-pane
   hidden-toggle (👁) and overflow menu, footer with item count + free space / server info.

@@ -155,6 +155,28 @@ against it.
    external options are absent and the toolbar button is disabled on macOS 14 with the
    "requires macOS 15" explainer.
 
+## M16 checkpoint B additions (Tabs — 334 kit tests + 14 UI, all green)
+
+- `FerryCoreTests/OrderedTabsTests` (+17): the pure tab-collection rules — init selection
+  defaults, append (select vs not; first tab always selected), select (unknown id ignored),
+  close (selected → same-index neighbour → new last → empty clears; non-selected keeps
+  selection; unknown no-op), and move (reorder preserves selection identity, clamps, out-of-range
+  no-op).
+- `FerryUITests` (+3): `testTabStripOpensAndClosesTabs` (server-free — ＋ opens tabs, ✕ closes
+  only the active tab, last-tab-close keeps the window with a fresh empty tab);
+  `testCommandWClosesActiveTabNotWindow` (server-free — ⌘W closes the active tab through the last
+  one, the window never closes); and `testSecondTabIsIndependentAndDetailFollowsSelection`
+  (server — a connected tab and a new empty tab coexist; the detail column follows the selected
+  tab; the live session survives a switch away and back; closing the connected tab leaves the
+  empty one).
+
+**XCUITest lesson (ADR-027).** A tab chip is two *side-by-side* `Button`s (select `tabStrip.tab.<i>`
++ close `tabStrip.close.<i>`) sharing one background. An `.overlay` ✕ button on top of the chip
+button was **not findable** — overlapping buttons merge in accessibility. The ✕ is conditionally
+present only on the active/hovered chip, so exactly one is queryable at a time. ⌘W (a hidden
+zero-size shortcut button that intercepts before AppKit's window-close) *is* driven by
+`testCommandWClosesActiveTabNotWindow` and reliably closes the active tab, never the window.
+
 ## M16 checkpoint A additions (Settings window — 317 kit tests + 11 UI, all green)
 
 New unit coverage (headless):

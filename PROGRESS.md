@@ -25,11 +25,47 @@
 | M14.5 | Remote port forwarding | done (committed a4899a2) |
 | M15 | Open in Terminal | done (committed d500ac3) |
 | M15.5 | Embedded terminal (SwiftTerm) | done (A+B d7971a8, C 6410384) |
-| M16 | Tabs & polish | **in progress** (A Settings done ec114e2 · B Tabs · C Polish) |
+| M16 | Tabs & polish | **in progress** (A Settings done ec114e2 · B Tabs awaiting review · C Polish) |
 | M17 | Packaging (sign/notarize/DMG/Sparkle) | todo |
 | M18 | Sale readiness | todo |
 
 Backlog (post-v1): see `docs/ROADMAP.md`.
+
+## Current state of the code (M16 checkpoint B — Tabs — awaiting review, nothing committed)
+
+- **The main window is now tabbed** (screen 1 `.wintabs`, ADR-027). `ConnectionManagerModel`'s
+  single `connectionPhase` became `tabs: OrderedTabs<ConnectionTab>` — an ordered
+  selected-collection where **each `ConnectionTab` carries its own `ConnectionPhase`**
+  (`.idle`/`.connecting`/`.connected(BrowserSession)`). A connected tab owns a full
+  `BrowserSession` (panes/queue/tunnels/terminal/Linked already per-session since M7–M15.5), so
+  tabs are independent. The detail column renders the **selected** tab; the sidebar is shared.
+- **Pure `OrderedTabs<Element>`** (FerryCore, unit-tested): add/select/close/move with the
+  selection-preservation rules (close selected → same-index neighbour → new last → empty). App-
+  type-free and non-`Sendable`.
+- **Tabs UI**: new `TabStripView` above the detail — one chip per tab (green dot connected / grey
+  otherwise), active chip highlighted, per-tab ✕, trailing ＋. `TabChip` is two side-by-side
+  buttons (select + ✕) sharing one background — an overlay ✕ was un-findable by XCUITest
+  (accessibility merges overlapping buttons).
+- **Affordances** (rule 3 — signed off 2026-07-19, ADR-027): ＋ / ⌘T (File ▸ New Tab) /
+  ⌘-double-click-in-sidebar open a tab; plain double-click + detail **Connect** connect **in the
+  current tab** (replacing its session). Per-tab ✕ / ⌘W close (⌘W via a hidden shortcut button so
+  it never closes the window). Closing a tab with running/queued transfers **confirms first**;
+  closing the last tab keeps the window with one empty tab.
+- **Connect flow threads the target tab** through the async password/passphrase/host-key prompts
+  (each prompt gained `tabID`); a connect whose tab was closed mid-flight tears the session down
+  (`finishConnect(_:into:)`) instead of leaking. **Disconnect** returns a tab to the grey-dot
+  disconnected state (keeps its profile → summary + reconnect). Terminal window plumbing
+  (`terminalWindowStorage`/`pendingTerminalWindowID`) stays model-global; a popped-out terminal
+  survives disconnect *and* tab close (`canRedock=false`), a docked one shuts down.
+- **Reopen last connections → N tabs**: restore reopens every saved connection (first reuses the
+  initial empty tab, rest new tabs), reconnecting each; persistence lists the connected tabs'
+  profile IDs. Known limitation: several restores each needing an interactive prompt share the one
+  prompt slot (Keychain-stored creds reconnect cleanly).
+- **Within-folder sidebar drag reorder** (deferred from M4): dropping onto a profile row inserts
+  before it via `ConnectionLibrary.move(at:)`; folder rows keep move-into (unchanged).
+- **Both flavors build** (Direct + AppStore). Tests: **334 kit (+17 `OrderedTabsTests`) + 14
+  XCUITests (+3: tab open/switch/close, ⌘W-closes-tab-not-window, second-tab independence), all
+  green.** **Awaiting review — nothing committed.**
 
 ## Current state of the code (M16 checkpoint A — done, committed ec114e2)
 
@@ -535,12 +571,10 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
 
 ## Next steps
 
-1. **M16 checkpoint A — Settings window** — built, awaiting review (see current-state
-   section above). After approval: **checkpoint B — Tabs** (screen-1 connection tab strip;
-   `connectionPhase` → N sessions/window with per-tab browser/queue/tunnel/terminal — the
-   architecturally heavy part; also within-folder sidebar drag reorder + extend
-   reopen-last-connections to N tabs), then **checkpoint C — Polish** (dark-mode audit vs
-   mockups, error-message consistency pass, acknowledgements screen, Help menu).
+1. **M16 checkpoint B — Tabs** — built, awaiting review (see current-state section above).
+   After approval: **checkpoint C — Polish** (dark-mode audit vs mockups, error-message
+   consistency pass, acknowledgements screen with license notices, Help menu → user guide +
+   keyboard-shortcut reference).
 2. Backlog: multiplexed `SSHSessionManager` (ADR-021/022); FTPS
    **certificate-trust prompt** (TLS analogue of host-key TOFU, for self-
    signed/private-CA servers — deferred from M12, ADR-019); FTP connection pooling
@@ -550,6 +584,21 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
 
 ## Session log
 
+- **2026-07-19 (c)** — M16 **checkpoint B built** (Tabs, ADR-027). Early decisions signed off:
+  reopen reconnects all saved tabs; closing a tab with running transfers confirms; last-tab-close
+  keeps the window with an empty tab; affordances = ＋/⌘T/⌘-double-click + per-tab ✕/⌘W. Refactor:
+  `connectionPhase` → `OrderedTabs<ConnectionTab>` (pure collection in FerryCore, unit-tested),
+  per-tab `ConnectionPhase`; target tab threaded through the async password/passphrase/host-key
+  prompts (each gained `tabID`), a tab closed mid-connect tears its session down; Disconnect →
+  grey-dot state, close → disconnect+remove; terminal window plumbing stays model-global (popped-
+  out terminal survives tab close). New `TabStripView`; DetailPlaceholderView renders the selected
+  tab; MainWindow hosts the strip + close-confirm alert + ⌘W hidden-button; FerryApp ⌘T; Sidebar
+  ⌘-double-click new tab + within-folder drag reorder. **XCUITest lesson**: overlay ✕ button
+  un-findable (a11y merges overlapping buttons) → two side-by-side buttons per chip
+  (`tabStrip.tab.<i>`/`tabStrip.close.<i>`); ⌘W verified to close the active tab, never the
+  window. 334 kit (+17) + 14 UI (+3) green; both flavors build.
+  Docs updated (DESIGN/DOMAIN/DECISIONS ADR-027/ARCHITECTURE/TESTING/ROADMAP/PROGRESS). **Awaiting
+  review — nothing committed.**
 - **2026-07-19 (b)** — M16 planned + **checkpoint A built** (Settings window). Split approved
   (full in-window tabs; 3 checkpoints A Settings · B Tabs · C Polish; all four settings groups
   wire in v1). General/Keys/Advanced tabs drawn into `ferry-mockups.html` screen 5 and signed

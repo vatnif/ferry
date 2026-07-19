@@ -14,15 +14,23 @@ Rule of thumb: if it can be tested without a window, it lives in FerryKit.
 
 ```
 Ferry.app (SwiftUI, @MainActor)
-├── SidebarView (M4)           folder tree, profiles, CRUD, drag-to-folder
+├── SidebarView (M4)           folder tree, profiles, CRUD, drag-to-folder +
+│                              within-folder drag reorder (M16, ADR-027)
 ├── ConnectionEditorSheet (M4) protocol-adaptive form + Test Connection
-├── BrowserView (M7)           dual pane + toolbar + status bar (tabs: M16)
+├── TabStripView (M16)         one chip per ConnectionTab (green/grey dot),
+│                              ＋/✕; selected chip drives the detail column
+├── BrowserView (M7)           dual pane + toolbar + status bar (per selected tab)
 │   └── FileBrowserPane ×2     same component for local & remote panes
 ├── TransferQueueView (M8), TunnelManagerView (M14), Settings (M16)
 └── view models (@Observable, main-actor):
     ├── ConnectionManagerModel  library persistence, vault mediation,
-    │                           connect lifecycle (ConnectionPhase state)
-    └── BrowserSession + PaneModel (M7/M9)
+    │                           connect lifecycle; owns tabs:
+    │                           OrderedTabs<ConnectionTab> (M16, ADR-027) —
+    │                           each ConnectionTab has its own ConnectionPhase
+    │                           (.idle/.connecting/.connected(BrowserSession)).
+    │                           OrderedTabs (add/select/close/move) is a pure,
+    │                           unit-tested FerryCore value type.
+    └── BrowserSession + PaneModel (M7/M9) — one per connected tab
         one session = two PaneModels over FileSystemSources; navigation with
         history, sync-browsing anchors/mirroring (PathUtilities in FerryCore),
         active-pane tracking for the toolbar filter/nav; owns the per-

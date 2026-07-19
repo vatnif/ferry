@@ -18,12 +18,17 @@ final class ConnectionManagerModel {
     var keyPassphrasePrompt: KeyPassphrasePrompt?
     /// Non-nil presents the host-key trust dialog (screen 3: TOFU or changed).
     var hostKeyPrompt: HostKeyPrompt?
-    /// Live connection state shown in the detail column. Its transitions
-    /// persist the open-connection list for Settings ▸ General "Reopen last
-    /// connections" (M16); today at most one (tabs extend this in checkpoint B).
-    var connectionPhase: ConnectionPhase = .idle {
-        didSet { persistOpenConnections() }
-    }
+    /// The open connection tabs (DESIGN.md screen 1 tab strip, M16 checkpoint B
+    /// / ADR-027). Each tab holds its own `ConnectionPhase`; the selected tab
+    /// drives the detail column. The window always keeps at least one tab (the
+    /// initial one is empty). Phase transitions persist the connected tabs'
+    /// profile IDs for Settings ▸ General "Reopen last connections".
+    var tabs = OrderedTabs<ConnectionTab>(tabs: [ConnectionTab()])
+    /// The tab currently shown in the detail column.
+    var selectedTab: ConnectionTab? { tabs.selected }
+    /// Non-nil presents the "close a tab that still has running transfers?"
+    /// confirmation (ADR-027 — not in the mockups, signed off 2026-07-19).
+    var pendingTabClose: UUID?
     /// Guards one-shot restore-on-launch.
     private var didAttemptRestore = false
     /// Non-nil presents the folder-name alert (create or rename).
@@ -122,6 +127,10 @@ final class ConnectionManagerModel {
         var profileID: UUID
         var profileName: String
         var intent: ConnectIntent = .browser
+        /// The tab the browser connect targets (nil for `.terminal`). Resolved
+        /// back to a live tab on the continuation; if the tab was closed
+        /// meanwhile the connect is abandoned.
+        var tabID: UUID?
     }
 
     struct KeyPassphrasePrompt: Identifiable {
@@ -134,6 +143,7 @@ final class ConnectionManagerModel {
         /// True when a previous attempt's passphrase was rejected.
         var incorrect: Bool
         var intent: ConnectIntent = .browser
+        var tabID: UUID?
     }
 
     struct HostKeyPrompt: Identifiable {
@@ -146,6 +156,7 @@ final class ConnectionManagerModel {
         /// The credential to reuse on the retry after the user trusts the key.
         var credential: SSHAuthCredential
         var intent: ConnectIntent = .browser
+        var tabID: UUID?
         var isChanged: Bool { !stored.isEmpty }
     }
 
@@ -263,6 +274,31 @@ final class ConnectionManagerModel {
         mutate { _ = $0.move(itemID: id, toFolder: folderID) }
     }
 
+    /// Within-folder (and cross-folder positioned) drag reorder — deferred from
+    /// M4 to M16 (DESIGN.md). Drops `draggedID` immediately before `targetID`,
+    /// landing it in `targetID`'s parent at `targetID`'s slot. The library's
+    /// `move` removes then inserts, so a same-parent drag from above the target
+    /// must insert one slot lower to end up before it.
+    func reorderItem(_ draggedID: UUID, before targetID: UUID) {
+        guard draggedID != targetID else { return }
+        let parent = library.parentFolderID(ofItem: targetID)
+        let siblings = childItems(inFolder: parent)
+        guard let targetIndex = siblings.firstIndex(where: { $0.id == targetID }) else { return }
+        var index = targetIndex
+        if library.parentFolderID(ofItem: draggedID) == parent,
+           let fromIndex = siblings.firstIndex(where: { $0.id == draggedID }),
+           fromIndex < targetIndex {
+            index = targetIndex - 1
+        }
+        mutate { _ = $0.move(itemID: draggedID, toFolder: parent, at: index) }
+    }
+
+    /// The sidebar items directly inside `folder` (nil = root).
+    private func childItems(inFolder folder: UUID?) -> [SidebarItem] {
+        if let folder { return library.folder(withID: folder)?.items ?? [] }
+        return library.items
+    }
+
     // MARK: SSH config import (M11 checkpoint B)
 
     /// Presents the import sheet, or an info alert when there's nothing to
@@ -363,7 +399,11 @@ final class ConnectionManagerModel {
     /// Entry point from the sidebar double-click and the detail Connect
     /// button. Resolves the credential (prompting when needed) and establishes
     /// the session, driving the host-key trust flow on the way.
-    func connect(profileID: UUID) {
+    ///
+    /// `inNewTab` (⌘-double-click, DESIGN.md screen 1) opens a fresh tab;
+    /// otherwise the connection lands in the selected tab, disconnecting
+    /// whatever it currently holds first ("connects in current tab").
+    func connect(profileID: UUID, inNewTab: Bool = false) {
         guard let profile = library.profile(withID: profileID) else { return }
         // SCP rides Citadel's bidirectional exec channel, which is macOS 15+
         // (ADR-020). Fail fast with a clear message on older systems rather than
@@ -373,20 +413,131 @@ final class ConnectionManagerModel {
             return
         }
         FerryLog.debug("Connecting to \(profile.host):\(profile.port) via \(profile.scheme.displayName)")
-        resolveCredential(profile: profile, intent: .browser)
+        let tab = targetTab(newTab: inNewTab)
+        prepareForConnect(tab)
+        tab.profileID = profileID
+        resolveCredential(profile: profile, intent: .browser, tab: tab)
+    }
+
+    // MARK: Tabs (M16 checkpoint B, ADR-027)
+
+    /// The tab a connect should land in: a fresh selected tab (⌘-double-click),
+    /// or the selected one (reused, or created if somehow none).
+    private func targetTab(newTab: Bool) -> ConnectionTab {
+        if newTab {
+            let tab = ConnectionTab()
+            tabs.append(tab)
+            return tab
+        }
+        if let selected = tabs.selected { return selected }
+        let tab = ConnectionTab()
+        tabs.append(tab)
+        return tab
+    }
+
+    /// Tears down any live session in `tab` before it hosts a new connection
+    /// (double-click "connects in current tab" replaces the session).
+    private func prepareForConnect(_ tab: ConnectionTab) {
+        teardownSession(in: tab)
+        tab.phase = .idle
+    }
+
+    func tab(withID id: UUID?) -> ConnectionTab? {
+        guard let id else { return nil }
+        return tabs.tab(id)
+    }
+
+    /// Opens a fresh empty tab (＋ button / ⌘T) and selects it.
+    func newTab() {
+        tabs.append(ConnectionTab())
+    }
+
+    func selectTab(_ id: UUID) {
+        tabs.select(id)
+    }
+
+    /// The title shown on a tab chip: the connected/connecting profile name,
+    /// the bound profile's name when disconnected, else "New Tab".
+    func title(for tab: ConnectionTab) -> String {
+        switch tab.phase {
+        case .connected(let session): return session.profile.name
+        case .connecting(let name): return name
+        case .idle:
+            if let id = tab.profileID, let profile = library.profile(withID: id) {
+                return profile.name
+            }
+            return "New Tab"
+        }
+    }
+
+    /// True when `tab` holds a live queue with running or waiting transfers —
+    /// closing it should warn first (ADR-027).
+    func tabHasActiveTransfers(_ tab: ConnectionTab) -> Bool {
+        guard let session = tab.session else { return false }
+        return session.queue.activeCount > 0 || session.queue.queuedCount > 0
+    }
+
+    /// Closes a tab (✕ / ⌘W): disconnects its session (DOMAIN.md "disconnect on
+    /// tab close") and removes it. Closing the last tab leaves one empty tab so
+    /// the window (and its shared sidebar) stays — user decision 2026-07-19.
+    /// A popped-out terminal survives (it owns its own session); a docked one
+    /// shuts down.
+    func closeTab(_ id: UUID) {
+        if let tab = tabs.tab(id) { teardownSession(in: tab) }
+        tabs.close(id)
+        if tabs.isEmpty { tabs.append(ConnectionTab()) }
+        persistOpenConnections()
+    }
+
+    /// ⌘W closes the selected tab.
+    func closeSelectedTab() {
+        guard let id = tabs.selectedID else { return }
+        if let tab = tabs.tab(id), tabHasActiveTransfers(tab) {
+            pendingTabClose = id
+        } else {
+            closeTab(id)
+        }
+    }
+
+    /// Disconnects `tab` in place (toolbar Disconnect): the session is torn
+    /// down but the tab stays, bound to its profile, showing the summary +
+    /// Connect (the grey-dot state in the mockup).
+    func disconnect(_ tab: ConnectionTab) {
+        teardownSession(in: tab)
+        tab.phase = .idle
+        persistOpenConnections()
+    }
+
+    /// Shared teardown for disconnect + close. Screen 7 note 7: a popped-out
+    /// terminal keeps its own session but can no longer re-dock (its tab is
+    /// gone); a docked terminal is shut down.
+    private func teardownSession(in tab: ConnectionTab) {
+        guard let session = tab.session else { return }
+        if #available(macOS 15.0, *), let terminal = session.terminal {
+            if terminal.isWindowed {
+                terminal.canRedock = false
+            } else {
+                Task { await terminal.shutdown() }
+            }
+        }
+        Task { await session.disconnect() }
     }
 
     // MARK: Reopen last connections (Settings ▸ General, M16)
 
     private func persistOpenConnections() {
-        let ids = connectionPhase.session.map { [$0.profile.id.uuidString] } ?? []
+        let ids = tabs.tabs.compactMap { tab -> String? in
+            if case .connected(let session) = tab.phase { return session.profile.id.uuidString }
+            return nil
+        }
         UserDefaults.standard.set(ids, forKey: AppSettings.Key.lastOpenConnectionIDs)
     }
 
-    /// Reconnects the connection open at last quit, if the setting is on. Called
-    /// once from the main window's `onAppear`. Skipped under test isolation
-    /// (`FERRY_DATA_DIR`) so XCUITests never auto-connect. Today restores one
-    /// connection; tabs (checkpoint B) will restore each stored id into a tab.
+    /// Reconnects every connection open at last quit, one tab each, if the
+    /// setting is on (user decision 2026-07-19). Called once from the main
+    /// window's `onAppear`. Skipped under test isolation (`FERRY_DATA_DIR`) so
+    /// XCUITests never auto-connect. Each connect prompts for any non-Keychain
+    /// credential exactly as a manual connect does.
     func restoreLastConnectionsIfEnabled() {
         guard !didAttemptRestore else { return }
         didAttemptRestore = true
@@ -394,9 +545,13 @@ final class ConnectionManagerModel {
         let enabled = UserDefaults.standard.object(forKey: AppSettings.Key.reopenLastConnections) as? Bool ?? true
         guard enabled else { return }
         let ids = (UserDefaults.standard.array(forKey: AppSettings.Key.lastOpenConnectionIDs) as? [String]) ?? []
-        guard let first = ids.first, let uuid = UUID(uuidString: first),
-              library.profile(withID: uuid) != nil else { return }
-        connect(profileID: uuid)
+        let profileIDs = ids.compactMap(UUID.init(uuidString:)).filter { library.profile(withID: $0) != nil }
+        guard !profileIDs.isEmpty else { return }
+        // The first restored connection reuses the initial empty tab; the rest
+        // each open a new tab.
+        for (offset, profileID) in profileIDs.enumerated() {
+            connect(profileID: profileID, inNewTab: offset > 0)
+        }
     }
 
     /// Sidebar context menu "Open Terminal" (screen 7 note 4): a shell with no
@@ -413,7 +568,7 @@ final class ConnectionManagerModel {
                 errorMessage = "The built-in terminal requires macOS 15 or later."
                 return
             }
-            resolveCredential(profile: profile, intent: .terminal)
+            resolveCredential(profile: profile, intent: .terminal, tab: nil)
         case .external(let terminal):
             launchExternalTerminal(terminal, profile: profile)
         case .unavailable(let reason):
@@ -451,18 +606,20 @@ final class ConnectionManagerModel {
     }
 
     /// Shared credential resolution for both intents: stored secret → go,
-    /// otherwise the matching prompt (which carries the intent forward).
-    private func resolveCredential(profile: ConnectionProfile, intent: ConnectIntent) {
+    /// otherwise the matching prompt (which carries the intent + target tab
+    /// forward). `tab` is nil for the terminal-only intent.
+    private func resolveCredential(profile: ConnectionProfile, intent: ConnectIntent,
+                                   tab: ConnectionTab?) {
         switch profile.authMethod {
         case .password:
             if let stored = (try? vault.retrieve(role: .password, profileID: profile.id)) ?? nil {
-                startResolved(profile: profile, credential: .password(stored), intent: intent)
+                startResolved(profile: profile, credential: .password(stored), intent: intent, tab: tab)
             } else {
                 passwordPrompt = PasswordPrompt(profileID: profile.id, profileName: profile.name,
-                                                intent: intent)
+                                                intent: intent, tabID: tab?.id)
             }
         case .publicKey(let path):
-            connectWithKey(profile: profile, path: path, intent: intent)
+            connectWithKey(profile: profile, path: path, intent: intent, tab: tab)
         case .agent:
             infoMessage = "SSH-agent authentication is planned for a later release. Edit the connection to use a key file or password for now."
         }
@@ -474,24 +631,27 @@ final class ConnectionManagerModel {
         if remember {
             try? vault.store(password, role: .password, profileID: profile.id)
         }
-        startResolved(profile: profile, credential: .password(password), intent: prompt.intent)
+        startResolved(profile: profile, credential: .password(password),
+                      intent: prompt.intent, tab: tab(withID: prompt.tabID))
     }
 
     /// Resolves an SSH-key credential: read the key file, then attempt with any
     /// stored passphrase. The connect flow prompts for a passphrase only if the
     /// key turns out to be encrypted and the stored one is missing/wrong.
-    private func connectWithKey(profile: ConnectionProfile, path: String, intent: ConnectIntent) {
+    private func connectWithKey(profile: ConnectionProfile, path: String,
+                                intent: ConnectIntent, tab: ConnectionTab?) {
         let pem: Data
         do {
             pem = try Data(contentsOf: URL(fileURLWithPath: (path as NSString).expandingTildeInPath))
         } catch {
             errorMessage = "Could not read the key file at \(path). Check the path and permissions."
+            if intent == .browser { tab?.phase = .idle }
             return
         }
         let storedPassphrase = (try? vault.retrieve(role: .keyPassphrase, profileID: profile.id)) ?? nil
         startResolved(profile: profile,
                       credential: .privateKey(pem: pem, passphrase: storedPassphrase),
-                      intent: intent)
+                      intent: intent, tab: tab)
     }
 
     /// Continuation after the user typed a key passphrase.
@@ -503,46 +663,54 @@ final class ConnectionManagerModel {
         }
         startResolved(profile: profile,
                       credential: .privateKey(pem: prompt.pem, passphrase: passphrase),
-                      intent: prompt.intent)
+                      intent: prompt.intent, tab: tab(withID: prompt.tabID))
     }
 
     /// The user approved an unknown host key (TOFU) — retry the connection. When
     /// `remember` is on the key is persisted to the store; otherwise it is
     /// trusted for this session only (DOMAIN.md → Host key trust).
     func trustHostKeyAndConnect(_ prompt: HostKeyPrompt, remember: Bool) {
+        let targetTab = tab(withID: prompt.tabID)
         if remember {
             do {
                 try hostKeyStore.trust(prompt.offered, host: prompt.profile.host, port: prompt.profile.port)
             } catch {
                 errorMessage = "Could not save the host key: \(error.localizedDescription)"
+                if prompt.intent == .browser { targetTab?.phase = .idle }
                 return
             }
             startResolved(profile: prompt.profile, credential: prompt.credential,
-                          intent: prompt.intent)
+                          intent: prompt.intent, tab: targetTab)
         } else {
             startResolved(profile: prompt.profile, credential: prompt.credential,
-                          sessionTrusted: prompt.offered, intent: prompt.intent)
+                          sessionTrusted: prompt.offered, intent: prompt.intent, tab: targetTab)
         }
     }
 
     /// The user chose to replace a CHANGED host key (second confirmation already
     /// given by the UI) — swap the trusted key and retry.
     func replaceHostKeyAndConnect(_ prompt: HostKeyPrompt) {
+        let targetTab = tab(withID: prompt.tabID)
         do {
             try hostKeyStore.replace(with: prompt.offered, host: prompt.profile.host, port: prompt.profile.port)
         } catch {
             errorMessage = "Could not update the host key: \(error.localizedDescription)"
+            if prompt.intent == .browser { targetTab?.phase = .idle }
             return
         }
-        startResolved(profile: prompt.profile, credential: prompt.credential, intent: prompt.intent)
+        startResolved(profile: prompt.profile, credential: prompt.credential,
+                      intent: prompt.intent, tab: targetTab)
     }
 
     /// The credential is resolved — open what the intent asked for.
     private func startResolved(profile: ConnectionProfile, credential: SSHAuthCredential,
-                               sessionTrusted: HostKeyInfo? = nil, intent: ConnectIntent) {
+                               sessionTrusted: HostKeyInfo? = nil, intent: ConnectIntent,
+                               tab: ConnectionTab?) {
         switch intent {
         case .browser:
-            startConnection(profile: profile, credential: credential, sessionTrusted: sessionTrusted)
+            guard let tab else { return }
+            startConnection(profile: profile, credential: credential,
+                            sessionTrusted: sessionTrusted, tab: tab)
         case .terminal:
             if #available(macOS 15.0, *) {
                 startTerminalOnly(profile: profile, credential: credential, sessionTrusted: sessionTrusted)
@@ -551,22 +719,33 @@ final class ConnectionManagerModel {
     }
 
     private func startConnection(profile: ConnectionProfile, credential: SSHAuthCredential,
-                                 sessionTrusted: HostKeyInfo? = nil) {
-        connectionPhase = .connecting(profileName: profile.name)
+                                 sessionTrusted: HostKeyInfo? = nil, tab: ConnectionTab) {
+        tab.phase = .connecting(profileName: profile.name)
         switch profile.scheme {
         case .ftp, .ftps:
-            startFTPConnection(profile: profile, credential: credential)
+            startFTPConnection(profile: profile, credential: credential, tab: tab)
         case .sftp:
-            startSFTPConnection(profile: profile, credential: credential, sessionTrusted: sessionTrusted)
+            startSFTPConnection(profile: profile, credential: credential, sessionTrusted: sessionTrusted, tab: tab)
         case .scp:
-            startSCPConnection(profile: profile, credential: credential, sessionTrusted: sessionTrusted)
+            startSCPConnection(profile: profile, credential: credential, sessionTrusted: sessionTrusted, tab: tab)
         }
+    }
+
+    /// Publishes a freshly-connected session into its tab. If the tab was
+    /// closed while connecting, the session is torn down instead of leaking.
+    private func finishConnect(_ session: BrowserSession, into tab: ConnectionTab) {
+        guard tabs.contains(tab.id) else {
+            Task { await session.disconnect() }
+            return
+        }
+        tab.phase = .connected(session)
+        persistOpenConnections()
     }
 
     /// Terminal-only connect (screen 7 note 4): preflight trust + auth so the
     /// TOFU/credential prompts run BEFORE any window exists, then register a
     /// standalone controller and ask the UI to open its window. Deliberately
-    /// leaves `connectionPhase` alone — a browser session may be live.
+    /// touches no tab — a terminal-only window is independent of the tabs.
     @available(macOS 15.0, *)
     private func startTerminalOnly(profile: ConnectionProfile, credential: SSHAuthCredential,
                                    sessionTrusted: HostKeyInfo?) {
@@ -600,7 +779,7 @@ final class ConnectionManagerModel {
     }
 
     private func startSFTPConnection(profile: ConnectionProfile, credential: SSHAuthCredential,
-                                     sessionTrusted: HostKeyInfo?) {
+                                     sessionTrusted: HostKeyInfo?, tab: ConnectionTab) {
         Task {
             do {
                 let sftp = try await SFTPSource.connect(host: profile.host,
@@ -619,13 +798,13 @@ final class ConnectionManagerModel {
                                                                           credential: credential,
                                                                           sessionTrusted: sessionTrusted))
                 await session.start()
-                connectionPhase = .connected(session)
+                finishConnect(session, into: tab)
             } catch let error as RemoteSourceError {
-                handleConnectError(error, profile: profile, credential: credential)
+                handleConnectError(error, profile: profile, credential: credential, tab: tab)
             } catch let error as SSHKeyLoadError {
-                handleKeyError(error, profile: profile, credential: credential)
+                handleKeyError(error, profile: profile, credential: credential, tab: tab)
             } catch {
-                connectionPhase = .idle
+                tab.phase = .idle
                 errorMessage = "Could not connect: \(error.localizedDescription)"
             }
         }
@@ -637,9 +816,9 @@ final class ConnectionManagerModel {
     /// ADR-020). Gated to macOS 15+ (Citadel's `withExec`); `connect` already
     /// blocked older systems, so the `#available` else-branch is belt-and-braces.
     private func startSCPConnection(profile: ConnectionProfile, credential: SSHAuthCredential,
-                                    sessionTrusted: HostKeyInfo?) {
+                                    sessionTrusted: HostKeyInfo?, tab: ConnectionTab) {
         guard #available(macOS 15.0, *) else {
-            connectionPhase = .idle
+            tab.phase = .idle
             errorMessage = "SCP connections require macOS 15 or later."
             return
         }
@@ -661,13 +840,13 @@ final class ConnectionManagerModel {
                                                                           credential: credential,
                                                                           sessionTrusted: sessionTrusted))
                 await session.start()
-                connectionPhase = .connected(session)
+                finishConnect(session, into: tab)
             } catch let error as RemoteSourceError {
-                handleConnectError(error, profile: profile, credential: credential)
+                handleConnectError(error, profile: profile, credential: credential, tab: tab)
             } catch let error as SSHKeyLoadError {
-                handleKeyError(error, profile: profile, credential: credential)
+                handleKeyError(error, profile: profile, credential: credential, tab: tab)
             } catch {
-                connectionPhase = .idle
+                tab.phase = .idle
                 errorMessage = "Could not connect: \(error.localizedDescription)"
             }
         }
@@ -678,9 +857,10 @@ final class ConnectionManagerModel {
     /// AUTH TLS (ADR-019). Certificates are verified against the system trust
     /// store (no self-signed override in the UI yet — a cert-trust prompt is a
     /// backlog item).
-    private func startFTPConnection(profile: ConnectionProfile, credential: SSHAuthCredential) {
+    private func startFTPConnection(profile: ConnectionProfile, credential: SSHAuthCredential,
+                                    tab: ConnectionTab) {
         guard case .password(let password) = credential else {
-            connectionPhase = .idle
+            tab.phase = .idle
             errorMessage = "FTP connections authenticate with a password."
             return
         }
@@ -699,18 +879,19 @@ final class ConnectionManagerModel {
                                                       displayName: profile.name)
                 let session = BrowserSession(profile: profile, remote: ftp, bookmarks: nil)
                 await session.start()
-                connectionPhase = .connected(session)
+                finishConnect(session, into: tab)
             } catch let error as RemoteSourceError {
-                handleFTPConnectError(error, profile: profile)
+                handleFTPConnectError(error, profile: profile, tab: tab)
             } catch {
-                connectionPhase = .idle
+                tab.phase = .idle
                 errorMessage = "Could not connect: \(error.localizedDescription)"
             }
         }
     }
 
-    private func handleFTPConnectError(_ error: RemoteSourceError, profile: ConnectionProfile) {
-        connectionPhase = .idle
+    private func handleFTPConnectError(_ error: RemoteSourceError, profile: ConnectionProfile,
+                                       tab: ConnectionTab) {
+        tab.phase = .idle
         switch error {
         case .authenticationFailed:
             errorMessage = "The server rejected the login for \(profile.username)@\(profile.host). Check the username and password."
@@ -726,9 +907,10 @@ final class ConnectionManagerModel {
     private func handleConnectError(_ error: RemoteSourceError,
                                     profile: ConnectionProfile,
                                     credential: SSHAuthCredential,
-                                    intent: ConnectIntent = .browser) {
-        // A failed terminal-only connect must not disturb a live browser session.
-        if intent == .browser { connectionPhase = .idle }
+                                    intent: ConnectIntent = .browser,
+                                    tab: ConnectionTab? = nil) {
+        // A failed terminal-only connect must not disturb a live browser tab.
+        if intent == .browser { tab?.phase = .idle }
         switch error {
         case .authenticationFailed:
             errorMessage = authFailureMessage(profile: profile, credential: credential)
@@ -736,10 +918,12 @@ final class ConnectionManagerModel {
             errorMessage = "Could not connect to \(profile.host):\(String(profile.port)) — \(detail)"
         case .hostKeyUnknown(let offered):
             hostKeyPrompt = HostKeyPrompt(profile: profile, offered: offered,
-                                          stored: [], credential: credential, intent: intent)
+                                          stored: [], credential: credential,
+                                          intent: intent, tabID: tab?.id)
         case .hostKeyChanged(let stored, let offered):
             hostKeyPrompt = HostKeyPrompt(profile: profile, offered: offered,
-                                          stored: stored, credential: credential, intent: intent)
+                                          stored: stored, credential: credential,
+                                          intent: intent, tabID: tab?.id)
         case .tlsFailed(let detail):
             // TLS is an FTPS concern; an SSH connect shouldn't produce it.
             errorMessage = "Unexpected TLS error connecting to \(profile.host): \(detail)"
@@ -749,8 +933,9 @@ final class ConnectionManagerModel {
     private func handleKeyError(_ error: SSHKeyLoadError,
                                 profile: ConnectionProfile,
                                 credential: SSHAuthCredential,
-                                intent: ConnectIntent = .browser) {
-        if intent == .browser { connectionPhase = .idle }
+                                intent: ConnectIntent = .browser,
+                                tab: ConnectionTab? = nil) {
+        if intent == .browser { tab?.phase = .idle }
         guard case .privateKey(let pem, _) = credential else {
             errorMessage = "The key could not be used: \(error.localizedDescription)"
             return
@@ -759,11 +944,13 @@ final class ConnectionManagerModel {
         case .passphraseRequired:
             keyPassphrasePrompt = KeyPassphrasePrompt(profileID: profile.id,
                                                       profileName: profile.name,
-                                                      pem: pem, incorrect: false, intent: intent)
+                                                      pem: pem, incorrect: false,
+                                                      intent: intent, tabID: tab?.id)
         case .incorrectPassphrase:
             keyPassphrasePrompt = KeyPassphrasePrompt(profileID: profile.id,
                                                       profileName: profile.name,
-                                                      pem: pem, incorrect: true, intent: intent)
+                                                      pem: pem, incorrect: true,
+                                                      intent: intent, tabID: tab?.id)
         case .unsupportedKeyType(let label):
             errorMessage = "This key isn’t supported: \(label). Ferry supports OpenSSH-format ed25519 and RSA keys."
         case .malformed:
@@ -779,22 +966,6 @@ final class ConnectionManagerModel {
         case .privateKey:
             return "The server rejected the key for \(profile.username)@\(profile.host). Check that the matching public key is in the server’s authorized_keys."
         }
-    }
-
-    func disconnect() {
-        guard let session = connectionPhase.session else { return }
-        connectionPhase = .idle
-        // Screen 7 note 7: disconnecting ends a docked terminal silently; a
-        // popped-out window stays — it owns its dedicated session — but can
-        // no longer re-dock (its tab is gone).
-        if #available(macOS 15.0, *), let terminal = session.terminal {
-            if terminal.isWindowed {
-                terminal.canRedock = false
-            } else {
-                Task { await terminal.shutdown() }
-            }
-        }
-        Task { await session.disconnect() }
     }
 
     /// The docked terminal for an SSH browser session (screen 7): built

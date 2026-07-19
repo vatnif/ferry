@@ -54,7 +54,8 @@ Workflow per milestone: implement → unit + integration tests pass → docs upd
   guide incl. `.ferrypart`/resume explainer + keyboard-shortcut reference). **Split into
   3 checkpoints** (approved 2026-07-19): **A Settings window + wiring** (done — all five
   tabs, terminal font/scrollback, transfer policies configurable; ADR-025/026) · **B Tabs**
-  (screen-1 connection tab strip: N sessions/window; the architecturally heavy part) ·
+  (done — screen-1 connection tab strip: N per-tab sessions/window, `OrderedTabs` +
+  `ConnectionTab`, reopen-N-tabs, within-folder drag reorder; ADR-027) ·
   **C Polish** (dark-mode audit, error-message pass, acknowledgements, Help menu).
 
 ## Phase F — Ship
