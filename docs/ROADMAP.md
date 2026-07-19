@@ -38,7 +38,12 @@ Workflow per milestone: implement → unit + integration tests pass → docs upd
   Remote forwarding was deferred here (ADR-021) and un-deferred in M14.5.
 - **M14.5** **Remote** port forwarding — un-deferred: the pinned Citadel 0.12.1 does expose the
   client `tcpip-forward` API (via the Wellz26 swift-nio-ssh fork it rides on, ADR-022).
-- **M15** Open in Terminal (Direct only).
+- **M15** Open in Terminal (Direct only) — **done** (ADR-024): the external branch of the
+  ADR-023 dispatch. Pure `SSHCommandBuilder` (injection-safe, never a password) + hand-off
+  to Terminal.app/iTerm2 (AppleScript) / custom command (Process); honors `-i` key + remote
+  start path; ssh does its own `~/.ssh/known_hosts` TOFU. Setting is storage-only until the
+  M16 Settings window (picker mocked in tab 7). Defaults per ADR-023 (built-in on macOS 15+,
+  Terminal.app on macOS 14 Direct).
 - **M15.5** Embedded terminal (SwiftTerm) — pulled forward from backlog item 6
   (planning session 2026-07-18, ADR-023): Citadel `withPTY` shell panel (macOS 15+,
   ADR-020-style gate), dedicated SSH session, one Terminal button dispatching on a

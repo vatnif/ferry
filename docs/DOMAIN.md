@@ -201,11 +201,31 @@ listing, stat, mkdir, delete, rename, or chmod. So Ferry splits the surface:
 
 ## Terminal hand-off (M15, Direct builds only)
 
-- "Terminal" builds an `ssh` command from the profile (host, port, user, key file) and
-  opens Terminal.app / iTerm2 / custom (setting). Passwords are never passed; key auth or
-  the user types it. Hidden entirely in `APPSTORE` builds.
-- Since M15.5 this is one branch of the Settings ▸ Terminal dispatch — see Embedded
-  terminal below.
+- The Terminal action is **one button, one setting** (ADR-023): the browser toolbar's
+  Terminal control and the sidebar profile's **Open Terminal** item both dispatch on
+  Settings ▸ Terminal. "Ferry's built-in terminal" opens the embedded terminal (M15.5,
+  below); **Terminal.app / iTerm2 / a custom command** do the external hand-off (this
+  section). SSH profiles only (SFTP/SCP); FTP/FTPS show no Terminal control.
+- The external hand-off builds an `ssh` command from the profile — host, `-p <port>` (when
+  not 22), `-i <key file>` for key auth, and the **remote start path** as
+  `-t 'cd '<path>'; exec $SHELL -l'` when set — and launches it in the chosen app.
+  **Passwords are never passed** (rule 6): a password profile relies on ssh prompting in
+  the terminal; a key profile passes only the key *path*.
+- **Host-key trust for the external path is ssh's, not Ferry's.** The launched `ssh` does
+  its own Trust-On-First-Use against the user's `~/.ssh/known_hosts` (writing to it on
+  first accept) — Ferry's own `known_hosts` store (used by SFTP/SCP/the built-in terminal)
+  is not consulted or updated. So a host may prompt for its key in the terminal even if
+  Ferry already trusts it, and vice-versa. This is expected: the external terminal is a
+  hand-off to the OS's ssh, with its own trust database.
+- **Custom command** receives the built ssh command appended to it (run through a login
+  shell so PATH resolves), e.g. a launcher that opens your terminal of choice with the
+  ssh command as its argument.
+- **Hidden in `APPSTORE` builds** (rule 5): launching other apps can't work sandboxed, so
+  the three external options never appear and the built-in terminal is the only behavior.
+- **Defaults** (ADR-023): built-in on macOS 15+; on macOS 14 the Direct build falls back
+  to Terminal.app (the built-in terminal needs macOS 15), while the App Store build shows
+  "requires macOS 15" (no external fallback). The setting is storage-only until the
+  Settings window ships (M16) — see Embedded terminal below.
 
 ## Embedded terminal (M15.5, ADR-023 — both builds)
 

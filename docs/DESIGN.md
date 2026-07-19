@@ -31,10 +31,13 @@ tab 7 "Terminal" added in M15.5, approved 2026-07-18, ADR-023).
   and **implemented** — docked panel (header states, resize drag, collapse/close with
   live-shell confirm, ended banner + Restart), ⧉ pop-out window with "Dock in Window",
   profile context-menu Open Terminal (terminal-only window), macOS-14 explainer.
-  Pending until their milestones: the Settings ▸ Terminal picker UI (M16 settings
-  window) and the external hand-off choices (M15) — built-in is the only dispatch
-  target for now; the scrollback-lines setting also waits for M16 (SwiftTerm recomputes
-  its options on resize, needs care).
+  The **external hand-off choices (Terminal.app / iTerm2 / custom) are implemented (M15,
+  ADR-024)** — the toolbar control and Open Terminal item dispatch on the stored setting
+  (built-in → panel/window; external → ssh hand-off); on macOS 14 Direct they now open
+  Terminal.app rather than explaining. Pending until M16: the **Settings ▸ Terminal
+  picker UI** (mockup tab 7 — the setting is storage-only for now, changeable via
+  `defaults write`) and the scrollback-lines setting (SwiftTerm recomputes its options
+  on resize, needs care).
 - Screen 3 (host keys): **live (M11)** — TOFU first-contact prompt (🔑, selectable
   fingerprint box, "Remember this key" default-on) and the changed-key alarm (⚠️,
   Disconnect primary, Replace gated behind a second confirmation). Plus the connect-time

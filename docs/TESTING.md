@@ -121,6 +121,39 @@ against it.
   `accessibilityIdentifier` clobbers all child identifiers (don't identify the panel
   wrapper); the toolbar Terminal Toggle surfaces as a **checkbox**, not a button;
   confirmation buttons again live under `app.windows` (Touch Bar duplicate, ADR-015).
+- M15 (Open in Terminal, ADR-024): the injection-critical logic is **pure and
+  unit-tested** — `FerryCoreTests/TerminalLaunchTests` (27 tests): the ssh-command
+  builder (port/user/key/start-path permutations; shell-quoting only when unsafe;
+  embedded-quote `'\''` escaping; tilde expansion against an injected home; **no
+  password ever in the command**), AppleScript string-literal escaping, and the
+  `TerminalDispatch.resolve` decision matrix (built-in/external/unavailable across
+  macOS 14/15 × Direct/App Store, custom-command trimming + empty handling, App Store
+  degrade-to-built-in), plus the pinned `UserDefaults` raw-value storage keys.
+- **Not headless-testable** (stated per the milestone brief): the actual app-launching
+  — `ExternalTerminalLauncher` driving Terminal.app/iTerm2 via `NSAppleScript` and the
+  custom command via `Process` — is a thin shell over those tested builders and drives
+  real GUI apps, so it is covered by the manual checklist below rather than an automated
+  test. The macOS-15 CI runner resolves the dispatch to *built-in*, so the existing
+  `browser.terminal` toggle UI test is unaffected.
+
+### M15 manual checklist (Direct build, macOS 15)
+
+1. Default (no `defaults write`): toolbar Terminal button and sidebar Open Terminal open
+   the **built-in** panel/window (unchanged from M15.5).
+2. `defaults write com.gfragos.Ferry terminalPreference terminalApp` → both entry points
+   open **Terminal.app** running `ssh …` for the profile; first launch shows the one-time
+   "control Terminal" consent; the shell connects (key auth or ssh prompts for password).
+3. `… terminalPreference iTerm2` (with iTerm2 installed) → a fresh iTerm window runs the
+   ssh command.
+4. `… terminalPreference custom` + `… terminalCustomCommand "<launcher>"` → the launcher
+   runs with the ssh command appended; empty custom command → the Terminal action reports
+   "No custom terminal command is set".
+5. A profile with a **key file** → the command shows `-i <path>`; a **password** profile
+   → no secret anywhere, ssh prompts in the terminal. A profile with a **remote start
+   path** → the shell opens in that directory (`-t 'cd …; exec $SHELL -l'`).
+6. macOS 14 Direct: built-in preference falls back to Terminal.app. App Store build: the
+   external options are absent and the toolbar button is disabled on macOS 14 with the
+   "requires macOS 15" explainer.
 
 ## M9 additions (112 kit tests + 4 UI, all green)
 

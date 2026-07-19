@@ -370,18 +370,54 @@ final class ConnectionManagerModel {
     }
 
     /// Sidebar context menu "Open Terminal" (screen 7 note 4): a shell with no
-    /// browser. Resolves the credential through the same prompts as `connect`,
-    /// then preflights and opens a terminal window instead of a session.
+    /// browser. Dispatches on the terminal-choice setting (M15, ADR-024) —
+    /// built-in opens a terminal-only window (resolving the credential through
+    /// the same prompts as `connect`, then preflighting); external hands off to
+    /// Terminal.app / iTerm2 / a custom command (ssh authenticates there).
     func openTerminal(profileID: UUID) {
         guard let profile = library.profile(withID: profileID) else { return }
         guard profile.scheme == .sftp || profile.scheme == .scp else { return }
-        guard #available(macOS 15.0, *) else {
-            // Same SSH-library gate as SCP (ADR-023). The external-terminal
-            // fallback arrives with the Open-in-Terminal milestone (M15).
-            errorMessage = "The built-in terminal requires macOS 15 or later."
-            return
+        switch TerminalLaunchService.dispatch() {
+        case .builtIn:
+            guard #available(macOS 15.0, *) else {
+                errorMessage = "The built-in terminal requires macOS 15 or later."
+                return
+            }
+            resolveCredential(profile: profile, intent: .terminal)
+        case .external(let terminal):
+            launchExternalTerminal(terminal, profile: profile)
+        case .unavailable(let reason):
+            errorMessage = reason
         }
-        resolveCredential(profile: profile, intent: .terminal)
+    }
+
+    /// The resolved Terminal action for a profile — the browser toolbar toggle
+    /// reads this to choose between toggling the docked panel (built-in) and
+    /// firing the external hand-off (ADR-024).
+    func terminalDispatch() -> TerminalDispatch {
+        TerminalLaunchService.dispatch()
+    }
+
+    /// Hand the profile's ssh command to an external terminal (Direct only). No
+    /// credential is resolved: passwords are never passed (rule 6), and ssh does
+    /// its own host-key TOFU against `~/.ssh/known_hosts`, not Ferry's store.
+    func launchExternalTerminal(_ terminal: ExternalTerminal, profile: ConnectionProfile) {
+        #if APPSTORE
+        errorMessage = "Opening an external terminal isn't available in this build."
+        #else
+        let keyPath: String?
+        if case .publicKey(let path) = profile.authMethod { keyPath = path } else { keyPath = nil }
+        let command = SSHCommandBuilder.build(host: profile.host,
+                                              port: profile.port,
+                                              username: profile.username,
+                                              keyPath: keyPath,
+                                              remoteStartPath: profile.remoteStartPath)
+        do {
+            try ExternalTerminalLauncher.launch(terminal, command: command)
+        } catch {
+            errorMessage = "Could not open \(terminal.displayName): \(error.localizedDescription)"
+        }
+        #endif
     }
 
     /// Shared credential resolution for both intents: stored secret → go,

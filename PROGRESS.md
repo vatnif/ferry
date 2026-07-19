@@ -23,13 +23,48 @@
 | M13 | SCP | done (committed 6b1e981) |
 | M14 | Tunneling | done (committed 7938556) |
 | M14.5 | Remote port forwarding | done (committed a4899a2) |
-| M15 | Open in Terminal | todo |
+| M15 | Open in Terminal | **awaiting review** |
 | M15.5 | Embedded terminal (SwiftTerm) | done (A+B d7971a8, C 6410384) |
 | M16 | Tabs & polish | todo |
 | M17 | Packaging (sign/notarize/DMG/Sparkle) | todo |
 | M18 | Sale readiness | todo |
 
 Backlog (post-v1): see `docs/ROADMAP.md`.
+
+## Current state of the code (M15 — awaiting review; nothing committed)
+
+- **The external Terminal hand-off is live** (ADR-024) — the external branch of the
+  ADR-023 dispatch, closing the "no fallback until M15" gap. The one Terminal toolbar
+  control and the sidebar **Open Terminal** item now dispatch on the terminal-choice
+  setting: built-in → the M15.5 panel/window; **Terminal.app / iTerm2 / custom command**
+  → an ssh hand-off (Direct only).
+- **Pure FerryCore `Terminal/TerminalLaunch.swift`** (all injection-critical, unit-tested):
+  `SSHCommandBuilder` (host/`-p`/`-i`/`-t 'cd …; exec $SHELL -l'`; shlex-style quoting;
+  tilde expansion via injected home; **never a password**, rule 6), AppleScript
+  string-literal escaping, `TerminalDispatch.resolve` (built-in/external/unavailable across
+  macOS 14/15 × Direct/App Store), and `TerminalPreference` (raw values pinned as a
+  storage contract).
+- **App target**: `ExternalTerminalLauncher` (`#if !APPSTORE`) launches Terminal.app/iTerm2
+  via `NSAppleScript` (`do script` / `create window` + `write text`) and the custom command
+  via `Process` → `/bin/zsh -lc "<launcher> <ssh command>"` (ssh command appended);
+  `TerminalLaunchService` reads the `UserDefaults`-backed preference and applies the build's
+  macOS-15/Direct-vs-App-Store capabilities. `ConnectionManagerModel.openTerminal` and
+  `BrowserView`'s toolbar control both route through `terminalDispatch()`.
+- **No credential resolution on the external path**: passwords are never passed; ssh
+  authenticates and does its **own** host-key TOFU against `~/.ssh/known_hosts` (not Ferry's
+  store) — documented in DOMAIN.md.
+- **Setting is storage-only** (user decision 2026-07-19): the Settings ▸ Terminal picker is
+  mocked (tab 7) but the Settings window is M16, so M15 persists the choice in `UserDefaults`
+  (`terminalPreference` + `terminalCustomCommand`), changeable via `defaults write`. No new
+  UI ⇒ no mockup deviation. Defaults per ADR-023 fall out of one static default (`builtIn`)
+  applied by the resolver: built-in on macOS 15+, Terminal.app on macOS 14 Direct.
+- **App Store safe** (rule 5): the launcher is entirely `#if !APPSTORE`; the resolver passes
+  `externalAllowed=false` there, so every external preference degrades to built-in (or the
+  macOS-15 explainer).
+- Tests: **303 kit tests (+27: `TerminalLaunchTests`) + 11 XCUITests, all green.** Both
+  flavors build (Direct + AppStore). App-launching isn't headless-testable — covered by a
+  manual checklist in TESTING.md (the tested builders carry the injection logic). **Nothing
+  committed — awaiting review.**
 
 ## Current state of the code (M15.5 — done; A+B committed d7971a8, C committed 6410384)
 
@@ -458,9 +493,10 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
 
 ## Next steps
 
-1. **M15 — Open in Terminal** (Direct only): the external hand-off, now one branch of
-   the ADR-023 dispatch (the embedded terminal, M15.5, shipped first — the toolbar
-   button and Open Terminal menu route externally once M15's setting exists).
+1. **M16 — Tabs & polish**: includes the **Settings window (screen 5)** — which renders
+   the already-approved Settings ▸ Terminal picker (mockup tab 7) over M15's storage,
+   plus the scrollback-lines setting (SwiftTerm option-recompute caveat). Also tabs,
+   dark-mode audit, error-message pass, acknowledgements/help.
 2. Backlog: multiplexed `SSHSessionManager` (ADR-021/022); FTPS
    **certificate-trust prompt** (TLS analogue of host-key TOFU, for self-
    signed/private-CA servers — deferred from M12, ADR-019); FTP connection pooling
@@ -470,6 +506,23 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
 
 ## Session log
 
+- **2026-07-19** — M15 built (Open in Terminal — external hand-off, ADR-024). The external
+  branch of the ADR-023 dispatch: the Terminal toolbar control + sidebar Open Terminal now
+  dispatch on the terminal-choice setting (built-in → M15.5 panel/window; Terminal.app /
+  iTerm2 / custom → ssh hand-off, Direct only). New pure `Terminal/TerminalLaunch.swift`
+  (`SSHCommandBuilder` — injection-safe quoting, tilde expansion, `-i`/`-p`/`-t` start-path,
+  **never a password**; AppleScript escaping; `TerminalDispatch.resolve` matrix;
+  `TerminalPreference` storage contract) + app `ExternalTerminalLauncher` (`#if !APPSTORE`;
+  `NSAppleScript` for Terminal.app/iTerm2, `Process` for custom) + `TerminalLaunchService`
+  (UserDefaults-backed, build-capability aware). External path resolves no credential — ssh
+  does its own `~/.ssh/known_hosts` TOFU (DOMAIN.md). **Setting storage-only** (user
+  decision: Settings window is M16; picker already mocked in tab 7) — `defaults write`
+  until then; ADR-023 defaults fall out of one static default via the resolver. Launch
+  mechanism decision recorded in ADR-024 (AppleScript over temp-`.command`/NSWorkspace;
+  custom appends the ssh command through a login shell). 303 kit (+27 `TerminalLaunchTests`)
+  + 11 UI green; both flavors build; app-launching covered by a TESTING.md manual checklist.
+  Docs updated (DOMAIN/DESIGN/DECISIONS/TESTING/ROADMAP/PROGRESS). **Awaiting review —
+  nothing committed.**
 - **2026-07-18 (e)** — M15.5 checkpoint C built (terminal app UI). A+B committed
   (d7971a8) on user approval. `FerryTerminalUI` linked into the app (pbxproj product
   dependency); `TerminalController` + docked panel + pop-out/terminal-only windows +

@@ -578,3 +578,68 @@ mockup note 7: closing a terminal *window* ends the shell without a confirm — 
 provides no clean window-should-close hook; the docked panel's ✕ does confirm while the
 shell is live. **Build prerequisite**: SwiftTerm's Metal shader needs the Xcode Metal
 toolchain component (BUILDING.md).
+
+## 2026-07-19 — ADR-024: Open in Terminal — external hand-off, launch mechanism, storage-only setting (M15)
+
+**Placement in the ADR-023 dispatch.** M15.5 shipped before M15 (ADR-023's sequencing
+note) and left the built-in terminal as the *only* dispatch target. M15 adds the external
+branch behind the terminal-choice setting, closing that gap: the one Terminal toolbar
+toggle and the one sidebar "Open Terminal" item now dispatch on the setting — built-in →
+the embedded panel/window (M15.5); Terminal.app / iTerm2 / custom command → an external
+hand-off (this ADR). One button, one setting, exactly as ADR-023 designed.
+
+**The command is built, not the credential resolved.** The external path never touches
+`resolveCredential` / the Keychain / the host-key prompts. It builds an `ssh` command from
+the profile (host, port, user, `-i <keyfile>` for key auth) and launches it — **passwords
+are never passed** (rule 6): a password profile relies on ssh prompting in the terminal.
+And **ssh does its own host-key TOFU against the user's `~/.ssh/known_hosts`**, independent
+of Ferry's `known_hosts` store — documented in DOMAIN.md so the two trust stores aren't
+conflated. Honors the profile's remote start path via `-t 'cd '<path>'; exec $SHELL -l'`.
+
+**Pure/impure split (what's tested).** All the injection-critical string work is pure
+FerryCore and unit-tested (`SSHCommandBuilder`): shlex-style shell quoting (the SCPSource
+precedent, ADR-020 — quote only when a conservative safe set is exceeded; embedded single
+quotes via the `'\''` idiom), tilde expansion against an injected home, and AppleScript
+string-literal escaping. The dispatch *decision* is also pure and exhaustively tested
+(`TerminalDispatch.resolve` — the built-in/external/unavailable matrix across macOS 14/15
+× Direct/App Store). Only the actual app-launching (`ExternalTerminalLauncher`, app target)
+is not headless-testable (TESTING.md) — it is a thin shell over the tested builders.
+
+**Launch mechanism (the decision).** Terminal.app and iTerm2 are driven by **AppleScript
+via `NSAppleScript`** (`Terminal`: `do script`; `iTerm`: `create window … / write text`);
+the custom command runs via **`Process` → `/bin/zsh -lc "<launcher> <ssh command>"`**.
+- *Rejected — temp `.command` file + `open`*: works for Terminal.app but `open -a iTerm
+  foo.command` does not make iTerm *run* the command, so it can't cover both named apps;
+  and it litters a temp file. AppleScript is the one mechanism that uniformly makes both
+  named terminals **execute** the ssh command (not merely open the app).
+- *Rejected — `NSWorkspace.openApplication`*: launches the app but can't tell it to run a
+  command.
+- The Direct build is unsandboxed, so all of these are viable; AppleScript's first send
+  triggers a one-time TCC "control Terminal/iTerm" consent prompt — acceptable for a
+  Direct-only capability. (A future notarized hardened-runtime build will want the
+  `com.apple.security.automation.apple-events` entitlement + `NSAppleEventsUsageDescription`
+  — noted for M17; not needed for ad-hoc dev builds.)
+- **Custom command semantics** (mockup tab 7: "receives the ssh command"): the built,
+  shell-quoted ssh command is **appended** to the user's launcher and run through a login
+  shell (`-lc`, so PATH resolves Homebrew-installed terminals). Simple, predictable,
+  unit-testable; power users craft a launcher that consumes the appended args.
+
+**Setting is storage-only for M15 (user decision 2026-07-19).** The Settings window is an
+M16 deliverable and the Settings ▸ Terminal picker is already mocked (tab 7) — building an
+interim Settings UI now would either be throwaway or pre-empt M16's window, and needs
+fresh mockup sign-off (rule 3). So M15 persists the choice in `UserDefaults`
+(`terminalPreference` + `terminalCustomCommand`, raw values pinned by a test), changeable
+via `defaults write com.gfragos.Ferry …` until M16 renders the approved picker over the
+same storage. **No new UI** ⇒ no mockup deviation.
+
+**Defaults from one static value.** The stored default is always `builtIn`; the resolver
+maps `builtIn` + macOS 14 + Direct → Terminal.app and `builtIn` + macOS 15 → the embedded
+terminal, so the ADR-023 defaults hold with no version-dependent stored default. On macOS
+14 the App Store build (no external option) still reports "requires macOS 15"; the Direct
+build now falls back to Terminal.app instead of erroring — this is the ADR-023 "no fallback
+until M15" gap closing.
+
+**App Store safety (rule 5).** `ExternalTerminalLauncher` is entirely `#if !APPSTORE`;
+`TerminalLaunchService.dispatch()` passes `externalAllowed = false` in the App Store build,
+so every external preference degrades to the built-in terminal (or the macOS-15 explainer)
+— the external options never reach a launcher that isn't compiled in.

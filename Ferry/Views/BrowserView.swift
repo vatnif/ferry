@@ -166,12 +166,7 @@ struct BrowserView: View {
 
             // SSH profiles only (screen 7 note 5) — FTP/FTPS have no shell.
             if session.profile.scheme == .sftp || session.profile.scheme == .scp {
-                Toggle(isOn: terminalPanelBinding) {
-                    Label("Terminal", systemImage: "terminal")
-                }
-                .toggleStyle(.button)
-                .help("Open a shell on the server")
-                .accessibilityIdentifier("browser.terminal")
+                terminalToolbarControl
             }
 
             TextField("Filter", text: $session.filterText, prompt: Text("Filter"))
@@ -193,7 +188,40 @@ struct BrowserView: View {
         Binding(get: { session.linked }, set: { session.setLinked($0) })
     }
 
-    // MARK: Embedded terminal (screen 7, M15.5)
+    // MARK: Embedded terminal (screen 7, M15.5) + external hand-off (M15)
+
+    /// The Terminal toolbar control dispatches on Settings ▸ Terminal (M15,
+    /// ADR-024): built-in renders the accent-fill toggle for the docked panel;
+    /// an external terminal renders a plain button that fires the hand-off; an
+    /// unavailable configuration (macOS 14 App Store) shows a disabled button
+    /// with the explainer as its tooltip.
+    @ViewBuilder
+    private var terminalToolbarControl: some View {
+        switch model.terminalDispatch() {
+        case .builtIn:
+            Toggle(isOn: terminalPanelBinding) {
+                Label("Terminal", systemImage: "terminal")
+            }
+            .toggleStyle(.button)
+            .help("Open a shell on the server")
+            .accessibilityIdentifier("browser.terminal")
+        case .external(let terminal):
+            Button {
+                model.launchExternalTerminal(terminal, profile: session.profile)
+            } label: {
+                Label("Terminal", systemImage: "terminal")
+            }
+            .help("Open a shell on the server in \(terminal.displayName)")
+            .accessibilityIdentifier("browser.terminal")
+        case .unavailable(let reason):
+            Button {} label: {
+                Label("Terminal", systemImage: "terminal")
+            }
+            .disabled(true)
+            .help(reason)
+            .accessibilityIdentifier("browser.terminal")
+        }
+    }
 
     /// The Terminal toolbar toggle: accent-filled while the docked panel is
     /// open. When the terminal is popped out, clicking raises its window
