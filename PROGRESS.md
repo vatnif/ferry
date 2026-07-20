@@ -29,14 +29,14 @@
 | M17 | Packaging (sign/notarize/DMG/Sparkle) | todo (deferred 2026-07-19 — required before sale) |
 | M18 | Sale readiness | todo (deferred 2026-07-19 — required before sale) |
 | M19 | Editor round-trip (Phase G) | **done** (ADR-030, 2026-07-20) |
-| M20 | Switchers & trust (Phase G) | **in progress** — A committed ea43d51; B awaiting review; C todo |
+| M20 | Switchers & trust (Phase G) | **in progress** — A committed ea43d51; B committed ccb252b; C todo |
 | M21–M31 | Post-v1 Phases G–K (v1.1–v1.5) | todo (planned 2026-07-19, ADR-029) |
 
 Post-v1 plan (Phases G–K, M19–M31): see `docs/ROADMAP.md`. M20 is **split into 3 checkpoints**
 (approved 2026-07-20): **A** competitor importers (FileZilla/Cyberduck/**WinSCP**) · **B**
 secret-free profile export/import · **C** FTPS self-signed cert TOFU. M17/M18 still deferred.
 
-## Current state of the code (M20 checkpoint B — Profile export/import — done, awaiting review)
+## Current state of the code (M20 checkpoint B — Profile export/import — done, committed ccb252b)
 
 - **Second M20 checkpoint** (Phase G / v1.1; ADR-032). Ferry's own **secret-free** connection
   export/import for moving connections between Macs / backup. The store is already
@@ -67,7 +67,7 @@ secret-free profile export/import · **C** FTPS self-signed cert TOFU. M17/M18 s
   ConnectionLibraryImport 3 unit; +1 `ConnectionExportIntegrationTests` export→import→connect
   :2222; +1 HelpContent guard) + 17 XCUITests, all green.** No new XCUITest — save/open-panel +
   menu launch isn't headless (TESTING.md manual checklist; the format/merge logic is automated).
-  **No testinfra changes. Awaiting review — nothing committed.**
+  **No testinfra changes. Approved & committed (ccb252b).**
 
 ## Current state of the code (M20 checkpoint A — Competitor importers — done, committed ea43d51)
 
