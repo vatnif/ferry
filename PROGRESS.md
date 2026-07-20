@@ -29,14 +29,14 @@
 | M17 | Packaging (sign/notarize/DMG/Sparkle) | todo (deferred 2026-07-19 — required before sale) |
 | M18 | Sale readiness | todo (deferred 2026-07-19 — required before sale) |
 | M19 | Editor round-trip (Phase G) | **done** (ADR-030, 2026-07-20) |
-| M20 | Switchers & trust (Phase G) | **in progress** — A importers awaiting review; B/C todo |
+| M20 | Switchers & trust (Phase G) | **in progress** — A done (committed ea43d51); B/C todo |
 | M21–M31 | Post-v1 Phases G–K (v1.1–v1.5) | todo (planned 2026-07-19, ADR-029) |
 
 Post-v1 plan (Phases G–K, M19–M31): see `docs/ROADMAP.md`. M20 is **split into 3 checkpoints**
 (approved 2026-07-20): **A** competitor importers (FileZilla/Cyberduck/**WinSCP**) · **B**
 secret-free profile export/import · **C** FTPS self-signed cert TOFU. M17/M18 still deferred.
 
-## Current state of the code (M20 checkpoint A — Competitor importers — done, awaiting review)
+## Current state of the code (M20 checkpoint A — Competitor importers — done, committed ea43d51)
 
 - **First M20 checkpoint** (Phase G / v1.1 "switchers & trust"; ADR-031). Imports saved sites
   from **FileZilla**, **Cyberduck**, and **WinSCP** (the third added at user request during
@@ -68,8 +68,8 @@ secret-free profile export/import · **C** FTPS self-signed cert TOFU. M17/M18 s
   WinSCP 10 unit = 26; +3 `CompetitorImportIntegrationTests` [FileZilla+WinSCP→SFTP :2222,
   Cyberduck→FTP :2121]; +1 HelpContent guard) + 17 XCUITests, all green.** No new XCUITest — the
   file-picker/menu launch isn't headless-drivable (covered by a TESTING.md manual checklist;
-  the parsers/mapping/import logic are automated). **No testinfra changes. Awaiting review —
-  nothing committed.**
+  the parsers/mapping/import logic are automated). **No testinfra changes. Approved & committed
+  (ea43d51).**
 
 ## Current state of the code (M19 — Editor round-trip — done, committed 1afeca2)
 
