@@ -77,10 +77,13 @@ queue (docked, collapsible) → status bar.
 - **Sidebar** = connection manager: folder tree (arbitrary nesting, drag to reorganize),
   protocol badge per connection; "This Mac" section with local favorites below.
   Double-click connects in current tab; ⌘-double-click new tab. Context menu:
-  Edit / Duplicate / Delete / New Folder. Import menu pulls `~/.ssh/config` (M11) and —
-  M20 checkpoint A, ADR-031 — FileZilla (`sitemanager.xml`), Cyberduck (Bookmarks folder),
+  Edit / Duplicate / Delete / New Folder / **Export…**. Import menu pulls `~/.ssh/config` (M11)
+  and — M20 checkpoint A, ADR-031 — FileZilla (`sitemanager.xml`), Cyberduck (Bookmarks folder),
   and WinSCP (exported `WinSCP.ini`) into a source-named folder via a shared checklist sheet
-  (`ProfileImportSheet`); FileZilla/WinSCP folder hierarchy is preserved, no secrets read.
+  (`ImportChecklistSheet`); FileZilla/WinSCP folder hierarchy is preserved, no secrets read.
+  **M20 checkpoint B (ADR-032)**: Export… (per profile/folder) + File ▸ Export All Connections…
+  write a secret-free `.json`; Import ▸ From Ferry Export… re-imports it (fresh "Imported"
+  folder, fresh ids, structure preserved) through the same checklist sheet.
 - **Tabs**: one per connection; green dot connected, grey disconnected; sidebar shared.
   Double-click connects in the current tab, ⌘-double-click / ＋ / ⌘T open a new tab; per-tab
   ✕ / ⌘W closes (disconnecting it; a running queue confirms first; the last tab resets to an

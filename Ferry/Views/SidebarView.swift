@@ -69,6 +69,9 @@ struct SidebarView: View {
                         .accessibilityIdentifier("sidebar.importCyberduck")
                     Button("From WinSCP…") { model.beginWinSCPImport() }
                         .accessibilityIdentifier("sidebar.importWinSCP")
+                    Divider()
+                    Button("From Ferry Export…") { model.beginFerryImport() }
+                        .accessibilityIdentifier("sidebar.importFerry")
                 } label: {
                     Label("Import", systemImage: "square.and.arrow.down")
                 }
@@ -172,6 +175,7 @@ struct SidebarItemMenu: View {
                 Button("Open Terminal") { model.openTerminal(profileID: itemID) }
             }
             MoveToMenu(itemID: itemID)
+            Button("Export…") { model.exportItem(itemID) }
             Divider()
             Button("Delete…", role: .destructive) { confirmDelete() }
         } else if model.library.folder(withID: itemID) != nil {
@@ -186,6 +190,7 @@ struct SidebarItemMenu: View {
                 model.folderPrompt = .init(renameFolderID: itemID, name: current)
             }
             MoveToMenu(itemID: itemID)
+            Button("Export…") { model.exportItem(itemID) }
             Divider()
             Button("Delete…", role: .destructive) { confirmDelete() }
         }

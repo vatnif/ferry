@@ -83,6 +83,13 @@ public enum HelpContent {
             asked for them the first time you connect. One caveat: WinSCP private keys are \
             in PuTTY’s .ppk format, which Ferry can’t read directly. Convert the key to \
             OpenSSH format and repoint the connection at it.
+
+            To move connections between Macs, use Ferry’s own format: right-click a \
+            connection or folder and choose Export… (or File ▸ Export All Connections…) to \
+            save a .json file, then bring it in elsewhere with Import Connections ▸ From \
+            Ferry Export…. The exported file contains your connection settings but no \
+            passwords or keys, so it’s safe to share; imported connections arrive in a new \
+            “Imported” folder without disturbing what you already have.
             """),
         HelpTopic(
             title: "Transferring files",

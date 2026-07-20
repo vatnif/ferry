@@ -90,6 +90,15 @@ final class HelpContentTests: XCTestCase {
         XCTAssertTrue(body?.contains(".ppk") ?? false, "import topic omits the WinSCP key caveat")
     }
 
+    func testTopicsDocumentExportImport() {
+        // M20 checkpoint B: Ferry's own export/import is user-facing and must
+        // stay documented, including that exports carry no passwords.
+        let body = HelpContent.topics.first { $0.title == "Importing connections" }?.body ?? ""
+        XCTAssertTrue(body.contains("Export"), "import topic omits export")
+        XCTAssertTrue(body.contains("From Ferry Export"), "import topic omits Ferry-export import")
+        XCTAssertTrue(body.lowercased().contains("no password"), "must state exports carry no passwords")
+    }
+
     func testTopicsIncludeResumeExplainer() {
         XCTAssertFalse(HelpContent.topics.isEmpty)
         for topic in HelpContent.topics {

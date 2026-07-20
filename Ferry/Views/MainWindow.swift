@@ -47,6 +47,9 @@ struct MainWindow: View {
                 model.importConnections($0, sourceName: context.sourceName)
             }
         }
+        .sheet(item: $model.ferryImport) { context in
+            FerryImportSheet(entries: context.entries) { model.importFerryEntries($0) }
+        }
         .alert("Something went wrong", isPresented: errorPresented) {
             Button("OK", role: .cancel) { model.errorMessage = nil }
         } message: {

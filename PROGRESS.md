@@ -29,12 +29,45 @@
 | M17 | Packaging (sign/notarize/DMG/Sparkle) | todo (deferred 2026-07-19 — required before sale) |
 | M18 | Sale readiness | todo (deferred 2026-07-19 — required before sale) |
 | M19 | Editor round-trip (Phase G) | **done** (ADR-030, 2026-07-20) |
-| M20 | Switchers & trust (Phase G) | **in progress** — A done (committed ea43d51); B/C todo |
+| M20 | Switchers & trust (Phase G) | **in progress** — A committed ea43d51; B awaiting review; C todo |
 | M21–M31 | Post-v1 Phases G–K (v1.1–v1.5) | todo (planned 2026-07-19, ADR-029) |
 
 Post-v1 plan (Phases G–K, M19–M31): see `docs/ROADMAP.md`. M20 is **split into 3 checkpoints**
 (approved 2026-07-20): **A** competitor importers (FileZilla/Cyberduck/**WinSCP**) · **B**
 secret-free profile export/import · **C** FTPS self-signed cert TOFU. M17/M18 still deferred.
+
+## Current state of the code (M20 checkpoint B — Profile export/import — done, awaiting review)
+
+- **Second M20 checkpoint** (Phase G / v1.1; ADR-032). Ferry's own **secret-free** connection
+  export/import for moving connections between Macs / backup. The store is already
+  self-contained, schema-versioned, secret-free JSON, so export serializes a chosen slice and
+  import decodes + merges.
+- **Pure FerryCore `Store/ConnectionExport.swift`** (unit-tested): a self-describing, versioned
+  envelope (`format: com.gfragos.ferry.connections`, `formatVersion`, `generator`, `exportedAt`,
+  `items: [SidebarItem]`), reusing `ConnectionStore`'s JSON conventions. `encode`/`decode` (typed
+  errors: not-a-Ferry-export / unsupported-version / corrupted), `sanitized` (strips per-machine
+  `lastLocalPath`/`lastRemotePath`, keeps configured start paths), `flatten` → `[ImportEntry]`.
+  **No secrets** — asserted structurally + by a "no password/passphrase/secret keys" test.
+- **`ConnectionLibrary.addImported(_:intoFolderNamed:)`** (pure, unit-tested): the shared
+  import-merge — new folder, rebuilt subfolder hierarchy, **fresh UUIDs for every imported item**
+  (the id-collision policy: an import never overwrites/aliases existing items). Checkpoint A's
+  competitor import was **refactored to route through it** too.
+- **Export (user decision): per-item + Export All.** Sidebar row context menu ▸ **Export…**
+  (profile or folder subtree) + **File ▸ Export All Connections…**; `NSSavePanel` (`.json`),
+  `FERRY_EXPORT_PATH` test override. **Import (user decision): fresh "Imported" folder** via
+  **Import ▸ From Ferry Export…** (both sidebar + File menus); `NSOpenPanel`, `FERRY_IMPORT_PATH`
+  override.
+- **Checklist reuse (rule)**: generalized into **`ImportChecklistSheet`**; `ProfileImportSheet`
+  (checkpoint A) refactored onto it and the new `FerryImportSheet` uses it. M11's `SSHImportSheet`
+  left as-is.
+- **Both distributions** (rule 5): save/open panels are sandbox-legal — no `#if APPSTORE`. **No
+  new dependency** (Foundation JSON only). **Net-new UI signed off** (rule 3, ADR-032): mockups +
+  DESIGN.md. Help gains export/import copy (+ a HelpContent guard).
+- **Both flavors build** (Direct + AppStore). Tests: **397 kit (+12: ConnectionExport 7,
+  ConnectionLibraryImport 3 unit; +1 `ConnectionExportIntegrationTests` export→import→connect
+  :2222; +1 HelpContent guard) + 17 XCUITests, all green.** No new XCUITest — save/open-panel +
+  menu launch isn't headless (TESTING.md manual checklist; the format/merge logic is automated).
+  **No testinfra changes. Awaiting review — nothing committed.**
 
 ## Current state of the code (M20 checkpoint A — Competitor importers — done, committed ea43d51)
 

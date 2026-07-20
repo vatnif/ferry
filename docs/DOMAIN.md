@@ -105,6 +105,21 @@ this document, not the other way round.*
   distributions — reading a user-picked file is sandbox-legal via the security-scoped open
   panel (rule 5).
 
+## Profile export/import — Ferry's own format (M20 checkpoint B, ADR-032)
+
+- **Export** (right-click ▸ Export… for a profile/folder subtree; File ▸ Export All
+  Connections… for everything) writes a self-describing, versioned `.json`
+  (`ConnectionExport`, `format: com.gfragos.ferry.connections`). **Secret-free** (rule 6): no
+  passwords or key material — those stay in the Keychain. Export also strips per-machine
+  UI-restoration state (`lastLocalPath`/`lastRemotePath`) while keeping configured start paths.
+- **Import** (Import ▸ From Ferry Export…) validates the file (typed errors for non-Ferry JSON
+  or a newer format version), then shows the shared checklist. Chosen connections merge into a
+  fresh, uniquely-named **"Imported"** folder with their exported subfolder structure rebuilt.
+  **Every imported profile/folder is re-assigned a fresh UUID** — the id-collision policy: an
+  import never overwrites or aliases an existing item, so it's always safe and non-destructive.
+  Re-importing the same file duplicates rather than syncs (a real folder sync is M26).
+- Works in **both** distributions (save/open panels are sandbox-legal).
+
 ## FTP / FTPS specifics (M12, ADR-019)
 
 - **Transport**: system libcurl (nothing bundled). FTP has **no persistent session** in

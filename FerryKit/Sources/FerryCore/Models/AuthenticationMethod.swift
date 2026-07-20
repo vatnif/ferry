@@ -10,4 +10,11 @@ public enum AuthenticationMethod: Codable, Hashable, Sendable {
     case publicKey(privateKeyPath: String)
     /// ssh-agent. Direct builds only — hidden behind APPSTORE flag in UI.
     case agent
+
+    /// True when the method authenticates with a private key file (feeds the
+    /// import checklists' key badge).
+    public var usesPrivateKey: Bool {
+        if case .publicKey = self { return true }
+        return false
+    }
 }

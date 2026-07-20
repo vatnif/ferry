@@ -632,7 +632,8 @@
       <li><b>Keychain hint</b> is always visible — the security story is a selling point, so we say it in the UI.</li>
       <li><b>Test Connection</b> runs live and reports success/failure inline, including host-key acceptance (screen 3) if the host is unknown.</li>
       <li><b>Advanced</b> is collapsed by default for a lightweight first-run experience.</li>
-      <li>An <b>Import</b> menu (toolbar, under the sidebar; mirrored under <b>File</b>) pulls from <code>~/.ssh/config</code> (v1, ⌘⇧I) and — added in v1.1, M20 checkpoint A, ADR-031 — <b>FileZilla</b> (Site Manager <code>sitemanager.xml</code>), <b>Cyberduck</b> (Bookmarks folder), and <b>WinSCP</b> (exported <code>WinSCP.ini</code>).</li>
+      <li>An <b>Import</b> menu (toolbar, under the sidebar; mirrored under <b>File</b>) pulls from <code>~/.ssh/config</code> (v1, ⌘⇧I) and — added in v1.1, M20 checkpoint A, ADR-031 — <b>FileZilla</b> (Site Manager <code>sitemanager.xml</code>), <b>Cyberduck</b> (Bookmarks folder), and <b>WinSCP</b> (exported <code>WinSCP.ini</code>). M20 checkpoint B (ADR-032) adds <b>From Ferry Export…</b> to the same menu.</li>
+      <li><b>Export</b> (M20 checkpoint B, ADR-032): right-click a connection or folder ▸ <b>Export…</b> writes that item's subtree to a <code>.json</code> file; <b>File ▸ Export All Connections…</b> writes the whole library. Exports carry <b>no passwords or keys</b> (Keychain-only, rule 6) — safe to share; the same checklist sheet handles re-import.</li>
     </ol>
   </div>
 
@@ -654,7 +655,7 @@
     </div>
     <div class="note" style="margin-top:8px">
       <ol>
-        <li><b>Shared checklist sheet</b> for FileZilla / Cyberduck / WinSCP (title varies by source). Each row shows the protocol, name, source folder path (when nested), endpoint, and a 🔑 badge when the site uses a private key.</li>
+        <li><b>Shared checklist sheet</b> (<code>ImportChecklistSheet</code>) for FileZilla / Cyberduck / WinSCP <i>and</i> Ferry-export import (title varies by source). Each row shows the protocol, name, source folder path (when nested), endpoint, and a 🔑 badge when the connection uses a private key.</li>
         <li>Chosen connections land under a new folder named after the source (e.g. “FileZilla Import”); FileZilla and WinSCP folder hierarchies are rebuilt inside it. No secrets are read from the source file (rule 6).</li>
         <li>WinSCP keys are PuTTY <code>.ppk</code>, which Ferry can’t load — the path imports as-is with a help-note caveat to convert to OpenSSH format.</li>
       </ol>

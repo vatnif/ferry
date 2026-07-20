@@ -85,9 +85,10 @@ capability flags **before** cloud backends and checksum/preserve.
   **A Competitor importers** (FileZilla `sitemanager.xml` + Cyberduck bookmark plists +
   **WinSCP** `WinSCP.ini`, added at user request — mirroring the `SSHConfigParser` →
   `SSHImportSheet` pattern via a shared `ImportedConnection`/`ProfileImportSheet`; folder
-  hierarchy preserved; ADR-031) · **B** secret-free profile **export/import** (the store is
-  already self-contained, schema-versioned JSON) · **C FTPS self-signed cert TOFU prompt**
-  (acknowledged debt, DOMAIN.md → FTP/FTPS).
+  hierarchy preserved; ADR-031) · **B** secret-free profile **export/import** (Ferry's own
+  format — `ConnectionExport`; per-item + Export All; import into a fresh "Imported" folder,
+  re-id everything; ADR-032) · **C FTPS self-signed cert TOFU prompt** (acknowledged debt,
+  DOMAIN.md → FTP/FTPS).
 - **M21** Pane power pack: batch rename (pattern/numbering/find-replace); remote file
   search (`find` via SSH exec fast-path, listing-walk fallback); server-side archive
   compress/extract via exec (SSH-only); remote→Finder drag-out (`NSFilePromiseProvider`,

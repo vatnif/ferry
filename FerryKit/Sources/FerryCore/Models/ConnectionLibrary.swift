@@ -32,6 +32,12 @@ public extension ConnectionLibrary {
         Self.findFolder(id: id, in: items)
     }
 
+    /// The item (profile or whole folder subtree) with this id, anywhere in the
+    /// tree — feeds "Export…" on a sidebar selection.
+    func item(withID id: UUID) -> SidebarItem? {
+        Self.findItem(id: id, in: items)
+    }
+
     func contains(itemID: UUID) -> Bool {
         Self.findItem(id: itemID, in: items) != nil
     }
@@ -154,6 +160,42 @@ public extension ConnectionLibrary {
         if add(removed, toFolder: folderID, at: index) { return true }
         items = snapshot
         return false
+    }
+
+    /// Adds imported connections under a **new** folder named `folderName`
+    /// (the caller is responsible for de-duplicating that name against existing
+    /// folders), rebuilding each entry's `folderPath` as nested subfolders and
+    /// assigning **fresh UUIDs** to every added profile and folder. Re-iding is
+    /// the id-collision policy: an import can never overwrite, alias, or corrupt
+    /// an existing item (two items sharing a UUID would break the tree), and it
+    /// leaves the rest of the library untouched. Returns the new folder's id.
+    ///
+    /// Shared by the Ferry-export importer and the competitor importers (M20).
+    @discardableResult
+    mutating func addImported(_ entries: [ImportEntry], intoFolderNamed folderName: String) -> UUID {
+        let root = ProfileFolder(name: folderName)
+        add(.folder(root))
+        // Cache created subfolders by their name-path so siblings reuse one folder.
+        var foldersByPath: [[String]: UUID] = [[]: root.id]
+        for entry in entries {
+            var path: [String] = []
+            var parent = root.id
+            for component in entry.folderPath {
+                path.append(component)
+                if let existing = foldersByPath[path] {
+                    parent = existing
+                } else {
+                    let sub = ProfileFolder(name: component)
+                    add(.folder(sub), toFolder: parent)
+                    foldersByPath[path] = sub.id
+                    parent = sub.id
+                }
+            }
+            var profile = entry.profile
+            profile.id = UUID()   // fresh id — never collide with existing items
+            add(.profile(profile), toFolder: parent)
+        }
+        return root.id
     }
 
     private func clampedIndex(_ index: Int?, count: Int) -> Int {

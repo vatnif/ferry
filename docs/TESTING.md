@@ -155,6 +155,41 @@ against it.
    external options are absent and the toolbar button is disabled on macOS 14 with the
    "requires macOS 15" explainer.
 
+## M20 checkpoint B additions (Profile export/import — Ferry's own format)
+
+New unit coverage (headless, `FerryCoreTests/`):
+- `ConnectionExportTests`: encode→decode round-trip preserves structure + identity (and is
+  byte-idempotent on re-encode); `flatten` carries folder paths; `sanitized` strips
+  `lastLocalPath`/`lastRemotePath` but keeps configured start paths; exported JSON contains no
+  `password`/`passphrase`/`secret` keys; decode rejects non-Ferry JSON, a future formatVersion,
+  and garbage with typed errors.
+- `ConnectionLibraryImportTests`: `addImported` creates the fresh folder + rebuilds the
+  hierarchy (folders reused across siblings), **re-ids every imported item** (importing a
+  profile whose id already exists never duplicates an id or touches the original), and two
+  imports of the same entries produce independent copies.
+- `HelpContentTests` (+1): `testTopicsDocumentExportImport` keeps export/import + the
+  "no passwords" guarantee documented.
+
+New integration coverage (against the Docker SFTP server :2222):
+- `ConnectionExportIntegrationTests`: a profile → export bytes → decode → flatten → connect +
+  list, proving the round trip yields a working profile. **No testinfra changes.**
+
+**Not automated — the save/open panels + menu launch.** `NSSavePanel`/`NSOpenPanel` and menu
+routing aren't headless-drivable (`FERRY_EXPORT_PATH` / `FERRY_IMPORT_PATH` env overrides let the
+tests bypass them). Covered by the checklist below.
+
+### M20 checkpoint B manual checklist
+
+1. **Export a folder** — right-click a folder ▸ Export…, save the `.json`. Open it: it lists your
+   connections and their folders but **no passwords/keys**.
+2. **Export all** — File ▸ Export All Connections… writes the whole library.
+3. **Import** — Import ▸ From Ferry Export…, choose the file; the checklist shows the connections
+   with folder paths. Import lands them under a new "Imported" folder with structure rebuilt.
+4. **Non-destructive** — importing a file exported from the same library adds copies; existing
+   connections are untouched (fresh ids). Connecting an imported profile prompts for its password.
+5. **Bad file** — importing a non-Ferry `.json` shows a clear "isn't a Ferry export" error.
+6. **App Store build** — export/import are present and work (save/open panels are sandbox-legal).
+
 ## M20 checkpoint A additions (Competitor importers — FileZilla/Cyberduck/WinSCP)
 
 New unit coverage (headless, `FerryCoreTests/`):

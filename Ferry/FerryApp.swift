@@ -25,7 +25,10 @@ struct FerryApp: App {
                     Button("From FileZilla…") { model.beginFileZillaImport() }
                     Button("From Cyberduck…") { model.beginCyberduckImport() }
                     Button("From WinSCP…") { model.beginWinSCPImport() }
+                    Divider()
+                    Button("From Ferry Export…") { model.beginFerryImport() }
                 }
+                Button("Export All Connections…") { model.exportAll() }
                 #if !APPSTORE
                 // Editor round-trip (M19) — Direct builds only (rule 5).
                 Button("Open in Editor") { model.editSelectedFile() }

@@ -39,6 +39,8 @@ final class ConnectionManagerModel {
     /// Non-nil presents the competitor-import sheet (FileZilla/Cyberduck/WinSCP,
     /// M20 checkpoint A).
     var profileImport: ProfileImportContext?
+    /// Non-nil presents the Ferry-export import sheet (M20 checkpoint B).
+    var ferryImport: FerryImportContext?
     /// Non-nil presents an error alert.
     var errorMessage: String?
     /// Non-nil presents an informational alert (e.g. stubbed features).
@@ -124,6 +126,13 @@ final class ConnectionManagerModel {
         let id = UUID()
         var sourceName: String
         var connections: [ImportedConnection]
+    }
+
+    /// Backs the Ferry-export import sheet (M20 checkpoint B): the connections
+    /// flattened from a chosen `.json` export.
+    struct FerryImportContext: Identifiable {
+        let id = UUID()
+        var entries: [ImportEntry]
     }
 
     /// What a resolved credential opens: the browser session, or a
@@ -427,33 +436,22 @@ final class ConnectionManagerModel {
     /// (only the folders the selection needs). Secrets are never read from the
     /// source — passwords/passphrases are prompted on first connect.
     func importConnections(_ connections: [ImportedConnection], sourceName: String) {
-        guard !connections.isEmpty else { return }
-        let rootName = uniqueFolderName("\(sourceName) Import")
-        let root = ProfileFolder(name: rootName)
-        mutate { library in
-            _ = library.add(.folder(root))
-            // Cache created subfolders by their path so siblings reuse one folder.
-            var foldersByPath: [[String]: UUID] = [[]: root.id]
-            for connection in connections {
-                var path: [String] = []
-                var parent = root.id
-                for component in connection.folderPath {
-                    path.append(component)
-                    if let existing = foldersByPath[path] {
-                        parent = existing
-                    } else {
-                        let sub = ProfileFolder(name: component)
-                        _ = library.add(.folder(sub), toFolder: parent)
-                        foldersByPath[path] = sub.id
-                        parent = sub.id
-                    }
-                }
-                _ = library.add(.profile(connection.makeProfile()), toFolder: parent)
-            }
-        }
-        selectedItemID = root.id
-        let n = connections.count
-        noticeMessage = "Imported \(n) connection\(n == 1 ? "" : "s") from \(sourceName) into “\(rootName)”."
+        let entries = connections.map { ImportEntry(profile: $0.makeProfile(), folderPath: $0.folderPath) }
+        importEntries(entries, folderBaseName: "\(sourceName) Import", noticeSuffix: " from \(sourceName)")
+    }
+
+    /// Shared import: adds `entries` under a fresh, uniquely-named folder with
+    /// their folder hierarchy rebuilt and fresh ids (collision-safe — see
+    /// `ConnectionLibrary.addImported`). Used by the competitor importers and the
+    /// Ferry-export importer.
+    private func importEntries(_ entries: [ImportEntry], folderBaseName: String, noticeSuffix: String) {
+        guard !entries.isEmpty else { return }
+        let rootName = uniqueFolderName(folderBaseName)
+        var rootID: UUID?
+        mutate { rootID = $0.addImported(entries, intoFolderNamed: rootName) }
+        selectedItemID = rootID
+        let n = entries.count
+        noticeMessage = "Imported \(n) connection\(n == 1 ? "" : "s")\(noticeSuffix) into “\(rootName)”."
     }
 
     private func uniqueFolderName(_ base: String) -> String {
@@ -462,6 +460,95 @@ final class ConnectionManagerModel {
         var suffix = 2
         while existing.contains("\(base) \(suffix)") { suffix += 1 }
         return "\(base) \(suffix)"
+    }
+
+    // MARK: Ferry-format export / import (M20 checkpoint B — ADR-032)
+
+    /// Exports a single sidebar item (a profile, or a whole folder subtree) to a
+    /// chosen `.json` file. Secret-free by construction (rule 6).
+    func exportItem(_ id: UUID) {
+        guard let item = library.item(withID: id) else { return }
+        presentExport([item], suggestedName: item.name)
+    }
+
+    /// Exports the entire connection library.
+    func exportAll() {
+        presentExport(library.items, suggestedName: "Ferry Connections")
+    }
+
+    /// Encodes the items and writes them to a user-chosen file
+    /// (`FERRY_EXPORT_PATH` bypasses the save panel for tests).
+    private func presentExport(_ items: [SidebarItem], suggestedName: String) {
+        let data: Data
+        do {
+            data = try ConnectionExport.encode(items: items, generator: "Ferry \(FerryVersion.current)")
+        } catch {
+            errorMessage = "Could not prepare the export: \(error.localizedDescription)"
+            return
+        }
+        let url: URL
+        if let override = ProcessInfo.processInfo.environment["FERRY_EXPORT_PATH"] {
+            url = URL(fileURLWithPath: override)
+        } else {
+            let panel = NSSavePanel()
+            panel.allowedContentTypes = [.json]
+            panel.nameFieldStringValue = "\(suggestedName).json"
+            panel.prompt = "Export"
+            guard panel.runModal() == .OK, let chosen = panel.url else { return }
+            url = chosen
+        }
+        do {
+            try data.write(to: url, options: .atomic)
+            let n = ConnectionExport.flatten(items).count
+            noticeMessage = "Exported \(n) connection\(n == 1 ? "" : "s") to “\(url.lastPathComponent)”. "
+                          + "The file contains no passwords."
+        } catch {
+            errorMessage = "Could not write the export: \(error.localizedDescription)"
+        }
+    }
+
+    /// Ferry-export import. Reads a chosen `.json` export
+    /// (`FERRY_IMPORT_PATH` bypasses the picker for tests).
+    func beginFerryImport() {
+        guard let url = resolveImportURL(env: "FERRY_IMPORT_PATH",
+                                         defaultURL: FileManager.default.homeDirectoryForCurrentUser,
+                                         chooseDirectory: false,
+                                         allowedExtensions: ["json"],
+                                         prompt: "Import") else { return }
+        let export: ConnectionExport
+        do {
+            export = try ConnectionExport.decode(try Data(contentsOf: url))
+        } catch let error as ConnectionExportError {
+            errorMessage = Self.message(for: error)
+            return
+        } catch {
+            errorMessage = "Could not read that file: \(error.localizedDescription)"
+            return
+        }
+        let entries = ConnectionExport.flatten(export.items)
+        if entries.isEmpty {
+            noticeMessage = "That Ferry export contains no connections."
+        } else {
+            ferryImport = FerryImportContext(entries: entries)
+        }
+    }
+
+    /// Imports the chosen entries from a Ferry export into a fresh "Imported"
+    /// folder (structure rebuilt, fresh ids — never clobbers existing items).
+    func importFerryEntries(_ entries: [ImportEntry]) {
+        importEntries(entries, folderBaseName: "Imported", noticeSuffix: "")
+    }
+
+    private static func message(for error: ConnectionExportError) -> String {
+        switch error {
+        case .notAFerryExport:
+            return "That file isn’t a Ferry connections export."
+        case .unsupportedFormatVersion(let found, let supported):
+            return "That export was written by a newer version of Ferry "
+                 + "(format \(found); this build supports up to \(supported)). Please update Ferry."
+        case .corrupted(let detail):
+            return "That Ferry export could not be read: \(detail)"
+        }
     }
 
     /// Saves the editor sheet. Returns false (with errorMessage set) when the

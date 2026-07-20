@@ -988,3 +988,52 @@ Foundation/hand-rolled (LICENSING.md unchanged).
 
 **Net-new UI signed off** (rule 3): the Import menu entries + the shared `ProfileImportSheet` are
 drawn into `docs/design/ferry-mockups.html` and `docs/DESIGN.md`.
+
+## 2026-07-20 — ADR-032: Secret-free profile export/import — Ferry's own format (M20 checkpoint B)
+
+**Status: approved 2026-07-20** (second M20 checkpoint). Lets users move connections between
+Macs (and back them up) with Ferry's own portable format. The connection store is already a
+self-contained, schema-versioned, **secret-free** JSON tree (M2), so export is essentially
+serializing a chosen slice of it and import is decoding + merging.
+
+**Format** — a self-describing, independently-versioned envelope
+(`FerryCore/Store/ConnectionExport.swift`): `{ format: "com.gfragos.ferry.connections",
+formatVersion: 1, generator, exportedAt, items: [SidebarItem] }`. Reuses `ConnectionStore`'s
+JSON conventions (ISO-8601 dates, pretty + sorted keys) so files diff and back up cleanly.
+Decoding validates the `format` tag (rejects arbitrary JSON → `.notAFerryExport`) and refuses a
+newer `formatVersion` (→ `.unsupportedFormatVersion`), mirroring the store's schema guard.
+
+**No secrets** (rule 6) — `ConnectionProfile`/`ProfileFolder` carry none by construction; the
+file never touches the Keychain. `ConnectionExport.sanitized` additionally strips per-machine
+UI-restoration state (`lastLocalPath`/`lastRemotePath`) on export, while keeping user settings
+like `localStartPath`/`remoteStartPath`. A unit test also asserts the serialized text contains no
+`password`/`passphrase`/`secret` keys (defense in depth).
+
+**Export (user decision): per-item + Export All.** Right-click a profile or folder ▸ **Export…**
+saves that node's subtree; **File ▸ Export All Connections…** saves the whole library. `NSSavePanel`
+(default `.json`); `FERRY_EXPORT_PATH` bypasses it for tests.
+
+**Import merge (user decision): fresh "Imported" folder.** Chosen connections land under a new
+uniquely-named `Imported` folder with their exported subfolder structure rebuilt, via the shared
+`ConnectionLibrary.addImported` (also used by the checkpoint-A competitor importers). **Every
+imported profile and folder gets a fresh UUID** — this *is* the id-collision policy: two items
+sharing a UUID would break the tree (`profile(withID:)`/`move`/`remove` key off id), and re-iding
+guarantees an import never overwrites, aliases, or corrupts existing items. Name collisions are
+avoided by namespacing everything under the fresh folder (`uniqueFolderName`); duplicate display
+names are otherwise allowed (as elsewhere in the app). Round-tripping an export therefore
+duplicates rather than syncs — expected for an import, not a merge/sync engine (a real sync is
+backlogged to M26).
+
+**Checklist reuse (rule: reuse the import UI).** The checklist was generalized into
+`ImportChecklistSheet` (title/subtitle/rows/id-prefix); `ProfileImportSheet` (checkpoint A) was
+refactored onto it and the new `FerryImportSheet` uses it too. M11's `SSHImportSheet` stays as-is
+(same call as ADR-031 — not worth the regression risk).
+
+**Sandbox (rule 5):** export/import read/write user-chosen files via the security-scoped save/open
+panels, so the feature ships in **both** flavors (no `#if APPSTORE`).
+
+**No new dependency** — Foundation `JSONEncoder`/`Decoder` only (LICENSING.md unchanged).
+
+**Net-new UI signed off** (rule 3): the Export… menu items + **Export All Connections…** + the
+**From Ferry Export…** import entry + the shared checklist sheet are drawn into
+`docs/design/ferry-mockups.html` and `docs/DESIGN.md`.
