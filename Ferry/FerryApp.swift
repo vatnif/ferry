@@ -18,8 +18,14 @@ struct FerryApp: App {
             CommandGroup(after: .newItem) {
                 Button("New Tab") { model.newTab() }
                     .keyboardShortcut("t", modifiers: .command)
-                Button("Import from SSH Config…") { model.beginSSHConfigImport() }
-                    .keyboardShortcut("i", modifiers: [.command, .shift])
+                Menu("Import Connections") {
+                    Button("From SSH Config…") { model.beginSSHConfigImport() }
+                        .keyboardShortcut("i", modifiers: [.command, .shift])
+                    Divider()
+                    Button("From FileZilla…") { model.beginFileZillaImport() }
+                    Button("From Cyberduck…") { model.beginCyberduckImport() }
+                    Button("From WinSCP…") { model.beginWinSCPImport() }
+                }
                 #if !APPSTORE
                 // Editor round-trip (M19) — Direct builds only (rule 5).
                 Button("Open in Editor") { model.editSelectedFile() }

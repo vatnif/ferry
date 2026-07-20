@@ -936,3 +936,55 @@ still emitting one change. Known limitation (DOMAIN.md): rapid successive saves 
 
 **Net-new UI signed off** (rule 3): the two menu items + the Settings ▸ General "Editing"
 default-editor picker are drawn into `docs/design/ferry-mockups.html` and `docs/DESIGN.md`.
+
+## 2026-07-20 — ADR-031: Competitor importers — FileZilla, Cyberduck, WinSCP (M20 checkpoint A)
+
+**Status: approved 2026-07-20** (first M20 checkpoint of Phase G / v1.1 "switchers & trust").
+Lets users migrating from other clients bring their saved sites into Ferry. Mirrors the M11
+`~/.ssh/config` import pipeline (ADR-018): a pure FerryCore parser per format → a checklist
+sheet → import into a fresh folder. **No secrets** are read (rule 6) — passwords/passphrases
+are prompted on first connect.
+
+**Three source formats** (the third, WinSCP, added at the user's request during planning):
+- **FileZilla** — Site Manager `sitemanager.xml` (also the live `~/.config/filezilla/` layout),
+  parsed with an event-based `XMLParser`. `<Protocol>` 0→FTP, 1→SFTP, 3/4→FTPS; unknown
+  (HTTP/S3/…) skipped. `<Logontype>` 0 → user `anonymous`; `<KeyFile>` → key auth (SSH only);
+  `<Pass>` never read.
+- **Cyberduck** — the `.duck` XML-plist bookmarks in
+  `~/Library/Application Support/Cyberduck/Bookmarks/`, parsed via `PropertyListSerialization`.
+  `Protocol` `sftp`/`ftp`/`ftps`; unknown providers (s3, dav, …) skipped. **Bookmarks folder
+  only, not History** (user decision — History is transient recently-visited servers).
+- **WinSCP** — an **exported `WinSCP.ini`** (WinSCP is Windows-only, so there is no macOS
+  install/registry to read), parsed with a small self-contained INI reader. `[Sessions\<name>]`
+  sections; `FSProtocol` 0→SCP, 1/2→SFTP, 5→FTP (+`Ftps`≠0 ⇒ FTPS); WebDAV/S3 and the
+  `Default Settings` template skipped; obfuscated `Password` never read.
+
+**Folder hierarchy is preserved** (user decision) for FileZilla (`<Folder>` nesting) and WinSCP
+(session names are `/`-separated, percent-encoded). Each imported connection carries its
+ancestor folder names; on import Ferry rebuilds only the folders the selection needs under a
+fresh, uniquely-named `<Source> Import` folder. Cyberduck bookmarks are flat.
+
+**Shared value type + sheet, but M11 left untouched.** The three new parsers emit a unified
+`ImportedConnection` (FerryCore) presented by one generalized `ProfileImportSheet` (app). M11's
+`ImportedSSHHost`/`SSHImportSheet` are **deliberately not unified** — they are tested and
+working, and folding them in would risk a regression for no user-visible gain. Unifying the
+SSH-config path onto `ImportedConnection` is a possible later cleanup.
+
+**Entry points:** the sidebar **Import** menu (next to "From SSH Config…") and a **File ▸ Import
+Connections** submenu, each with From FileZilla… / From Cyberduck… / From WinSCP…. Source files
+are chosen with `NSOpenPanel` (default locations pre-filled; `FERRY_FILEZILLA_SITEMANAGER` /
+`FERRY_CYBERDUCK_BOOKMARKS` / `FERRY_WINSCP_INI` env overrides drive tests headlessly).
+
+**Sandbox (rule 5):** reading a user-chosen file/folder is sandbox-legal via the
+security-scoped open panel, so — unlike the app-launching terminal/editor features — the
+importers need **no `#if APPSTORE` gating**; both flavors build and ship the feature.
+
+**Known caveat (DOMAIN.md/help):** WinSCP private keys are PuTTY `.ppk`, which Ferry's
+`SSHKeyLoader` can't load (ADR-017). The `PublicKeyFile` path imports as-is (public-key auth) so
+the site is visible; the user must convert the key to OpenSSH format and repoint it.
+
+**No new dependency** — `XMLParser`, `PropertyListSerialization`, and the INI reader are all
+Foundation/hand-rolled (LICENSING.md unchanged).
+
+**Net-new UI signed off** (rule 3): the Import menu entries + the shared `ProfileImportSheet` are
+drawn into `docs/design/ferry-mockups.html` and `docs/DESIGN.md`.

@@ -29,13 +29,49 @@
 | M17 | Packaging (sign/notarize/DMG/Sparkle) | todo (deferred 2026-07-19 — required before sale) |
 | M18 | Sale readiness | todo (deferred 2026-07-19 — required before sale) |
 | M19 | Editor round-trip (Phase G) | **done** (ADR-030, 2026-07-20) |
-| M20–M31 | Post-v1 Phases G–K (v1.1–v1.5) | todo (planned 2026-07-19, ADR-029) |
+| M20 | Switchers & trust (Phase G) | **in progress** — A importers awaiting review; B/C todo |
+| M21–M31 | Post-v1 Phases G–K (v1.1–v1.5) | todo (planned 2026-07-19, ADR-029) |
 
-Post-v1 plan (Phases G–K, M19–M31): see `docs/ROADMAP.md`. Next up per user choice:
-**Phase G / M20 (switchers & trust — FileZilla/Cyberduck importers, profile export/import,
-FTPS self-signed cert TOFU)** — M17/M18 still deferred.
+Post-v1 plan (Phases G–K, M19–M31): see `docs/ROADMAP.md`. M20 is **split into 3 checkpoints**
+(approved 2026-07-20): **A** competitor importers (FileZilla/Cyberduck/**WinSCP**) · **B**
+secret-free profile export/import · **C** FTPS self-signed cert TOFU. M17/M18 still deferred.
 
-## Current state of the code (M19 — Editor round-trip — done, awaiting review)
+## Current state of the code (M20 checkpoint A — Competitor importers — done, awaiting review)
+
+- **First M20 checkpoint** (Phase G / v1.1 "switchers & trust"; ADR-031). Imports saved sites
+  from **FileZilla**, **Cyberduck**, and **WinSCP** (the third added at user request during
+  planning), mirroring the M11 `~/.ssh/config` pipeline. Sidebar **Import** menu + **File ▸
+  Import Connections** submenu → a checklist sheet → profiles under a fresh `<Source> Import`
+  folder. **No secrets read** (rule 6) — passwords prompted on first connect.
+- **Pure FerryCore `Import/`** (unit-tested): a unified **`ImportedConnection`** value type
+  (`makeProfile()`, `folderPath`) shared by three parsers — **`FileZillaImporter`** (event-based
+  `XMLParser` over `sitemanager.xml`, `<Folder>` hierarchy preserved, `<Pass>` ignored),
+  **`CyberduckImporter`** (`PropertyListSerialization` over `.duck` bookmark plists,
+  Bookmarks-folder only), **`WinSCPImporter`** (self-contained INI reader over an exported
+  `WinSCP.ini`, `[Sessions\…]` percent-encoded folder names decoded, `Password` ignored).
+  Protocol maps drop what Ferry can't speak (HTTP/S3/WebDAV). M11's `ImportedSSHHost`/
+  `SSHImportSheet` left **untouched** (deliberate — ADR-031).
+- **App**: generalized **`ProfileImportSheet`** (checklist over `ImportedConnection`, shows
+  source folder path + 🔑 badge); `ConnectionManagerModel` gains `ProfileImportContext` +
+  `beginFileZillaImport()/beginCyberduckImport()/beginWinSCPImport()` (each `NSOpenPanel`-picks
+  the source, `FERRY_*` env overrides for tests) + `importConnections(_:sourceName:)` which
+  **rebuilds the source folder hierarchy** as nested folders (FileZilla/WinSCP) under the import
+  folder. **Both flavors** ship the feature — reading a user-picked file is sandbox-legal (no
+  `#if APPSTORE` gating, unlike terminal/editor).
+- **Net-new UI signed off** (rule 3, ADR-031): the Import menu entries + shared import sheet are
+  drawn into `docs/design/ferry-mockups.html` and `docs/DESIGN.md`.
+- **No new dependency** — `XMLParser`/`PropertyListSerialization`/the INI reader are all
+  Foundation/hand-rolled (LICENSING.md unchanged).
+- **WinSCP `.ppk` caveat** (DOMAIN.md/help): PuTTY keys can't be loaded by `SSHKeyLoader`
+  (ADR-017); the path imports as-is so the site is visible, to be repointed at an OpenSSH key.
+- **Both flavors build** (Direct + AppStore). Tests: **385 kit (+30: FileZilla 8, Cyberduck 8,
+  WinSCP 10 unit = 26; +3 `CompetitorImportIntegrationTests` [FileZilla+WinSCP→SFTP :2222,
+  Cyberduck→FTP :2121]; +1 HelpContent guard) + 17 XCUITests, all green.** No new XCUITest — the
+  file-picker/menu launch isn't headless-drivable (covered by a TESTING.md manual checklist;
+  the parsers/mapping/import logic are automated). **No testinfra changes. Awaiting review —
+  nothing committed.**
+
+## Current state of the code (M19 — Editor round-trip — done, committed 1afeca2)
 
 - **First Phase G / v1.1 feature (ADR-030).** Right-click a **remote** file → **Open in Editor**
   (uses the Settings default editor) or **Open With ▸ <app>** (per-file; "Other…" picks any app);

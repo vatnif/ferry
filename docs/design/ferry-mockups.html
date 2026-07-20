@@ -632,8 +632,33 @@
       <li><b>Keychain hint</b> is always visible — the security story is a selling point, so we say it in the UI.</li>
       <li><b>Test Connection</b> runs live and reports success/failure inline, including host-key acceptance (screen 3) if the host is unknown.</li>
       <li><b>Advanced</b> is collapsed by default for a lightweight first-run experience.</li>
-      <li>An <b>Import…</b> button (bottom-left of the connection manager, not shown here) will pull from <code>~/.ssh/config</code> in v1, FileZilla/Cyberduck in v1.x.</li>
+      <li>An <b>Import</b> menu (toolbar, under the sidebar; mirrored under <b>File</b>) pulls from <code>~/.ssh/config</code> (v1, ⌘⇧I) and — added in v1.1, M20 checkpoint A, ADR-031 — <b>FileZilla</b> (Site Manager <code>sitemanager.xml</code>), <b>Cyberduck</b> (Bookmarks folder), and <b>WinSCP</b> (exported <code>WinSCP.ini</code>).</li>
     </ol>
+  </div>
+
+  <!-- Competitor import sheet (M20 checkpoint A, ADR-031) -->
+  <div class="mock" style="max-width:480px">
+    <div class="titlebar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="title">Import from FileZilla</span></div>
+    <div style="padding:16px 18px">
+      <div style="font-weight:600;margin-bottom:2px">Import from FileZilla</div>
+      <div style="font-size:11px;color:#888;margin-bottom:10px">Choose which connections to add. Passwords are not imported — you’ll be asked to enter them the first time you connect.</div>
+      <div style="border:1px solid #d0d0d0;border-radius:6px;padding:6px 8px;font-size:12px">
+        <div style="padding:4px 0"><input type="checkbox" checked> <b>SFTP</b> Prod Web <span style="color:#888">· Clients / Europe · deploy@web.example.com:2222</span> 🔑</div>
+        <div style="padding:4px 0"><input type="checkbox" checked> <b>FTP</b> Public Mirror <span style="color:#888">· anonymous@ftp.example.com:21</span></div>
+        <div style="padding:4px 0"><input type="checkbox" checked> <b>SFTP</b> Staging <span style="color:#888">· deploy@staging.example.com:22</span></div>
+      </div>
+      <div class="row-flex" style="margin-top:12px;justify-content:space-between">
+        <button class="tbtn">Deselect All</button>
+        <span><button class="tbtn">Cancel</button> <button class="tbtn" style="font-weight:600">Import 3</button></span>
+      </div>
+    </div>
+    <div class="note" style="margin-top:8px">
+      <ol>
+        <li><b>Shared checklist sheet</b> for FileZilla / Cyberduck / WinSCP (title varies by source). Each row shows the protocol, name, source folder path (when nested), endpoint, and a 🔑 badge when the site uses a private key.</li>
+        <li>Chosen connections land under a new folder named after the source (e.g. “FileZilla Import”); FileZilla and WinSCP folder hierarchies are rebuilt inside it. No secrets are read from the source file (rule 6).</li>
+        <li>WinSCP keys are PuTTY <code>.ppk</code>, which Ferry can’t load — the path imports as-is with a help-note caveat to convert to OpenSSH format.</li>
+      </ol>
+    </div>
   </div>
 </section>
 

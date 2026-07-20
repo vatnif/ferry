@@ -74,8 +74,8 @@ this document, not the other way round.*
 
 ## Importing existing SSH config (M11 checkpoint B, ADR-018)
 
-- **`~/.ssh/config` import** (File ▸ Import from SSH Config…, ⌘⇧I, mirrored by the sidebar's
-  Import toolbar menu): concrete `Host` blocks become SFTP `ConnectionProfile`s under a new
+- **`~/.ssh/config` import** (File ▸ Import Connections ▸ From SSH Config…, ⌘⇧I, mirrored by
+  the sidebar's Import toolbar menu): concrete `Host` blocks become SFTP `ConnectionProfile`s under a new
   "Imported" folder. Mapping: `HostName` (alias fallback) → host, `Port`, `User`,
   `IdentityFile` → public-key auth (tilde-expanded path). Wildcard/negated `Host` patterns
   are skipped; `Match`/`ProxyJump`/`ProxyCommand` are ignored (imported without a tunnel).
@@ -83,6 +83,27 @@ this document, not the other way round.*
   passwords are prompted on first connect per the credential policy. The import sheet lets
   the user pick which parsed hosts to add. Read freely in the Direct build; degrades to
   "nothing to import" when `~/.ssh` is outside the App Store sandbox.
+
+## Importing from other clients (M20 checkpoint A, ADR-031)
+
+- **FileZilla / Cyberduck / WinSCP importers** (sidebar Import menu + File ▸ Import
+  Connections): a user-chosen source file is parsed into `ImportedConnection`s and added,
+  via a shared checklist sheet, under a fresh `<Source> Import` folder. Like the SSH-config
+  import, **no secrets are ever read** — passwords/passphrases are prompted on first connect.
+  - **FileZilla** — Site Manager `sitemanager.xml`; `<Folder>` nesting is preserved.
+    `<Protocol>` 0/1/3/4 → FTP/SFTP/FTPS/FTPS; other providers skipped.
+  - **Cyberduck** — the `.duck` bookmark plists in the chosen Bookmarks folder (History is
+    not read). `sftp`/`ftp`/`ftps` only; other providers skipped. Bookmarks are flat.
+  - **WinSCP** — an exported `WinSCP.ini` (WinSCP is Windows-only; the user exports via
+    Tools ▸ Export/Backup Configuration). `[Sessions\…]` names carry a `/`-separated,
+    percent-encoded folder path, which is preserved. `FSProtocol`/`Ftps` map to SCP/SFTP/
+    FTP/FTPS; WebDAV/S3 and the `Default Settings` template are skipped.
+- **WinSCP key caveat**: `PublicKeyFile` is a PuTTY `.ppk`, which Ferry's `SSHKeyLoader`
+  cannot load (ADR-017). The path is imported as-is (public-key auth) so the connection is
+  visible; the user must convert the key to OpenSSH format and repoint the connection.
+- Unlike the app-launching terminal/editor features, the importers work in **both**
+  distributions — reading a user-picked file is sandbox-legal via the security-scoped open
+  panel (rule 5).
 
 ## FTP / FTPS specifics (M12, ADR-019)
 

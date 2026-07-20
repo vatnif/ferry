@@ -66,6 +66,25 @@ public enum HelpContent {
             ever offers a different key, Ferry warns you before continuing.
             """),
         HelpTopic(
+            title: "Importing connections",
+            body: """
+            Already using another client? Ferry can import your saved sites. Open the \
+            Import Connections menu — under File, or from the Import button below the sidebar \
+            — to read ~/.ssh/config (⌘⇧I) or bring in sites from FileZilla, Cyberduck or WinSCP.
+
+            • FileZilla — choose your Site Manager file (sitemanager.xml); the folder \
+            structure you set up is preserved.
+            • Cyberduck — choose your Bookmarks folder.
+            • WinSCP — in WinSCP on Windows, export your configuration to an INI file \
+            (Tools ▸ Export/Backup Configuration), then choose that WinSCP.ini here.
+
+            Ferry shows a checklist so you can pick which connections to add; they land in \
+            a new folder named after the source. Passwords are never imported — you’ll be \
+            asked for them the first time you connect. One caveat: WinSCP private keys are \
+            in PuTTY’s .ppk format, which Ferry can’t read directly. Convert the key to \
+            OpenSSH format and repoint the connection at it.
+            """),
+        HelpTopic(
             title: "Transferring files",
             body: """
             Drag files between the two panes, or use the Upload and Download toolbar \

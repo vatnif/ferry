@@ -62,6 +62,13 @@ struct SidebarView: View {
                 Menu {
                     Button("From SSH Config…") { model.beginSSHConfigImport() }
                         .accessibilityIdentifier("sidebar.importSSHConfig")
+                    Divider()
+                    Button("From FileZilla…") { model.beginFileZillaImport() }
+                        .accessibilityIdentifier("sidebar.importFileZilla")
+                    Button("From Cyberduck…") { model.beginCyberduckImport() }
+                        .accessibilityIdentifier("sidebar.importCyberduck")
+                    Button("From WinSCP…") { model.beginWinSCPImport() }
+                        .accessibilityIdentifier("sidebar.importWinSCP")
                 } label: {
                     Label("Import", systemImage: "square.and.arrow.down")
                 }

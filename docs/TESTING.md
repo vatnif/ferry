@@ -155,6 +155,44 @@ against it.
    external options are absent and the toolbar button is disabled on macOS 14 with the
    "requires macOS 15" explainer.
 
+## M20 checkpoint A additions (Competitor importers — FileZilla/Cyberduck/WinSCP)
+
+New unit coverage (headless, `FerryCoreTests/`):
+- `FileZillaImporterTests`: field + protocol mapping, **folder-hierarchy** capture, anonymous
+  logon → `anonymous`, `<KeyFile>` → public-key auth, **`<Pass>` never surfaced**,
+  unsupported-protocol skipping, defaults, empty/garbage → `[]`.
+- `CyberduckImporterTests`: `.duck`-plist field mapping, protocol filtering (s3/dav skipped),
+  missing-host/garbage → nil, FTP-scheme key ignored, directory parse sorted by name.
+- `WinSCPImporterTests`: session field mapping, `FSProtocol`+`Ftps` → scheme, **percent-decoded
+  folder hierarchy** (incl. escaped `%2F` in a name), `Default Settings` template skipped,
+  **`Password` never surfaced**, host-less session skipped, empty input.
+- `HelpContentTests` (+1): `testTopicsDocumentCompetitorImport` keeps an "Importing connections"
+  topic covering FileZilla/Cyberduck/WinSCP + the `.ppk` caveat.
+
+New integration coverage (against the Docker servers):
+- `FerryIntegrationTests/CompetitorImportIntegrationTests`: a FileZilla fixture (nested folder) →
+  `makeProfile()` → **SFTP connect + list** against :2222; a WinSCP fixture (encoded folder
+  name) → SFTP connect against :2222; a Cyberduck fixture → **FTP connect + list** against :2121.
+  Proves each mapping yields a working profile end-to-end. **No testinfra changes.**
+
+**Not automated — the file-picker + menu launch.** `NSOpenPanel` and the AppKit/SwiftUI menu
+routing aren't headless-drivable (the `FERRY_FILEZILLA_SITEMANAGER` / `FERRY_CYBERDUCK_BOOKMARKS`
+/ `FERRY_WINSCP_INI` env overrides let the tests bypass the panel). Covered by the checklist below.
+
+### M20 checkpoint A manual checklist
+
+1. **FileZilla** — File ▸ Import Connections ▸ From FileZilla… (or the sidebar Import menu),
+   choose a real `sitemanager.xml`. The checklist shows your sites with their folder paths and 🔑
+   badges; Import lands them under "FileZilla Import" with the folder tree rebuilt.
+2. **Cyberduck** — From Cyberduck…, choose your Bookmarks folder
+   (`~/Library/Application Support/Cyberduck/Bookmarks/`); bookmarks import flat.
+3. **WinSCP** — From WinSCP…, choose an exported `WinSCP.ini`; session-name folders are rebuilt.
+4. **Secrets** — none of the imported connections carry a stored password; connecting prompts for
+   it (and a WinSCP `.ppk` key shows but won't load until converted to OpenSSH).
+5. **Nothing found** — pointing at a file with no importable sites shows a neutral notice.
+6. **App Store build** — the Import entries are present and work (reading a chosen file is
+   sandbox-legal), unlike the terminal/editor features.
+
 ## M19 additions (Editor round-trip — 355 kit tests + 17 UI, all green)
 
 New unit coverage (headless):

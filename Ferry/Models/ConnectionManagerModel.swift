@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import FerryCore
 
 /// Main-actor state for the connection manager: owns the in-memory
@@ -35,6 +36,9 @@ final class ConnectionManagerModel {
     var folderPrompt: FolderPrompt?
     /// Non-nil presents the SSH-config import sheet (M11 checkpoint B).
     var sshImport: SSHImportContext?
+    /// Non-nil presents the competitor-import sheet (FileZilla/Cyberduck/WinSCP,
+    /// M20 checkpoint A).
+    var profileImport: ProfileImportContext?
     /// Non-nil presents an error alert.
     var errorMessage: String?
     /// Non-nil presents an informational alert (e.g. stubbed features).
@@ -111,6 +115,15 @@ final class ConnectionManagerModel {
     struct SSHImportContext: Identifiable {
         let id = UUID()
         var hosts: [ImportedSSHHost]
+    }
+
+    /// Backs the competitor-import sheet (M20 checkpoint A): the connections
+    /// parsed from a FileZilla/Cyberduck/WinSCP export, plus a human-readable
+    /// source label used for the sheet title and the destination folder name.
+    struct ProfileImportContext: Identifiable {
+        let id = UUID()
+        var sourceName: String
+        var connections: [ImportedConnection]
     }
 
     /// What a resolved credential opens: the browser session, or a
@@ -336,6 +349,111 @@ final class ConnectionManagerModel {
         }
         return FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".ssh/config")
+    }
+
+    // MARK: Competitor imports (M20 checkpoint A — FileZilla / Cyberduck / WinSCP)
+
+    /// FileZilla Site Manager import. Reads a chosen `sitemanager.xml` (default
+    /// `~/.config/filezilla/sitemanager.xml`); `FERRY_FILEZILLA_SITEMANAGER`
+    /// bypasses the picker for tests.
+    func beginFileZillaImport() {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let fallback = home.appendingPathComponent(".config/filezilla/sitemanager.xml")
+        guard let url = resolveImportURL(env: "FERRY_FILEZILLA_SITEMANAGER",
+                                         defaultURL: fallback,
+                                         chooseDirectory: false,
+                                         allowedExtensions: ["xml"],
+                                         prompt: "Import") else { return }
+        presentImport(FileZillaImporter.parse(contentsOf: url), sourceName: "FileZilla")
+    }
+
+    /// Cyberduck bookmarks import. Reads every `.duck` in a chosen Bookmarks
+    /// folder (default `~/Library/Application Support/Cyberduck/Bookmarks/`);
+    /// `FERRY_CYBERDUCK_BOOKMARKS` bypasses the picker for tests.
+    func beginCyberduckImport() {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let fallback = home.appendingPathComponent("Library/Application Support/Cyberduck/Bookmarks", isDirectory: true)
+        guard let url = resolveImportURL(env: "FERRY_CYBERDUCK_BOOKMARKS",
+                                         defaultURL: fallback,
+                                         chooseDirectory: true,
+                                         allowedExtensions: nil,
+                                         prompt: "Choose") else { return }
+        presentImport(CyberduckImporter.parse(bookmarksDirectory: url), sourceName: "Cyberduck")
+    }
+
+    /// WinSCP import. Reads a chosen exported `WinSCP.ini` (WinSCP is
+    /// Windows-only, so there is no macOS default location);
+    /// `FERRY_WINSCP_INI` bypasses the picker for tests.
+    func beginWinSCPImport() {
+        let fallback = FileManager.default.homeDirectoryForCurrentUser
+        guard let url = resolveImportURL(env: "FERRY_WINSCP_INI",
+                                         defaultURL: fallback,
+                                         chooseDirectory: false,
+                                         allowedExtensions: ["ini"],
+                                         prompt: "Import") else { return }
+        presentImport(WinSCPImporter.parse(contentsOf: url), sourceName: "WinSCP")
+    }
+
+    /// Shows the import checklist, or a notice when nothing importable was found.
+    private func presentImport(_ connections: [ImportedConnection], sourceName: String) {
+        if connections.isEmpty {
+            noticeMessage = "No importable connections were found in the \(sourceName) file."
+        } else {
+            profileImport = ProfileImportContext(sourceName: sourceName, connections: connections)
+        }
+    }
+
+    /// Resolves the source URL: the env override wins (tests); otherwise an
+    /// `NSOpenPanel` lets the user pick the file/folder. Returns nil if cancelled.
+    private func resolveImportURL(env: String, defaultURL: URL, chooseDirectory: Bool,
+                                  allowedExtensions: [String]?, prompt: String) -> URL? {
+        if let override = ProcessInfo.processInfo.environment[env] {
+            return URL(fileURLWithPath: override)
+        }
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = chooseDirectory
+        panel.canChooseFiles = !chooseDirectory
+        panel.allowsMultipleSelection = false
+        panel.prompt = prompt
+        if let allowedExtensions {
+            panel.allowedContentTypes = allowedExtensions.compactMap { UTType(filenameExtension: $0) }
+        }
+        panel.directoryURL = defaultURL
+        return panel.runModal() == .OK ? panel.url : nil
+    }
+
+    /// Imports the chosen connections into a fresh, uniquely-named folder,
+    /// rebuilding each connection's source folder hierarchy as nested subfolders
+    /// (only the folders the selection needs). Secrets are never read from the
+    /// source — passwords/passphrases are prompted on first connect.
+    func importConnections(_ connections: [ImportedConnection], sourceName: String) {
+        guard !connections.isEmpty else { return }
+        let rootName = uniqueFolderName("\(sourceName) Import")
+        let root = ProfileFolder(name: rootName)
+        mutate { library in
+            _ = library.add(.folder(root))
+            // Cache created subfolders by their path so siblings reuse one folder.
+            var foldersByPath: [[String]: UUID] = [[]: root.id]
+            for connection in connections {
+                var path: [String] = []
+                var parent = root.id
+                for component in connection.folderPath {
+                    path.append(component)
+                    if let existing = foldersByPath[path] {
+                        parent = existing
+                    } else {
+                        let sub = ProfileFolder(name: component)
+                        _ = library.add(.folder(sub), toFolder: parent)
+                        foldersByPath[path] = sub.id
+                        parent = sub.id
+                    }
+                }
+                _ = library.add(.profile(connection.makeProfile()), toFolder: parent)
+            }
+        }
+        selectedItemID = root.id
+        let n = connections.count
+        noticeMessage = "Imported \(n) connection\(n == 1 ? "" : "s") from \(sourceName) into “\(rootName)”."
     }
 
     private func uniqueFolderName(_ base: String) -> String {

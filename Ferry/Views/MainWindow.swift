@@ -42,6 +42,11 @@ struct MainWindow: View {
         .sheet(item: $model.sshImport) { context in
             SSHImportSheet(hosts: context.hosts) { model.importSSHHosts($0) }
         }
+        .sheet(item: $model.profileImport) { context in
+            ProfileImportSheet(sourceName: context.sourceName, connections: context.connections) {
+                model.importConnections($0, sourceName: context.sourceName)
+            }
+        }
         .alert("Something went wrong", isPresented: errorPresented) {
             Button("OK", role: .cancel) { model.errorMessage = nil }
         } message: {

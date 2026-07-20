@@ -77,6 +77,19 @@ final class HelpContentTests: XCTestCase {
                       "the Open in Editor shortcut should be listed")
     }
 
+    func testTopicsDocumentCompetitorImport() {
+        // M20 checkpoint A: the FileZilla/Cyberduck/WinSCP importers are
+        // user-facing and must stay documented (the user mandated updating Help
+        // for any new feature), including the WinSCP .ppk-key caveat.
+        let topic = HelpContent.topics.first { $0.title == "Importing connections" }
+        let body = try? XCTUnwrap(topic).body
+        XCTAssertNotNil(topic, "no topic documents importing connections")
+        for source in ["FileZilla", "Cyberduck", "WinSCP"] {
+            XCTAssertTrue(body?.contains(source) ?? false, "import topic omits \(source)")
+        }
+        XCTAssertTrue(body?.contains(".ppk") ?? false, "import topic omits the WinSCP key caveat")
+    }
+
     func testTopicsIncludeResumeExplainer() {
         XCTAssertFalse(HelpContent.topics.isEmpty)
         for topic in HelpContent.topics {

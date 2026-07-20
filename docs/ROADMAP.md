@@ -81,10 +81,13 @@ capability flags **before** cloud backends and checksum/preserve.
   `TransferRequest`; net-new pure `FileWatcher` (`DispatchSource` → coalesced `AsyncStream`,
   atomic-save re-arm) + `EditorDispatch` in FerryCore + an editing-sessions tracker on
   `BrowserSession`. Direct-only (`#if !APPSTORE`, like the external terminal); no new dependency.
-- **M20** Switchers & trust: FileZilla (`sitemanager.xml`) + Cyberduck (bookmark plists)
-  importers mirroring the `SSHConfigParser` → `SSHImportSheet` pattern; secret-free profile
-  **export/import** (the store is already self-contained, schema-versioned JSON); **FTPS
-  self-signed cert TOFU prompt** (acknowledged debt, DOMAIN.md).
+- **M20** Switchers & trust. **Split into 3 checkpoints** (approved 2026-07-20):
+  **A Competitor importers** (FileZilla `sitemanager.xml` + Cyberduck bookmark plists +
+  **WinSCP** `WinSCP.ini`, added at user request — mirroring the `SSHConfigParser` →
+  `SSHImportSheet` pattern via a shared `ImportedConnection`/`ProfileImportSheet`; folder
+  hierarchy preserved; ADR-031) · **B** secret-free profile **export/import** (the store is
+  already self-contained, schema-versioned JSON) · **C FTPS self-signed cert TOFU prompt**
+  (acknowledged debt, DOMAIN.md → FTP/FTPS).
 - **M21** Pane power pack: batch rename (pattern/numbering/find-replace); remote file
   search (`find` via SSH exec fast-path, listing-walk fallback); server-side archive
   compress/extract via exec (SSH-only); remote→Finder drag-out (`NSFilePromiseProvider`,
