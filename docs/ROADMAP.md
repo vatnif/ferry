@@ -65,19 +65,64 @@ Workflow per milestone: implement → unit + integration tests pass → docs upd
 - **M18** Sale readiness: trial + license keys (merchant-of-record comparison → LICENSING.md),
   EULA, website checklist.
 
-## Post-v1 backlog (rough priority)
-0. Multiplexed `SSHSessionManager` (one SSH session shared by SFTP + tunnels + exec) so tunnels
-   ride the browser's session instead of opening their own. (Remote port forwarding, formerly
-   this item, shipped in M14.5 — ADR-022.)
-1. Edit remote file in external editor with auto-upload on save
-2. Jump host / ProxyJump; ssh-agent support (Direct)
-3. Import from FileZilla / Cyberduck
-4. Folder synchronization (one-way mirror, dry-run preview)
-5. Bandwidth limits; checksum verification
-6. ~~Embedded terminal (SwiftTerm)~~ — pulled forward as **M15.5** (2026-07-18, ADR-023)
-7. WebDAV + S3 backends; remote↔remote transfers
-8. Menu-bar quick-upload droplet; `sftp://` URL handler; Shortcuts/AppleScript
-   - Remote→Finder drag-out via `NSFilePromiseProvider` (download-on-drop) — surfaced in
-     M10; local→Finder and Finder→pane already ship.
-9. Expanded help: searchable/contextual (per-screen ? buttons), troubleshooting
-   guides (host keys, firewalls/passive FTP, permissions), localized
+*M17/M18 deferred for now (user decision 2026-07-19) but must ship before any sale; the
+post-v1 phases below are planned and may be built ahead of them.*
+
+## Post-v1 plan (planned 2026-07-19, ADR-029 — supersedes the old rough-priority backlog)
+
+Sequencing rules: multiplexed session **before** ProxyJump (build the jump chain once);
+transfer filters **before** folder sync (sync needs excludes); `FileSystemSource`
+capability flags **before** cloud backends and checksum/preserve.
+
+### Phase G — v1.1 "Workflow" (switcher funnel + daily-driver wins)
+- **M19** Editor round-trip — **done (2026-07-20, ADR-030)**: "Open in Editor" / "Open With ▸"
+  a remote file in an external editor, auto-upload on save (as queue rows). Default editor in
+  Settings ▸ General; `⌘E`. Reused the Quick Look temp-streaming download + a `.restart` upload
+  `TransferRequest`; net-new pure `FileWatcher` (`DispatchSource` → coalesced `AsyncStream`,
+  atomic-save re-arm) + `EditorDispatch` in FerryCore + an editing-sessions tracker on
+  `BrowserSession`. Direct-only (`#if !APPSTORE`, like the external terminal); no new dependency.
+- **M20** Switchers & trust: FileZilla (`sitemanager.xml`) + Cyberduck (bookmark plists)
+  importers mirroring the `SSHConfigParser` → `SSHImportSheet` pattern; secret-free profile
+  **export/import** (the store is already self-contained, schema-versioned JSON); **FTPS
+  self-signed cert TOFU prompt** (acknowledged debt, DOMAIN.md).
+- **M21** Pane power pack: batch rename (pattern/numbering/find-replace); remote file
+  search (`find` via SSH exec fast-path, listing-walk fallback); server-side archive
+  compress/extract via exec (SSH-only); remote→Finder drag-out (`NSFilePromiseProvider`,
+  deferred from M10); terminal-follows-pane toggle (auto-`cd` on pane navigation).
+
+### Phase H — v1.2 "Pro SSH core"
+- **M22** Multiplexed `SSHSessionManager`: one SSH session shared by SFTP + exec + tunnels
+  + terminal, built at the `SSHClientFactory` seam. Must respect the tunnel engine's
+  dedicated event-loop group (ADR-021); graceful fallback to per-consumer sessions.
+  Design ADR required.
+- **M23** Jump hosts & agent: ProxyJump chains (incl. honoring `ProxyJump` on ssh-config
+  import — currently skipped); ssh-agent auth (Direct-only, `#if !APPSTORE`); ECDSA key
+  support (investigate the ADR-017 blocker in Citadel).
+- **M24** Trust & visibility: activity log window (per-connection protocol/transfer log);
+  Touch ID lock for marked profiles (LocalAuthentication).
+
+### Phase I — v1.3 "Sync"
+- **M25** Transfer engine upgrades: `FileSystemSource` capability-flags refactor; transfer
+  filters/rules (glob excludes, e.g. `.DS_Store`); bandwidth throttling + checksum
+  verification (both settings already ship visible-but-disabled); timestamp/permission
+  preservation options.
+- **M26** Folder synchronization: one-way mirror with **dry-run preview** — a two-sided
+  listing diff engine over `list`/`stat`, reusing M25 filters and the existing recursive
+  enumeration + conflict machinery.
+
+### Phase J — v1.4 "Breadth"
+- **M27** WebDAV backend: URLSession-based `FileSystemSource` (no new dependencies).
+- **M28** S3 backend: flat key space with synthesized directories; dependency decision
+  (hand-rolled SigV4 vs Soto, Apache-2.0 — allowed) recorded in LICENSING.md.
+- **M29** Remote↔remote transfers: UI/wiring only — `TransferEngine` already streams
+  between two arbitrary `FileSystemSource`s.
+
+### Phase K — v1.5 "Reach"
+- **M30** Automation: `sftp://` URL handler; Shortcuts/AppleScript surface; menu-bar
+  quick-upload droplet.
+- **M31** Localization & help: String Catalogs groundwork (externalize UI strings);
+  expanded/contextual help (per-screen ? buttons, troubleshooting guides: host keys,
+  firewalls/passive FTP, permissions); localized help follows translations.
+
+*Retired from the old backlog: embedded terminal shipped as M15.5 (ADR-023); remote port
+forwarding shipped as M14.5 (ADR-022).*

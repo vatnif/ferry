@@ -26,10 +26,48 @@
 | M15 | Open in Terminal | done (committed d500ac3) |
 | M15.5 | Embedded terminal (SwiftTerm) | done (A+B d7971a8, C 6410384) |
 | M16 | Tabs & polish | **done** (A ec114e2 · B c6942fb · C 2f3b553) |
-| M17 | Packaging (sign/notarize/DMG/Sparkle) | todo |
-| M18 | Sale readiness | todo |
+| M17 | Packaging (sign/notarize/DMG/Sparkle) | todo (deferred 2026-07-19 — required before sale) |
+| M18 | Sale readiness | todo (deferred 2026-07-19 — required before sale) |
+| M19 | Editor round-trip (Phase G) | **done** (ADR-030, 2026-07-20) |
+| M20–M31 | Post-v1 Phases G–K (v1.1–v1.5) | todo (planned 2026-07-19, ADR-029) |
 
-Backlog (post-v1): see `docs/ROADMAP.md`.
+Post-v1 plan (Phases G–K, M19–M31): see `docs/ROADMAP.md`. Next up per user choice:
+**Phase G / M20 (switchers & trust — FileZilla/Cyberduck importers, profile export/import,
+FTPS self-signed cert TOFU)** — M17/M18 still deferred.
+
+## Current state of the code (M19 — Editor round-trip — done, awaiting review)
+
+- **First Phase G / v1.1 feature (ADR-030).** Right-click a **remote** file → **Open in Editor**
+  (uses the Settings default editor) or **Open With ▸ <app>** (per-file; "Other…" picks any app);
+  `⌘E` opens the selection. Ferry downloads the file to a private temp copy, opens it in the
+  editor, **watches it, and auto-uploads every save back** to the original remote path — surfaced
+  as ordinary transfer-queue rows (the approved *minimal* UI; no active-edits panel). Sessions
+  end on disconnect / tab close (watchers cancelled, temp copies deleted).
+- **No new dependency** — `DispatchSource` + `NSWorkspace` are system frameworks (LICENSING.md /
+  acknowledgements unchanged, confirmed).
+- **Pure FerryCore `Editor/`** (unit-tested): `FileWatcher` (a `DispatchSource` vnode source →
+  coalesced `AsyncStream<Void>`; **debounces a save's event burst into one upload** and **re-arms
+  on the atomic write-then-rename save** most editors use) and `EditorLaunch`
+  (`EditorTarget` + `EditorDispatch.resolve` — default / per-file override / App-Store
+  `.unavailable`, mirroring `TerminalDispatch`). New `AppSettings.Key.defaultEditor`.
+- **App target**: `ExternalEditorLauncher` (`#if !APPSTORE`) — enumerate candidate apps
+  (`NSWorkspace.urlsForApplications`), "Other…" picker, launch via
+  `NSWorkspace.open(_:withApplicationAt:configuration:)`. The **editing-sessions tracker lives on
+  `BrowserSession`** (keyed by remote path; reuses `remote.source.openRead` to stage into a
+  per-session `FerryEdit/<uuid>/<name>` temp dir, and enqueues a `.restart` upload on each watcher
+  emission — the existing `queue.onCompleted` reloads the remote pane). Row context menu gains the
+  two items (accessibility ids `context.openInEditor` / `context.openWith`); `⌘E` command +
+  Settings ▸ General "Editing" default-editor picker. **All Direct-only** — absent in the App
+  Store build (launching apps can't work sandboxed, like the external terminal ADR-024);
+  `EditorDispatch` resolves to `.unavailable` there.
+- **Net-new UI signed off** (rule 3, ADR-030): the menu items + Settings picker are drawn into
+  `docs/design/ferry-mockups.html` and `docs/DESIGN.md`.
+- **Both flavors build** (Direct + AppStore). Tests: **355 kit (+14: EditorLaunch 6, FileWatcher
+  5, EditorRoundTrip integration 2, HelpContent 1) + 17 XCUITests (+1: remote-row menu offers
+  Open in Editor / Open With)**, all green. The real editor launch isn't headless-testable —
+  covered by a TESTING.md manual checklist (the dispatch/watcher/upload pieces are automated).
+  Help updated: an **"Editing remote files"** topic + the `⌘E` shortcut, with a test guard.
+  **Awaiting review — nothing committed.**
 
 ## Current state of the code (M16 checkpoint C — Polish — done, committed 2f3b553)
 
@@ -620,6 +658,14 @@ Backlog (post-v1): see `docs/ROADMAP.md`.
 
 ## Session log
 
+- **2026-07-19 (f)** — **Post-v1 roadmap planned** (ADR-029). M17/M18 deferred by user
+  decision (still required before sale). The rough backlog became five release-themed phases
+  in ROADMAP.md: **G v1.1 Workflow** (M19 editor round-trip · M20 importers/export + FTPS
+  cert trust · M21 pane power pack) · **H v1.2 Pro SSH** (M22 multiplexed `SSHSessionManager`
+  · M23 ProxyJump/ssh-agent/ECDSA · M24 activity log + Touch ID lock) · **I v1.3 Sync**
+  (M25 engine upgrades incl. capability flags · M26 mirror + dry-run) · **J v1.4 Breadth**
+  (M27 WebDAV · M28 S3 · M29 remote↔remote) · **K v1.5 Reach** (M30 automation · M31
+  localization + help). Eight Claude-suggested features accepted into scope. Next: M19.
 - **2026-07-19 (e)** — **Tab-strip layout fix** (ADR-027 addendum). The checkpoint-B strip
   rendered mid-window: its horizontal `ScrollView` greedily split the detail column's height with
   the detail view, centering the chips vertically. `TabStripView` now takes

@@ -11,6 +11,8 @@ struct GeneralSettingsView: View {
     private var appearanceRaw = AppSettings.Default.appearance.rawValue
     @AppStorage(AppSettings.Key.reopenLastConnections)
     private var reopenLastConnections = true
+    @AppStorage(AppSettings.Key.defaultEditor)
+    private var defaultEditor = ""
 
     var body: some View {
         SettingsForm {
@@ -47,6 +49,29 @@ struct GeneralSettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
 
+            #if !APPSTORE
+            // Editor round-trip (M19) — Direct builds only (rule 5): launching
+            // another app can't work in the App Store sandbox, so the picker is
+            // absent there.
+            Section("Editing") {
+                LabeledContent("Default editor") {
+                    HStack(spacing: 8) {
+                        Text(displayEditor)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .foregroundStyle(defaultEditor.isEmpty ? .secondary : .primary)
+                        Button("Choose…") { chooseEditor() }
+                            .accessibilityIdentifier("settings.general.chooseEditor")
+                        if !defaultEditor.isEmpty {
+                            Button("Clear") { defaultEditor = "" }
+                        }
+                    }
+                }
+                Text("Right-click a remote file and choose “Open in Editor” to edit it here; Ferry uploads your changes back on save. Leave as System default to use each file’s usual app.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            #endif
+
             SettingsFootnote()
         }
     }
@@ -68,4 +93,16 @@ struct GeneralSettingsView: View {
             defaultLocalFolder = url.path
         }
     }
+
+    #if !APPSTORE
+    private var displayEditor: String {
+        defaultEditor.isEmpty ? "System default" : FileManager.default.displayName(atPath: defaultEditor)
+    }
+
+    private func chooseEditor() {
+        if let url = ExternalEditorLauncher.chooseEditorApplication() {
+            defaultEditor = url.path
+        }
+    }
+    #endif
 }

@@ -255,6 +255,22 @@ struct FileBrowserPane: View {
         if let item = items.first, items.count == 1 {
             if !item.isDirectory {
                 Button("Quick Look") { quickLook(item) }
+                #if !APPSTORE
+                // Editor round-trip (M19) — Direct builds only (rule 5).
+                Button("Open in Editor") { openInEditor(item) }
+                    .accessibilityIdentifier("context.openInEditor")
+                if pane.kind == .remote {
+                    Menu("Open With") {
+                        ForEach(ExternalEditorLauncher.enumerateEditors(
+                            for: URL(fileURLWithPath: item.name))) { app in
+                            Button(app.name) { openInEditor(item, override: app.url.path) }
+                        }
+                        Divider()
+                        Button("Other…") { openWithOther(item) }
+                    }
+                    .accessibilityIdentifier("context.openWith")
+                }
+                #endif
                 Divider()
             }
             Button(transferVerb) { onDropItems?(items, pane) }
@@ -279,6 +295,25 @@ struct FileBrowserPane: View {
             if let url = await pane.previewURL(for: item) { quickLookURL = url }
         }
     }
+
+    /// Editor round-trip (M19): remote files download to a temp copy that is
+    /// watched + uploaded on save; local files open in place. `override` is a
+    /// per-file "Open With ▸ app" path.
+    private func openInEditor(_ item: FileItem, override: String? = nil) {
+        session.activePaneKind = pane.kind
+        if pane.kind == .remote {
+            session.editRemoteFile(item, override: override)
+        } else {
+            session.editLocalFile(item, override: override)
+        }
+    }
+
+    #if !APPSTORE
+    private func openWithOther(_ item: FileItem) {
+        guard let appURL = ExternalEditorLauncher.chooseEditorApplication() else { return }
+        openInEditor(item, override: appURL.path)
+    }
+    #endif
 
     private func startRename(_ item: FileItem) {
         renameTarget = item

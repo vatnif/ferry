@@ -66,6 +66,17 @@ final class HelpContentTests: XCTestCase {
         XCTAssertTrue(keys.contains(where: { $0.contains("double-click") }))
     }
 
+    func testTopicsIncludeEditorRoundTrip() {
+        // M19: the editor round-trip is a user-facing feature and must stay
+        // documented (the user mandated updating Help for any new feature).
+        let topic = HelpContent.topics.first {
+            $0.body.contains("Open in Editor") || $0.title.contains("Editing")
+        }
+        XCTAssertNotNil(topic, "no topic documents the editor round-trip")
+        XCTAssertTrue(HelpContent.shortcuts.contains { $0.keys == "⌘E" },
+                      "the Open in Editor shortcut should be listed")
+    }
+
     func testTopicsIncludeResumeExplainer() {
         XCTAssertFalse(HelpContent.topics.isEmpty)
         for topic in HelpContent.topics {

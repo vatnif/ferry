@@ -271,7 +271,8 @@ applies changes immediately. Keys, defaults, and typed values are centralized in
 - **General**: *default local folder* (used as the local pane's start folder only when a
   profile doesn't set its own), *appearance* Light/Dark/System (applied app-wide via
   `NSApp.appearance`), *reopen last connections* on launch (restores the connections open at
-  last quit; you're prompted for any non-Keychain credential; skipped under test isolation).
+  last quit; you're prompted for any non-Keychain credential; skipped under test isolation),
+  and the *default editor* for the editor round-trip (Direct only — see below).
 - **Transfers**: simultaneous transfers, interrupted/exists policies, retry count,
   queue-done notification (see Transfers above). Bandwidth limit + checksum are v1.x
   (visible but disabled).
@@ -284,6 +285,33 @@ applies changes immediately. Keys, defaults, and typed values are centralized in
   options are Direct-only.
 - **Advanced**: logging level (off/errors/verbose — never records secrets or terminal bytes,
   rule 6) and an experimental-features flag.
+
+## Editor round-trip (M19, ADR-030, Direct builds only)
+
+Right-click a **remote** file → **Open in Editor** (uses the Settings ▸ General default editor)
+or **Open With ▸ <app>** (a per-file choice; "Other…" picks any app). `⌘E` opens the current
+selection. Ferry then:
+
+- **Downloads** the file to a private per-session temp copy (`<temp>/FerryEdit/<uuid>/<name>` —
+  a unique directory per file so re-saves and same-named files never collide), and launches the
+  chosen editor on it (`NSWorkspace`).
+- **Watches** the temp copy (`FileWatcher`, a `DispatchSource` vnode source). On **every save**
+  it uploads the edited bytes back to the **original** remote path (a `.restart`
+  `TransferRequest` through the normal queue), regardless of where the pane has since navigated.
+  The upload shows as an ordinary queue row and the remote pane refreshes on completion.
+- **Ends** the editing session on disconnect / tab close: watchers are cancelled and the temp
+  copies deleted. Re-opening a file already being edited reuses its session.
+
+A save's burst of filesystem events is **debounced** into a single upload; an **atomic save**
+(write-sibling-then-rename, used by most editors) replaces the watched inode, so the watcher
+re-opens the path and re-arms. **Known limitation**: rapid successive saves each enqueue a
+`.restart` upload — the debounce plus normal save cadence makes overlap rare. A **local** file's
+"Open in Editor" opens it in place (no watcher, no round-trip).
+
+**Direct only (rule 5)**: launching another app can't work in the App Store sandbox (like the
+external terminal, ADR-024), so the menu items, `⌘E`, and the Settings picker are absent in the
+App Store build and `EditorDispatch` resolves to `.unavailable`. The temp directory itself is
+sandbox-safe (`FileManager.temporaryDirectory`, the same path Quick Look uses).
 
 ## Sandbox strategy (both distributions from day one)
 

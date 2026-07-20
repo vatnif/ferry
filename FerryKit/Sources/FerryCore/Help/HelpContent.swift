@@ -48,6 +48,7 @@ public enum HelpContent {
         HelpShortcut(keys: "⌘-double-click", action: "Open the selected connection in a new tab"),
         HelpShortcut(keys: "Double-click", action: "Connect (sidebar) or open a folder (file list)"),
         HelpShortcut(keys: "Space", action: "Quick Look the selected file"),
+        HelpShortcut(keys: "⌘E", action: "Open the selected remote file in your editor"),
         HelpShortcut(keys: "⌘Q", action: "Quit Ferry")
     ]
 
@@ -103,6 +104,21 @@ public enum HelpContent {
             It runs inside Ferry on macOS 15 and later; on earlier systems, or if you \
             prefer, Settings ▸ Terminal can hand off to Terminal.app, iTerm2 or a custom \
             command instead. Pop the terminal out into its own window with the ⧉ button.
+            """),
+        HelpTopic(
+            title: "Editing remote files",
+            body: """
+            Right-click a remote file and choose “Open in Editor” to edit it in your \
+            preferred application, or “Open With” to pick a different app just this once. \
+            Ferry downloads the file to a temporary copy, opens it, and watches it while \
+            you work — every time you save, it uploads the changes back to the server \
+            automatically. Each upload appears as an ordinary item in the transfer queue, \
+            so you can see it complete. Set your preferred editor in Settings ▸ General.
+
+            Editing sessions end when you disconnect or close the tab, and the temporary \
+            copies are cleaned up then. This feature is available in the direct-download \
+            build of Ferry; it isn’t offered in the App Store build, where apps can’t \
+            launch other applications.
             """)
     ]
 }

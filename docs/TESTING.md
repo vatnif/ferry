@@ -155,6 +155,56 @@ against it.
    external options are absent and the toolbar button is disabled on macOS 14 with the
    "requires macOS 15" explainer.
 
+## M19 additions (Editor round-trip — 355 kit tests + 17 UI, all green)
+
+New unit coverage (headless):
+- `FerryCoreTests/EditorLaunchTests` (+6): pins `EditorDispatch.resolve` — default unset ⇒
+  system-default app, default set ⇒ that app, per-file override wins, blank override falls back,
+  whitespace trimmed, and **App Store (`externalAllowed == false`) ⇒ `.unavailable`** regardless
+  of choice.
+- `FerryCoreTests/FileWatcherTests` (+5): the net-new `DispatchSource` watcher against real temp
+  files — a plain in-place save fires once, a **burst coalesces to one** emission, an **atomic
+  (write-then-rename) save re-arms and still fires**, a second atomic save is still seen (re-arm
+  proven), and `cancel()` finishes the stream.
+- `FerryCoreTests/HelpContentTests` (+1): `testTopicsIncludeEditorRoundTrip` keeps the feature
+  documented (an "Editing remote files" topic + the `⌘E` shortcut must exist).
+
+New integration coverage (against the Docker SFTP server :2222):
+- `FerryIntegrationTests/EditorRoundTripIntegrationTests` (+2): drives the exact composition the
+  app-layer tracker glues — seed a remote file, download it to a temp copy (`openRead`), watch it
+  with `FileWatcher`, and on save upload the edited bytes back via `TransferEngine`, then
+  re-download and assert the server got them. One test does an in-place save, one an **atomic**
+  save (proving the round-trip survives the inode swap).
+
+New UI coverage:
+- `FerryUITests` (+1): `testRemoteFileContextMenuOffersOpenInEditor` connects to the SFTP
+  server, right-clicks a remote file, and asserts the **Open in Editor** item + **Open With**
+  submenu exist, then dismisses the menu (Escape). It does **not** click them — actually
+  launching an external editor isn't driveable headlessly (see the manual checklist).
+
+**Not automated — the actual editor launch.** `NSWorkspace` launching a real GUI editor and the
+save→upload loop through a live app can't run headlessly (the `ExternalEditorLauncher` precedent
+matches `ExternalTerminalLauncher`, M15). The dispatch/enumeration logic is unit-tested and the
+watcher→upload mechanism has a real-server integration test; the end-to-end launch is the manual
+checklist below.
+
+### M19 manual checklist (Direct build)
+
+1. **Set a default editor** — Settings ▸ General ▸ Editing ▸ Default editor ▸ Choose… (e.g.
+   BBEdit or VS Code). Confirm the name shows; **Clear** returns it to "System default".
+2. **Open in Editor** — connect to a server, right-click a remote text file ▸ **Open in Editor**.
+   The file opens in the chosen editor. Edit it and **save**: a row appears in the transfer queue
+   and completes; re-download (or reopen) and confirm the server file has your changes.
+3. **Atomic-saving editor** — repeat step 2 with an editor that saves atomically (BBEdit, VS
+   Code, TextEdit): each save must still upload (the watcher re-arms after the rename).
+4. **Open With** — right-click ▸ **Open With ▸ <app>** opens in that app just this once;
+   **Other…** lets you pick any app. **⌘E** opens the selected remote file in the default editor.
+5. **Local file** — "Open in Editor" on a *local* file opens it in place (no queue row).
+6. **Session end** — with a file open for editing, disconnect / close the tab: the temp copy is
+   removed and further saves no longer upload.
+7. **App Store build** — the Open in Editor / Open With items, `⌘E`, and the Settings ▸ General
+   Editing section are all **absent** (sandbox can't launch other apps).
+
 ## M16 checkpoint C additions (Polish — 341 kit tests + 16 UI, all green)
 
 New unit coverage (headless):

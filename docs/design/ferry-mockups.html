@@ -808,9 +808,35 @@
         <label>On launch</label>
         <div class="check"><span class="box on"></span> Reopen the connections that were open last time</div>
         <div class="hint">Reconnects each tab; you're prompted for any credential that isn't saved in the Keychain.</div>
+
+        <div class="divider"></div>
+
+        <label>Editing <span style="font-weight:400;color:var(--faint);font-size:11.5px">— M19, Direct build only</span></label>
+        <div class="row-flex"><input class="in" value="BBEdit" readonly style="width:220px"><button class="tbtn">Choose…</button><button class="tbtn">Clear</button></div>
+        <div class="hint">Right-click a remote file and choose "Open in Editor"; Ferry uploads your changes back on save. Leave as <b>System default</b> to use each file's usual app.</div>
       </div>
     </div>
     <div class="sheet-foot"><div class="flex"></div><span style="font-size:11.5px;color:var(--faint)">Changes apply immediately</span></div>
+  </div></div>
+
+  <!-- ---- Editor round-trip context menu (M19, net-new — signed off 2026-07-20, ADR-030) ---- -->
+  <h3 style="margin:26px 0 6px">Remote file menu — editor round-trip <span style="font-weight:400;color:var(--faint);font-size:13px">— M19, Direct build only (ADR-030)</span></h3>
+  <div class="mock-wrap"><div class="window small mock">
+    <div class="titlebar"><div class="lights"><span class="r"></span><span class="y"></span><span class="g"></span></div><div class="title">Right-click a remote file</div><div class="spacer"></div></div>
+    <div class="settings-body">
+      <div style="border:1px solid var(--line);border-radius:8px;overflow:hidden;max-width:280px;font-size:13px">
+        <div style="padding:6px 12px">Quick Look</div>
+        <div style="padding:6px 12px;background:var(--accent);color:#fff">Open in Editor</div>
+        <div style="padding:6px 12px;display:flex;justify-content:space-between">Open With<span>▸</span></div>
+        <div style="border-top:1px solid var(--line)"></div>
+        <div style="padding:6px 12px">Download</div>
+        <div style="padding:6px 12px">Rename…</div>
+        <div style="padding:6px 12px">Permissions…</div>
+        <div style="border-top:1px solid var(--line)"></div>
+        <div style="padding:6px 12px;color:var(--danger)">Delete…</div>
+      </div>
+      <div class="hint">"Open With ▸" lists the apps that can open the file (via the system) plus "Other…". Local files get a single "Open in Editor" that opens them in place. <b>⌘E</b> opens the selection. Absent in the App Store build (launching apps can't work sandboxed).</div>
+    </div>
   </div></div>
 
   <!-- ---- Keys tab (M16, net-new — sign-off pending) ---- -->

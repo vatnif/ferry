@@ -861,3 +861,78 @@ available" / `noticeMessage`) stay distinct. No secrets are ever interpolated (r
 themes; **no code changes were needed** — the UI already uses semantic/adaptive colors and the
 one fixed-RGB color (the SOCKS pill `#7a5fd0`) matches the mockup CSS, which also pins it in
 both themes. Appearance stays applied via `NSApp.appearance` (ADR-025).
+
+## 2026-07-19 — ADR-029: Post-v1 roadmap — Phases G–K (M19–M31)
+
+**Status: approved 2026-07-19.** With M16 complete, the user deferred Phase F (M17 packaging /
+M18 sale readiness — still mandatory before any sale) and asked to plan the post-v1 backlog
+instead. The old rough-priority backlog in ROADMAP.md is superseded by five release-themed
+phases, G–K (v1.1–v1.5), scoped there; states will be tracked in PROGRESS.md as usual.
+
+**Eight new features accepted** (Claude-proposed, user-approved): remote file search,
+terminal-follows-pane auto-`cd`, server-side archive (compress/extract via exec), activity log
+window, batch rename, secret-free profile export/import, localization groundwork (String
+Catalogs), and Touch ID lock for marked profiles.
+
+**v1.1 theme = "workflow quick wins"** (user choice over pro-SSH-core-first, sync-first, or
+cloud-backends-first): editor round-trip, competitor importers + profile export, FTPS cert
+trust, and pane power features ship first; the multiplexed-session refactor waits for v1.2.
+
+**Sequencing rules** (dependency-driven, from the 2026-07-19 architecture review):
+- **Multiplex before ProxyJump** (M22 → M23): today SFTP/exec/tunnels/terminal each own an
+  independent `SSHClient` built by `SSHClientFactory` — that factory seam is where one shared
+  session (and later a jump chain, built once) slots in. Constraint: the tunnel engine's
+  dedicated single-thread event-loop group (ADR-021) must survive multiplexing.
+- **Transfer filters before folder sync** (M25 → M26): sync needs excludes; the diff engine is
+  net-new (only recursive enumeration + conflict machinery exist today).
+- **`FileSystemSource` capability flags before cloud backends and checksum/preserve** (M25 →
+  M27/M28): the protocol's only feature signal today is throwing `.unsupported`.
+- Remote↔remote (M29) is UI/wiring only — `TransferEngine` already streams between two
+  arbitrary sources.
+
+**Recorded debts slotted in**: FTPS self-signed-cert TOFU prompt (M20, DOMAIN.md), ECDSA keys
+(M23, ADR-017), `ProxyJump` honored on ssh-config import (M23, currently skipped),
+remote→Finder `NSFilePromiseProvider` drag-out (M21, deferred from M10), bandwidth + checksum
+(M25, settings ship visible-but-disabled per DOMAIN.md).
+
+## 2026-07-20 — ADR-030: Editor round-trip (M19)
+
+**Status: approved 2026-07-20** (first Phase G / v1.1 feature). "Open in Editor" a remote file
+in an external editor; Ferry watches the downloaded temp copy and **auto-uploads it back on
+every save**. Reuses existing machinery (Quick Look-style streaming download + a normal upload
+`TransferRequest`); the only net-new mechanism is a `DispatchSource` file watcher. **No new
+dependency** — `DispatchSource` and `NSWorkspace` are system frameworks (LICENSING.md/
+acknowledgements unchanged).
+
+**Editor selection (user decision):** a **default editor** set in Settings ▸ General (an app
+file-URL path; empty ⇒ the system default app for the file's type), an **"Open in Editor"**
+row-menu item that uses it, and an **"Open With ▸"** submenu (installed apps via
+`NSWorkspace.urlsForApplications(toOpen:)` + "Other…") to pick a different app per file.
+Matches Transmit's "Edit" / Cyberduck's editor round-trip. `⌘E` opens the selection.
+
+**Editing UI (user decision): minimal.** Ferry watches silently; each save auto-uploads and
+appears as an ordinary transfer-queue row (`queue.onCompleted` already reloads the remote pane).
+A session ends on disconnect / tab close, when watchers are cancelled and temp copies deleted.
+No active-edits panel.
+
+**Direct-only (rule 5), like the external terminal (ADR-024):** launching another app can't
+work in the App Store sandbox, so the launcher, the menu items, the `⌘E` command and the
+Settings picker are all `#if !APPSTORE`; `EditorDispatch.resolve` returns `.unavailable` when
+`externalAllowed == false`. The App Store build simply doesn't show the feature.
+
+**Layering** mirrors M15's terminal split: a pure, unit-tested decision layer in FerryCore
+(`Editor/EditorLaunch.swift` — `EditorTarget` + `EditorDispatch.resolve`) and a pure watcher
+(`Editor/FileWatcher.swift`, `DispatchSource` → coalesced `AsyncStream`), with the
+non-headless-testable `NSWorkspace` launch in the app target (`ExternalEditorLauncher`). The
+**editing-sessions tracker lives on `BrowserSession`** (it needs the remote source, the queue,
+and must survive pane navigation) keyed by remote path; the upload is `.restart` to the
+**original** remote path regardless of where the pane has since navigated.
+
+**FileWatcher subtleties** (unit-tested): a save's burst of vnode events is **debounced** into
+one upload; an **atomic save** (write-sibling-then-`rename(2)`, used by BBEdit/VS Code/vim)
+replaces the watched inode, so on `.delete`/`.rename` the watcher re-opens the path and re-arms,
+still emitting one change. Known limitation (DOMAIN.md): rapid successive saves each enqueue a
+`.restart` upload; the debounce plus normal save cadence makes overlap rare.
+
+**Net-new UI signed off** (rule 3): the two menu items + the Settings ▸ General "Editing"
+default-editor picker are drawn into `docs/design/ferry-mockups.html` and `docs/DESIGN.md`.

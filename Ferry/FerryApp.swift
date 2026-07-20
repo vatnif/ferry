@@ -20,6 +20,11 @@ struct FerryApp: App {
                     .keyboardShortcut("t", modifiers: .command)
                 Button("Import from SSH Config…") { model.beginSSHConfigImport() }
                     .keyboardShortcut("i", modifiers: [.command, .shift])
+                #if !APPSTORE
+                // Editor round-trip (M19) — Direct builds only (rule 5).
+                Button("Open in Editor") { model.editSelectedFile() }
+                    .keyboardShortcut("e", modifiers: .command)
+                #endif
             }
             // Help ▸ Ferry Help + Acknowledgements… (M16 checkpoint C).
             HelpMenuCommands()

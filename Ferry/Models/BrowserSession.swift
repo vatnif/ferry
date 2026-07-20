@@ -234,6 +234,11 @@ final class BrowserSession {
     /// Round-trip of one stat call at connect time (status bar).
     private(set) var pingMilliseconds: Int?
 
+    /// Files currently open in an external editor (M19 editor round-trip),
+    /// keyed by remote path. Torn down in `disconnect()` (which the tab close
+    /// also calls, ConnectionManagerModel.teardownSession).
+    private var editingSessions: [String: EditingSession] = [:]
+
     var activePane: PaneModel { activePaneKind == .local ? local : remote }
 
     init(profile: ConnectionProfile,
@@ -348,6 +353,7 @@ final class BrowserSession {
     }
 
     func disconnect() async {
+        endAllEditingSessions()
         supervisorTask?.cancel()
         await supervisor?.stop()
         await tunnels?.shutdown()
@@ -610,5 +616,140 @@ final class BrowserSession {
         completedSinceIdle = 0
         guard count > 0, TransferSettingsSnapshot.current.notifyOnFinished else { return }
         QueueNotifier.notifyQueueFinished(completed: count)
+    }
+
+    // MARK: Editor round-trip (M19)
+
+    /// One file open in an external editor: the local temp copy and the watcher
+    /// that re-uploads it on save. Lives only on the main actor (its owner is).
+    private final class EditingSession {
+        let remotePath: String
+        let displayName: String
+        let tempDirectory: URL
+        let tempURL: URL
+        let watcher: FileWatcher
+        var task: Task<Void, Never>?
+
+        init(remotePath: String, displayName: String,
+             tempDirectory: URL, tempURL: URL, watcher: FileWatcher) {
+            self.remotePath = remotePath
+            self.displayName = displayName
+            self.tempDirectory = tempDirectory
+            self.tempURL = tempURL
+            self.watcher = watcher
+        }
+    }
+
+    /// Opens a **remote** file in an external editor and auto-uploads it back on
+    /// every save (DOMAIN.md → Editor round-trip). `override` is a per-file
+    /// "Open With ▸ app" choice (an application file-URL path) or nil for the
+    /// Settings default. Direct builds only — launching another app can't work
+    /// in the App Store sandbox (rule 5).
+    func editRemoteFile(_ item: FileItem, override: String? = nil) {
+        guard !item.isDirectory else { return }
+        #if !APPSTORE
+        let dispatch = EditorLaunchService.dispatch(override: override)
+        guard case .launch(let target) = dispatch else {
+            if case .unavailable(let reason) = dispatch { remote.errorMessage = reason }
+            return
+        }
+        // Already editing this file → just re-open the same temp copy.
+        if let existing = editingSessions[item.path] {
+            Task { await launchEditor(existing.tempURL, target: target, side: remote) }
+            return
+        }
+        Task {
+            guard let staged = await stageForEditing(item) else { return }
+            let watcher = FileWatcher(path: staged.tempURL.path)
+            let session = EditingSession(remotePath: item.path, displayName: item.name,
+                                         tempDirectory: staged.directory,
+                                         tempURL: staged.tempURL, watcher: watcher)
+            editingSessions[item.path] = session
+            // Capture values (not the session) so the consumer task doesn't
+            // retain-cycle it; teardown cancels the watcher + this task.
+            let remotePath = item.path, tempPath = staged.tempURL.path, name = item.name
+            session.task = Task { [weak self] in
+                for await _ in watcher.changes {
+                    guard let self else { break }
+                    self.uploadEdit(remotePath: remotePath, tempPath: tempPath, displayName: name)
+                }
+            }
+            await launchEditor(staged.tempURL, target: target, side: remote)
+        }
+        #else
+        remote.errorMessage = EditorDispatch.appStoreUnavailable
+        #endif
+    }
+
+    /// Opens a **local** file in an external editor, in place — no watcher or
+    /// upload needed (editing a local file changes it directly).
+    func editLocalFile(_ item: FileItem, override: String? = nil) {
+        guard !item.isDirectory else { return }
+        #if !APPSTORE
+        let dispatch = EditorLaunchService.dispatch(override: override)
+        guard case .launch(let target) = dispatch else {
+            if case .unavailable(let reason) = dispatch { local.errorMessage = reason }
+            return
+        }
+        Task { await launchEditor(URL(fileURLWithPath: item.path), target: target, side: local) }
+        #else
+        local.errorMessage = EditorDispatch.appStoreUnavailable
+        #endif
+    }
+
+    /// Streams a remote file into a per-session unique temp directory
+    /// (`FerryEdit/<uuid>/<name>`), so re-saves and same-named files never
+    /// collide (unlike the shared Quick Look temp path). Returns nil on failure
+    /// (surfaced on the remote pane).
+    private func stageForEditing(_ item: FileItem) async -> (directory: URL, tempURL: URL)? {
+        do {
+            let directory = FileManager.default.temporaryDirectory
+                .appendingPathComponent("FerryEdit", isDirectory: true)
+                .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let destination = directory.appendingPathComponent(item.name)
+            FileManager.default.createFile(atPath: destination.path, contents: nil)
+            let handle = try FileHandle(forWritingTo: destination)
+            defer { try? handle.close() }
+            for try await chunk in try await remote.source.openRead(at: item.path, offset: 0) {
+                try handle.write(contentsOf: chunk)
+            }
+            return (directory, destination)
+        } catch {
+            remote.errorMessage = PaneModel.describe(error, path: item.path)
+            return nil
+        }
+    }
+
+    /// Enqueues an upload of the edited temp copy back to the original remote
+    /// path. `.restart` overwrites from byte 0 (the whole edited file); the
+    /// existing `queue.onCompleted` reloads the remote pane.
+    private func uploadEdit(remotePath: String, tempPath: String, displayName: String) {
+        queue.enqueue(TransferRequest(
+            direction: .upload, kind: .file, mode: .restart,
+            source: local.source, sourcePath: tempPath,
+            destination: remote.source, destinationPath: remotePath,
+            displayName: displayName))
+    }
+
+    #if !APPSTORE
+    private func launchEditor(_ fileURL: URL, target: EditorTarget, side: PaneModel) async {
+        do {
+            try await ExternalEditorLauncher.launch(fileURL: fileURL, target: target)
+        } catch {
+            side.errorMessage = "Could not open the editor: \(error.localizedDescription)"
+        }
+    }
+    #endif
+
+    /// Cancels every editing watcher and removes the temp copies. Called from
+    /// `disconnect()` (and thus tab close).
+    private func endAllEditingSessions() {
+        for session in editingSessions.values {
+            session.watcher.cancel()
+            session.task?.cancel()
+            try? FileManager.default.removeItem(at: session.tempDirectory)
+        }
+        editingSessions.removeAll()
     }
 }

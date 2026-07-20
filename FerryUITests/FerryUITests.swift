@@ -779,4 +779,56 @@ final class FerryUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Citadel"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.staticTexts["SwiftTerm"].exists)
     }
+
+    /// M19: a remote file's context menu offers the editor round-trip entries
+    /// ("Open in Editor" + "Open With"). We only assert they exist and dismiss
+    /// the menu — actually clicking would launch an external editor, which isn't
+    /// driveable headlessly (the launch is covered by the TESTING.md checklist).
+    @MainActor
+    func testRemoteFileContextMenuOffersOpenInEditor() throws {
+        try XCTSkipUnless(sftpServerUp, "SFTP test server not running — testinfra/start.sh")
+        let app = launchIsolatedApp()
+
+        app.buttons["sidebar.newConnection"].click()
+        let nameField = app.textFields["editor.name"]
+        XCTAssertTrue(nameField.waitForExistence(timeout: 5))
+        nameField.click(); nameField.typeText("docker-sftp")
+        let hostField = app.textFields["editor.host"]
+        hostField.click(); hostField.typeText("127.0.0.1")
+        let portField = app.textFields["editor.port"]
+        portField.click(); portField.typeKey("a", modifierFlags: .command); portField.typeText("2222")
+        let userField = app.textFields["editor.username"]
+        userField.click(); userField.typeText("ferry")
+        app.buttons["editor.save"].click()
+
+        let connectButton = app.buttons["detail.connect"]
+        XCTAssertTrue(connectButton.waitForExistence(timeout: 5))
+        connectButton.click()
+        let passwordField = app.secureTextFields["passwordPrompt.password"]
+        XCTAssertTrue(passwordField.waitForExistence(timeout: 5))
+        passwordField.click(); passwordField.typeText("ferrypass")
+        app.buttons["passwordPrompt.connect"].click()
+        trustHostKeyIfPrompted(app)
+
+        XCTAssertTrue(app.staticTexts["browser.status.connected"].waitForExistence(timeout: 15))
+
+        // Navigate into fixtures and right-click a file.
+        let fixturesRow = app.staticTexts["fixtures"].firstMatch
+        XCTAssertTrue(fixturesRow.waitForExistence(timeout: 10))
+        fixturesRow.doubleClick()
+        var remoteFile = app.staticTexts["hello.txt"].firstMatch
+        if !remoteFile.waitForExistence(timeout: 8) {
+            app.staticTexts["fixtures"].firstMatch.doubleClick()
+            remoteFile = app.staticTexts["hello.txt"].firstMatch
+            XCTAssertTrue(remoteFile.waitForExistence(timeout: 10))
+        }
+        remoteFile.rightClick()
+
+        XCTAssertTrue(app.menuItems["Open in Editor"].waitForExistence(timeout: 5),
+                      "the remote row menu should offer Open in Editor")
+        XCTAssertTrue(app.menuItems["Open With"].exists,
+                      "the remote row menu should offer an Open With submenu")
+        // Dismiss without launching anything.
+        app.typeKey(.escape, modifierFlags: [])
+    }
 }

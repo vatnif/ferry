@@ -456,6 +456,22 @@ final class ConnectionManagerModel {
         tabs.select(id)
     }
 
+    /// ⌘E — open the file selected in the frontmost tab's active pane in an
+    /// external editor (M19). Remote files round-trip (edit + auto-upload on
+    /// save); local files open in place. No-op without a single-file selection.
+    func editSelectedFile() {
+        guard let session = selectedTab?.session else { return }
+        let pane = session.activePane
+        guard let id = pane.selection.first,
+              let item = pane.items.first(where: { $0.id == id }),
+              !item.isDirectory else { return }
+        if pane.kind == .remote {
+            session.editRemoteFile(item)
+        } else {
+            session.editLocalFile(item)
+        }
+    }
+
     /// The title shown on a tab chip: the connected/connecting profile name,
     /// the bound profile's name when disconnected, else "New Tab".
     func title(for tab: ConnectionTab) -> String {

@@ -43,6 +43,11 @@ public enum AppSettings {
         /// several; today it holds at most one.
         public static let lastOpenConnectionIDs = "lastOpenConnectionIDs"
 
+        // Editor round-trip (M19). The chosen editor application's file-URL
+        // path (e.g. "/Applications/BBEdit.app"); empty ⇒ the system default
+        // app for the file's type. Direct builds only (rule 5).
+        public static let defaultEditor = "defaultEditor"
+
         // Advanced
         public static let loggingLevel = "loggingLevel"
         public static let experimentalFeatures = "experimentalFeatures"

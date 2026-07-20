@@ -25,7 +25,8 @@ tab 7 "Terminal" added in M15.5, approved 2026-07-18, ADR-023).
   double-click connects in the current tab, ⌘-double-click / ＋ / ⌘T open a new tab; the sidebar
   is shared. **Within-folder drag reorder is live (M16)** — drop an item onto a profile row to
   reposition it. Pending: remote→Finder promise drag (backlog). Status bar shows first-listing
-  round-trip instead of continuous latency for now.
+  round-trip instead of continuous latency for now. **The row context menu gained Open in
+  Editor / Open With (M19, Direct only — editor round-trip; see below).**
 - Screen 2 (connection sheet): live since M4; SSH-key + agent auth rows are wired (M11 —
   key auth live; agent reports "planned"); "Test Connection" is a TCP probe until a
   protocol-level test replaces it. The tunnels row (saved-count + Edit…) still opens the
@@ -200,7 +201,26 @@ help item), so — unlike the Settings scene (ADR-025) — they are XCUITest-dri
   obligations (rule 4).
 - **Content is pure + testable.** Both windows only *render* the `HelpContent` and
   `Acknowledgements` value models in FerryCore; unit tests pin list integrity (every notice has
-  a copyright + an allowed license; the shortcut list covers the tab affordances).
+  a copyright + an allowed license; the shortcut list covers the tab affordances). M19 adds an
+  **"Editing remote files"** topic and the `⌘E` shortcut row.
+
+## Editor round-trip (M19 — approved 2026-07-20)
+
+*Net-new UI, not in the M0 mockups → signed off 2026-07-20 (rule 3), ADR-030. Direct builds
+only — launching another app can't work in the App Store sandbox, so these entries are absent
+there (like the external-terminal options).*
+
+- **Row context menu (remote pane)** gains, right after "Quick Look": **Open in Editor** (uses
+  the Settings default editor) and an **Open With ▸** submenu listing the apps that can open the
+  file (via `NSWorkspace`) plus **Other…** (pick any app). On the **local pane** a single **Open
+  in Editor** opens the file in place. `⌘E` (File menu) opens the current selection.
+- **Behavior**: a remote file downloads to a private temp copy, opens in the editor, and every
+  save auto-uploads the changes back — surfaced as an ordinary **transfer-queue row** (the
+  approved *minimal* treatment; no separate active-edits panel). See DOMAIN.md → Editor
+  round-trip.
+- **Settings ▸ General** gains an **"Editing"** section: a **Default editor** row (app name or
+  "System default", with **Choose…** / **Clear**), matching the existing "Default local folder"
+  row's layout. Present only in the Direct build.
 
 ## Conventions
 
