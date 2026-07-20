@@ -29,15 +29,15 @@
 | M17 | Packaging (sign/notarize/DMG/Sparkle) | todo (deferred 2026-07-19 — required before sale) |
 | M18 | Sale readiness | todo (deferred 2026-07-19 — required before sale) |
 | M19 | Editor round-trip (Phase G) | **done** (ADR-030, 2026-07-20) |
-| M20 | Switchers & trust (Phase G) | **in progress** — A committed ea43d51; B committed ccb252b; **C awaiting review** |
+| M20 | Switchers & trust (Phase G) | **done** — A committed ea43d51; B committed ccb252b; C committed 92796ff |
 | M21–M31 | Post-v1 Phases G–K (v1.1–v1.5) | todo (planned 2026-07-19, ADR-029) |
 
 Post-v1 plan (Phases G–K, M19–M31): see `docs/ROADMAP.md`. M20 is **split into 3 checkpoints**
 (approved 2026-07-20): **A** competitor importers (FileZilla/Cyberduck/**WinSCP**) · **B**
-secret-free profile export/import · **C** FTPS self-signed cert TOFU (ADR-033, awaiting review).
-M17/M18 still deferred.
+secret-free profile export/import · **C** FTPS self-signed cert TOFU (ADR-033, committed 92796ff).
+**M20 complete.** M17/M18 still deferred.
 
-## Current state of the code (M20 checkpoint C — FTPS certificate TOFU — awaiting review)
+## Current state of the code (M20 checkpoint C — FTPS certificate TOFU — done, committed 92796ff)
 
 - **Third and final M20 checkpoint** (Phase G / v1.1; ADR-033) — **completes M20**. Pays down the
   M12/ADR-019 debt: an FTPS server whose certificate doesn't chain to a system-trusted root used to
@@ -78,8 +78,8 @@ M17/M18 still deferred.
   path vs :2990 [capture+fingerprint, trust→connect, reconnect pins no re-prompt, changed rejected];
   +1 HelpContent guard) + 17 XCUITests, all green.** No new XCUITest — the trust sheet launches from
   a live FTPS connect (not headless-drivable); TESTING.md manual checklist covers it, the
-  capture/pin/mismatch logic is automated. **No testinfra changes.** **Awaiting review — nothing
-  committed.**
+  capture/pin/mismatch logic is automated. **No testinfra changes. Approved & committed (92796ff)
+  — M20 complete.**
 
 ## Current state of the code (M20 checkpoint B — Profile export/import — done, committed ccb252b)
 
