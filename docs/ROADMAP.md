@@ -87,8 +87,12 @@ capability flags **before** cloud backends and checksum/preserve.
   `SSHImportSheet` pattern via a shared `ImportedConnection`/`ProfileImportSheet`; folder
   hierarchy preserved; ADR-031) · **B** secret-free profile **export/import** (Ferry's own
   format — `ConnectionExport`; per-item + Export All; import into a fresh "Imported" folder,
-  re-id everything; ADR-032) · **C FTPS self-signed cert TOFU prompt** (acknowledged debt,
-  DOMAIN.md → FTP/FTPS).
+  re-id everything; ADR-032) · **C FTPS self-signed cert TOFU prompt** — **done (2026-07-20,
+  ADR-033)**: capture the offered certificate (system libcurl `CURLINFO_CERTINFO`), show its
+  SHA-256, pin it, and re-validate identically on every connect + supervised reconnect
+  (`CURLOPT_PREREQFUNCTION`, before any byte flows). New `CertificateInfo`/
+  `CertificateTrustStore` (analogues of `HostKeyInfo`/`HostKeyStore`) + `CertificatePromptSheet`
+  (📜 TOFU + ⚠️ changed) + Settings ▸ Keys ▸ Trusted certificates. **M20 complete.**
 - **M21** Pane power pack: batch rename (pattern/numbering/find-replace); remote file
   search (`find` via SSH exec fast-path, listing-walk fallback); server-side archive
   compress/extract via exec (SSH-only); remote→Finder drag-out (`NSFilePromiseProvider`,

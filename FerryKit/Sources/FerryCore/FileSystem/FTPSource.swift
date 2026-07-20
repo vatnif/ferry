@@ -31,9 +31,19 @@ public actor FTPSource: FileSystemSource {
         var username: String
         var password: String
         var security: FTPSecurity
-        /// Skip TLS peer/host verification. Off by default (verify against the
-        /// system trust store); tests set it for the self-signed test server.
-        /// A proper certificate-trust prompt is a backlog item (ADR-019).
+        /// A certificate Ferry trusts for this endpoint (the pin) — set once the
+        /// user has accepted a self-signed / private-CA certificate via the cert
+        /// TOFU prompt (ADR-033). When present, TLS is pinned to it by SHA-256 on
+        /// every handle: system verification is off, but a presented certificate
+        /// whose fingerprint differs from this one is rejected *before any data
+        /// flows* (CURLOPT_PREREQFUNCTION). Held in memory, so `reestablish`
+        /// re-applies the identical pin on auto-reconnect — trust can never be
+        /// silently downgraded.
+        var trustedCertificate: CertificateInfo?
+        /// Skip TLS peer/host verification entirely. Off by default; the
+        /// integration tests set it for the self-signed test server. Kept as a
+        /// test hook alongside the real pinning path (ADR-033) — never enabled in
+        /// the app.
         var allowInvalidCertificate: Bool
     }
 
@@ -52,23 +62,33 @@ public actor FTPSource: FileSystemSource {
 
     /// Establishes (really: validates) an FTP session by probing the login with
     /// a `PWD`. Throws `RemoteSourceError.authenticationFailed` on bad
-    /// credentials, `.tlsFailed` when the FTPS handshake fails, and
-    /// `.connectionFailed` otherwise. The returned source reconnects per
-    /// operation, so this is purely an upfront credential/TLS check that also
-    /// warms the home directory.
+    /// credentials, `.tlsFailed` when the FTPS handshake fails for a non-trust
+    /// reason, `.certificateUntrusted` when an FTPS certificate isn't
+    /// system-trusted and isn't pinned (the app shows the cert TOFU prompt),
+    /// `.certificateChanged` when a pinned endpoint offers a different
+    /// certificate, and `.connectionFailed` otherwise. The returned source
+    /// reconnects per operation, so this is purely an upfront credential/TLS
+    /// check that also warms the home directory.
+    /// - Parameter trustedCertificate: the certificate the user has pinned for
+    ///   this endpoint (from the CertificateTrustStore, or a session-only trust
+    ///   decision). Pass nil for first contact; TLS is then verified against the
+    ///   system trust store and an untrusted cert surfaces as
+    ///   `.certificateUntrusted` for the prompt.
     public static func connect(host: String,
                                port: Int,
                                username: String,
                                password: String,
                                security: FTPSecurity,
+                               trustedCertificate: CertificateInfo? = nil,
                                allowInvalidCertificate: Bool = false,
                                displayName: String? = nil) async throws -> FTPSource {
         _ = globalInit
         let parameters = Parameters(host: host, port: port, username: username,
                                     password: password, security: security,
+                                    trustedCertificate: trustedCertificate,
                                     allowInvalidCertificate: allowInvalidCertificate)
         let source = FTPSource(displayName: displayName ?? host, parameters: parameters)
-        _ = try await source.currentDirectory()   // probe: classifies auth/TLS/connect errors
+        try await source.validateConnection()   // probe: classifies auth/TLS/cert/connect errors
         return source
     }
 
@@ -262,7 +282,7 @@ public actor FTPSource: FileSystemSource {
 
     // MARK: - Handle construction
 
-    private func makeHandle(url: String, collecting: Bool) -> CurlEasy {
+    private func makeHandle(url: String, collecting: Bool, capture: Bool = false) -> CurlEasy {
         let easy = CurlEasy()
         easy.setString(CURLOPT_URL, url)
         easy.setLong(CURLOPT_PORT, parameters.port)
@@ -287,10 +307,7 @@ public actor FTPSource: FileSystemSource {
         case .implicit:
             break   // the ftps:// scheme already implies TLS from the first byte
         }
-        if parameters.security != .none, parameters.allowInvalidCertificate {
-            easy.setLong(CURLOPT_SSL_VERIFYPEER, 0)
-            easy.setLong(CURLOPT_SSL_VERIFYHOST, 0)
-        }
+        configureTLSVerification(easy, capture: capture)
         if collecting {
             let box = CollectBox()
             easy.collect = box
@@ -298,6 +315,111 @@ public actor FTPSource: FileSystemSource {
             ferry_set_header_cb(easy.handle, ftpHeaderCollectCallback, box.opaque())
         }
         return easy
+    }
+
+    /// Applies Ferry's certificate policy to a handle (ADR-033). Order matters:
+    /// the `allowInvalidCertificate` test hook wins (verification fully off), then
+    /// a pinned certificate (verification off but pinned by fingerprint via the
+    /// pre-request callback), then capture mode (verification off, cert chain
+    /// collected for the prompt), otherwise the system trust store verifies.
+    private func configureTLSVerification(_ easy: CurlEasy, capture: Bool) {
+        guard parameters.security != .none else { return }
+        if parameters.allowInvalidCertificate {
+            easy.setLong(CURLOPT_SSL_VERIFYPEER, 0)
+            easy.setLong(CURLOPT_SSL_VERIFYHOST, 0)
+        } else if let pinned = parameters.trustedCertificate {
+            easy.setLong(CURLOPT_SSL_VERIFYPEER, 0)
+            easy.setLong(CURLOPT_SSL_VERIFYHOST, 0)
+            easy.setLong(CURLOPT_CERTINFO, 1)
+            let box = PinBox(handle: easy.handle, pinSHA256: pinned.sha256)
+            easy.pin = box
+            ferry_set_prereq_cb(easy.handle, ftpPinPrereqCallback, box.opaque())
+        } else if capture {
+            easy.setLong(CURLOPT_SSL_VERIFYPEER, 0)
+            easy.setLong(CURLOPT_SSL_VERIFYHOST, 0)
+            easy.setLong(CURLOPT_CERTINFO, 1)
+        }
+        // else: default — verify against the system trust store.
+    }
+
+    /// Probes the login with a `PWD` and classifies the outcome into the connect
+    /// error contract, including the two certificate-trust cases (ADR-033).
+    private func validateConnection() async throws {
+        let easy = makeHandle(url: baseURL(), collecting: true)
+        easy.setNoBody()
+        easy.setQuote(["PWD"])
+        let outcome = try await perform(easy)
+        guard outcome.code != curlOK else { return }
+
+        // A pinned endpoint offered a certificate whose fingerprint doesn't match
+        // (the pre-request callback aborted the transfer). Surface the change with
+        // the offered certificate for the "was → now" alarm.
+        if let stored = parameters.trustedCertificate,
+           let offeredFields = easy.pin?.mismatchFields {
+            let offered = CertificateInfo.from(certinfoFields: offeredFields) ?? stored
+            throw RemoteSourceError.certificateChanged(stored: stored, offered: offered)
+        }
+
+        // First contact with an FTPS server whose certificate isn't system-trusted
+        // and isn't pinned: capture it and let the app show the TOFU prompt.
+        if parameters.security != .none,
+           !parameters.allowInvalidCertificate,
+           parameters.trustedCertificate == nil,
+           Self.isCertificateVerificationFailure(outcome.code) {
+            throw RemoteSourceError.certificateUntrusted(try await captureOfferedCertificate())
+        }
+
+        throw Self.mapConnectError(code: outcome.code, responseCode: outcome.responseCode,
+                                   errorText: outcome.errorText)
+    }
+
+    /// Re-probes with verification off + CERTINFO on to read the certificate the
+    /// server offers, so the app can show its fingerprint. Only reached on the
+    /// first-contact error path.
+    private func captureOfferedCertificate() async throws -> CertificateInfo {
+        let easy = makeHandle(url: baseURL(), collecting: true, capture: true)
+        easy.setNoBody()
+        easy.setQuote(["PWD"])
+        let outcome = try await perform(easy)
+        let fields = Self.leafCertinfoFields(handle: easy.handle).lines
+        guard let info = CertificateInfo.from(certinfoFields: fields) else {
+            // Couldn't read a certificate even with verification off — treat as a
+            // generic TLS failure rather than inventing an empty fingerprint.
+            throw Self.mapConnectError(code: outcome.code == curlOK ? CURLE_SSL_CONNECT_ERROR : outcome.code,
+                                       responseCode: outcome.responseCode, errorText: outcome.errorText)
+        }
+        return info
+    }
+
+    /// True for libcurl codes that mean "the certificate did not verify against
+    /// the trust store" (a decision the user can override), as opposed to a
+    /// protocol/cipher TLS failure (which stays `.tlsFailed`).
+    static func isCertificateVerificationFailure(_ code: CURLcode) -> Bool {
+        switch code {
+        case CURLE_PEER_FAILED_VERIFICATION, CURLE_SSL_CACERT,
+             CURLE_SSL_CACERT_BADFILE, CURLE_SSL_ISSUER_ERROR:
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Walks `CURLINFO_CERTINFO` for the leaf certificate: returns its raw
+    /// "Key:Value" field lines (incl. the multi-line `Cert:` PEM) and the decoded
+    /// DER, if any. Safe to call after `perform`, while the handle is idle.
+    static func leafCertinfoFields(handle: UnsafeMutableRawPointer) -> (lines: [String], der: Data?) {
+        var certinfo: UnsafeMutablePointer<curl_certinfo>?
+        guard ferry_getinfo_certinfo(handle, &certinfo) == curlOK,
+              let certinfo, certinfo.pointee.num_of_certs > 0,
+              let slist = certinfo.pointee.certinfo else { return ([], nil) }
+        var lines: [String] = []
+        var node = slist[0]
+        while let current = node {
+            if let data = current.pointee.data { lines.append(String(cString: data)) }
+            node = current.pointee.next
+        }
+        let pem = lines.first(where: { $0.hasPrefix("Cert:") }).map { String($0.dropFirst("Cert:".count)) } ?? ""
+        return (lines, CertificateInfo.derFromPEM(pem))
     }
 
     /// Awaits `curl_easy_perform` on a detached thread, then reads the handle's
@@ -441,6 +563,7 @@ private final class CurlEasy: @unchecked Sendable {
     var collect: CollectBox?
     var download: DownloadBox?
     var upload: FTPUploadHandle?
+    var pin: PinBox?
 
     init() {
         handle = curl_easy_init()
@@ -486,6 +609,31 @@ private final class CurlEasy: @unchecked Sendable {
 }
 
 // MARK: - Callback context boxes
+
+/// Certificate-pinning context for one handle (ADR-033). Holds the pinned
+/// fingerprint and the CURL handle so the pre-request callback can read the
+/// offered certificate chain and compare. On a mismatch it records the offered
+/// certificate's fields so the actor can build the "now" fingerprint for the
+/// changed-certificate alarm. `@unchecked Sendable`: the mismatch slot is guarded
+/// by the lock and the handle is touched only from the one perform thread.
+final class PinBox: @unchecked Sendable {
+    let handle: UnsafeMutableRawPointer
+    /// Lowercase-hex SHA-256 of the pinned certificate's DER.
+    let pinSHA256: String
+    private let lock = NSLock()
+    private var recorded: [String]?
+
+    init(handle: UnsafeMutableRawPointer, pinSHA256: String) {
+        self.handle = handle
+        self.pinSHA256 = pinSHA256
+    }
+
+    /// The offered certificate's fields, set only when a pin mismatch was
+    /// detected (disambiguates a pin-abort from any other aborted transfer).
+    var mismatchFields: [String]? { lock.lock(); defer { lock.unlock() }; return recorded }
+    func recordMismatch(_ fields: [String]) { lock.lock(); recorded = fields; lock.unlock() }
+    func opaque() -> UnsafeMutableRawPointer { Unmanaged.passUnretained(self).toOpaque() }
+}
 
 /// Accumulates a control op's response body and control-channel header lines.
 private final class CollectBox: @unchecked Sendable {
@@ -637,4 +785,22 @@ private let ftpUploadReadCallback: ferry_io_cb = { buffer, size, nitems, userdat
     guard let buffer, let userdata else { return 0 }
     let handle = Unmanaged<FTPUploadHandle>.fromOpaque(userdata).takeUnretainedValue()
     return handle.provide(into: UnsafeMutableRawPointer(buffer), capacity: size * nitems)
+}
+
+/// Pre-request callback for a pinned FTPS connection (ADR-033). Fires after the
+/// TLS handshake + login but before any transfer, with the offered certificate
+/// chain already captured. Compares the presented leaf certificate's SHA-256 to
+/// the pin; on a match the transfer proceeds, on a mismatch (or a missing
+/// certificate) it records the offered fields and aborts — no byte of a
+/// mismatched-certificate transfer is ever read or written, on either the
+/// control or the data channel.
+private let ftpPinPrereqCallback: ferry_prereq_cb = { clientp, _, _, _, _ in
+    guard let clientp else { return ferry_prereqfunc_ok() }
+    let box = Unmanaged<PinBox>.fromOpaque(clientp).takeUnretainedValue()
+    let (lines, der) = FTPSource.leafCertinfoFields(handle: box.handle)
+    if let der, CertificateInfo.sha256Hex(of: der) == box.pinSHA256 {
+        return ferry_prereqfunc_ok()
+    }
+    box.recordMismatch(lines)
+    return ferry_prereqfunc_abort()
 }

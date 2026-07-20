@@ -29,12 +29,57 @@
 | M17 | Packaging (sign/notarize/DMG/Sparkle) | todo (deferred 2026-07-19 — required before sale) |
 | M18 | Sale readiness | todo (deferred 2026-07-19 — required before sale) |
 | M19 | Editor round-trip (Phase G) | **done** (ADR-030, 2026-07-20) |
-| M20 | Switchers & trust (Phase G) | **in progress** — A committed ea43d51; B committed ccb252b; C todo |
+| M20 | Switchers & trust (Phase G) | **in progress** — A committed ea43d51; B committed ccb252b; **C awaiting review** |
 | M21–M31 | Post-v1 Phases G–K (v1.1–v1.5) | todo (planned 2026-07-19, ADR-029) |
 
 Post-v1 plan (Phases G–K, M19–M31): see `docs/ROADMAP.md`. M20 is **split into 3 checkpoints**
 (approved 2026-07-20): **A** competitor importers (FileZilla/Cyberduck/**WinSCP**) · **B**
-secret-free profile export/import · **C** FTPS self-signed cert TOFU. M17/M18 still deferred.
+secret-free profile export/import · **C** FTPS self-signed cert TOFU (ADR-033, awaiting review).
+M17/M18 still deferred.
+
+## Current state of the code (M20 checkpoint C — FTPS certificate TOFU — awaiting review)
+
+- **Third and final M20 checkpoint** (Phase G / v1.1; ADR-033) — **completes M20**. Pays down the
+  M12/ADR-019 debt: an FTPS server whose certificate doesn't chain to a system-trusted root used to
+  dead-end at `.tlsFailed`. Now Ferry does **trust-on-first-use for certificates**, modelled exactly
+  on the SSH host-key TOFU (ADR-016): capture the offered cert, show its fingerprint, trust
+  (remember) or cancel, **pin** it, and re-validate identically on every later connect + supervised
+  reconnect.
+- **Key risk spiked first (retired in the ADR).** System libcurl (8.7.1, **SecureTransport**) on
+  macOS: `CURLINFO_CERTINFO` **is** populated even at `VERIFYPEER=0` (full leaf PEM) → capture; and
+  `CURLOPT_PREREQFUNCTION` fires after TLS+login but **before any transfer**, with certinfo ready →
+  Ferry pins by comparing the presented leaf's DER SHA-256 to the stored pin and aborts on mismatch,
+  on **every** handle (control + data), before a byte flows. No bundled TLS lib, no backend switch.
+- **Pure FerryCore `TLS/`** (unit-tested): **`CertificateInfo`** (subject/issuer/validity + whole-cert
+  **DER SHA-256**, built from the CERTINFO fields; colon-hex display) and **`CertificateTrustStore`**
+  (`FERRY_DATA_DIR`-aware plaintext **JSON**, keyed `host:port`; `trust`/`replace`/`remove`/
+  `trustedCertificate`/`storedInfos`/`contains`/`allTrustedCertificates`) — the analogues of
+  `HostKeyInfo`/`HostKeyStore`, kept as separate types. A cert is public info, never a secret
+  (rule 6) — plaintext store, nothing in the Keychain.
+- **Seam** (`FTPSource` + `CFTP` shim): `connect` gains `trustedCertificate:` (the pin). No pin +
+  untrusted → capture-retry → new `RemoteSourceError.certificateUntrusted`; pinned + mismatch →
+  `RemoteSourceError.certificateChanged(stored:offered:)`. The pin lives in the source's in-memory
+  `Parameters`, so `reestablish()` (ConnectionSupervisor) re-applies it identically — **the
+  security-critical invariant: a supervised reconnect never silently downgrades trust.** Shim gained
+  `ferry_getinfo_certinfo` + `ferry_set_prereq_cb` + the prereq OK/ABORT constants. The
+  `allowInvalidCertificate` test hook is **kept** alongside (never enabled in the app).
+- **App**: `CertificatePrompt` + **`CertificatePromptSheet`** mirror `HostKeyPrompt`/
+  `HostKeyPromptSheet` — 📜 first-contact (subject/issuer/validity + fingerprint, Remember toggle)
+  and ⚠️ changed-cert alarm (Disconnect primary; Replace behind a second confirmation; was→now).
+  Threads a `tabID` (tabbed connections, ADR-027). "Remember off" pins for the session only.
+  Settings ▸ Keys gains a **Trusted certificates** section + `TrustedCertsManagerSheet` (parallel to
+  Manage known hosts).
+- **Net-new UI signed off** (rule 3, ADR-033): the cert prompt (both states) + Settings management
+  section drawn into `docs/design/ferry-mockups.html` + `docs/DESIGN.md`. Help gains FTPS-cert copy
+  (+ a HelpContent guard). **No new dependency** (system libcurl + swift-crypto, already direct).
+- **Both distributions** (rule 5): pure libcurl + a store under `FERRY_DATA_DIR`/the container —
+  sandbox-safe, no `#if APPSTORE` gating. **Both flavors build** (Direct + AppStore). Tests: **417
+  kit (+20: CertificateInfo 5, CertificateTrustStore 10 unit; +4 `FTPSCertTrustTests` real trust
+  path vs :2990 [capture+fingerprint, trust→connect, reconnect pins no re-prompt, changed rejected];
+  +1 HelpContent guard) + 17 XCUITests, all green.** No new XCUITest — the trust sheet launches from
+  a live FTPS connect (not headless-drivable); TESTING.md manual checklist covers it, the
+  capture/pin/mismatch logic is automated. **No testinfra changes.** **Awaiting review — nothing
+  committed.**
 
 ## Current state of the code (M20 checkpoint B — Profile export/import — done, committed ccb252b)
 

@@ -174,6 +174,52 @@ enum TestServers {
                              allowInvalidCertificate: true)
     }
 
+    /// Drives the REAL cert-trust path against :2990 (no `allowInvalidCertificate`
+    /// hook): connects with no pin and returns the certificate the server offers,
+    /// captured via the `.certificateUntrusted` error (ADR-033). Retries a
+    /// transient connection failure while the container settles.
+    static func captureFTPSCertificate() async throws -> CertificateInfo {
+        var lastError: Error?
+        for _ in 0..<5 {
+            do {
+                _ = try await FTPSource.connect(host: host, port: Int(ftpsPort),
+                                                username: username, password: password,
+                                                security: .explicit)
+                throw RemoteSourceError.connectionFailed("expected an untrusted-certificate error")
+            } catch let error as RemoteSourceError {
+                if case .certificateUntrusted(let info) = error { return info }
+                if case .connectionFailed = error {
+                    lastError = error
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                    continue
+                }
+                throw error
+            }
+        }
+        throw lastError ?? RemoteSourceError.connectionFailed("exhausted retries")
+    }
+
+    /// Connects to :2990 pinning `cert` — the real trust path (no
+    /// `allowInvalidCertificate`). Retries a transient connection failure.
+    static func connectFTPS(trusting cert: CertificateInfo) async throws -> FTPSource {
+        var lastError: Error?
+        for _ in 0..<5 {
+            do {
+                return try await FTPSource.connect(host: host, port: Int(ftpsPort),
+                                                   username: username, password: password,
+                                                   security: .explicit, trustedCertificate: cert)
+            } catch let error as RemoteSourceError {
+                if case .connectionFailed = error {
+                    lastError = error
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                    continue
+                }
+                throw error
+            }
+        }
+        throw lastError ?? RemoteSourceError.connectionFailed("exhausted retries")
+    }
+
     static func connectFTP(port: Int, security: FTPSecurity,
                            allowInvalidCertificate: Bool = false,
                            username: String = TestServers.username,

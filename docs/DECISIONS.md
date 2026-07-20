@@ -1037,3 +1037,70 @@ panels, so the feature ships in **both** flavors (no `#if APPSTORE`).
 **Net-new UI signed off** (rule 3): the Export… menu items + **Export All Connections…** + the
 **From Ferry Export…** import entry + the shared checklist sheet are drawn into
 `docs/design/ferry-mockups.html` and `docs/DESIGN.md`.
+
+## 2026-07-20 — ADR-033: FTPS certificate trust-on-first-use (M20 checkpoint C)
+
+**Status: approved 2026-07-20** (third and final M20 checkpoint; completes M20). Pays down the
+M12/ADR-019 debt: an FTPS server whose certificate doesn't chain to a system-trusted root used to
+fail with a dead-end `.tlsFailed`, escapable only by the test-only `allowInvalidCertificate` hook.
+This builds a real trust path, modelled **exactly** on the SSH host-key TOFU (ADR-016): capture the
+offered certificate, show its fingerprint, let the user trust (remember) or cancel, persist the
+decision, and re-validate identically — pinned — on every later connect and auto-reconnect.
+
+**Key technical risk — spiked first (retired).** How to capture the offered certificate + pin it on
+reconnect using the **system libcurl** on macOS (curl 8.7.1, SecureTransport backend). Verified via
+the libcurl C API against the self-signed test server (:2990) with the exact options Ferry uses:
+
+- **Capture** — with `CURLOPT_SSL_VERIFYPEER=0` + `CURLOPT_CERTINFO=1`, `CURLINFO_CERTINFO` **is
+  populated even on the SecureTransport backend** (contrary to older lore), and the leaf entry
+  carries Subject/Issuer/Start date/Expire date **and the full PEM**. So Ferry captures the offered
+  cert, decodes PEM→DER, and computes a stable SHA-256 — no backend switch, no bundled TLS lib.
+- **Enforce before data** — `CURLOPT_PREREQFUNCTION` fires after the TLS handshake + FTP login but
+  **before any transfer**, with `CURLINFO_CERTINFO` already available. Ferry's pre-request callback
+  reads the presented leaf cert's DER SHA-256 and compares it to the pin, returning
+  `CURL_PREREQFUNC_ABORT` on a mismatch. Enforcement is therefore at the library level, on **every**
+  handle (control *and* data channel), before a single byte flows. (`CURLOPT_PINNEDPUBLICKEY` also
+  works on this backend but pins the SPKI, not the whole cert; the whole-cert DER fingerprint was
+  chosen so identity matches what the user sees and a re-issued cert re-prompts — mirroring how SSH
+  fingerprints the whole host key.)
+
+**Fingerprint = whole-cert DER SHA-256** (user decision), shown as uppercase colon-separated hex
+(the openssl/browser convention, e.g. `E1:E5:43:…`). One uniform value is the identity, the display,
+the pin, and the changed-cert discriminator.
+
+**Store** — new `FerryCore/TLS/CertificateTrustStore` (the analogue of `HostKeyStore`, a separate
+type): a `FERRY_DATA_DIR`-aware plaintext **JSON** persister (structured cert fields suit JSON better
+than a `known_hosts` line), keyed `host:port` — one endpoint pins one certificate. API mirrors
+HostKeyStore: `trust`/`replace`/`remove`/`trustedCertificate`/`storedInfos`/`contains`/
+`allTrustedCertificates`. `CertificateInfo` (analogue of `HostKeyInfo`) is a pure value type built
+from the CERTINFO fields; a certificate is public info, never a secret (rule 6), so plaintext is
+correct and nothing touches the Keychain.
+
+**Seam** — `FTPSource.connect` gains `trustedCertificate: CertificateInfo?` (the pin). No pin +
+untrusted cert → capture-retry (verify off + CERTINFO) → new `RemoteSourceError.certificateUntrusted`.
+Pinned + mismatch → `RemoteSourceError.certificateChanged(stored:offered:)`. The pin lives in the
+source's in-memory `Parameters`, so `reestablish()` (ConnectionSupervisor) re-applies it identically
+— **the security-critical invariant: a supervised reconnect never silently downgrades trust.** The
+CFTP shim gained `ferry_getinfo_certinfo`, `ferry_set_prereq_cb`, and the prereq OK/ABORT constants.
+
+**App** — `CertificatePrompt` + `CertificatePromptSheet` mirror `HostKeyPrompt`/`HostKeyPromptSheet`:
+📜 first-contact (subject/issuer/validity + fingerprint, Remember toggle, Trust & Connect) and ⚠️
+changed-cert alarm (Disconnect primary/recommended; Replace behind a second confirmation; was→now
+fingerprints). The prompt threads a `tabID` like the host-key prompt (tabbed connections, ADR-027).
+"Remember off" pins for the session only (threaded into the retry, not persisted). Settings ▸ Keys
+gains a **Trusted certificates** section + `TrustedCertsManagerSheet` (parallel to Manage known
+hosts) to review/forget pins.
+
+**Both distributions** (rule 5): pure libcurl + a plaintext store under `FERRY_DATA_DIR`/the
+container — sandbox-safe, no `#if APPSTORE` gating (unlike terminal/editor, this isn't an
+app-launch feature). **No new dependency** — system libcurl + swift-crypto (already direct deps).
+
+**Net-new UI signed off** (rule 3): the cert prompt (both states) + the Settings management section
+are drawn into `docs/design/ferry-mockups.html` and `docs/DESIGN.md`.
+
+**Tests**: `CertificateInfoTests` (fingerprint vs an openssl golden vector, display formatting) +
+`CertificateTrustStoreTests` (round-trip, first-contact vs changed, per-endpoint scoping, replace/
+remove, corrupt-file recovery); `FTPSCertTrustTests` against :2990 drives the **real** trust path
+(no `allowInvalidCertificate`): first-contact capture + fingerprint, trust→connect+browse, reconnect
+re-pins with no re-prompt, and a mismatched pin is rejected as `.certificateChanged`. HelpContent
+guard for the new user-facing behavior.

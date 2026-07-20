@@ -11,7 +11,9 @@ struct KeysSettingsView: View {
 
     @State private var keys: [SSHKeyTools.KeyEntry] = []
     @State private var trustedHostCount = 0
+    @State private var trustedCertCount = 0
     @State private var showKnownHosts = false
+    @State private var showTrustedCerts = false
     @State private var errorMessage: String?
     #if !APPSTORE
     @State private var showGenerate = false
@@ -72,11 +74,26 @@ struct KeysSettingsView: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
 
+            Section("Trusted certificates") {
+                LabeledContent("Pinned FTPS certificates") {
+                    HStack(spacing: 10) {
+                        Text("\(trustedCertCount)").foregroundStyle(.secondary)
+                        Button("Manage…") { showTrustedCerts = true }
+                            .accessibilityIdentifier("settings.keys.manageCerts")
+                    }
+                }
+                Text("Self-signed or private-CA FTPS certificates you’ve trusted. Ferry pins each one and re-checks it on every connect.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
             SettingsFootnote()
         }
         .onAppear(perform: reload)
         .sheet(isPresented: $showKnownHosts, onDismiss: reload) {
             KnownHostsManagerSheet(store: model.hostKeyStore)
+        }
+        .sheet(isPresented: $showTrustedCerts, onDismiss: reload) {
+            TrustedCertsManagerSheet(store: model.certificateTrustStore)
         }
         #if !APPSTORE
         .sheet(isPresented: $showGenerate, onDismiss: reload) {
@@ -105,6 +122,7 @@ struct KeysSettingsView: View {
     private func reload() {
         keys = SSHKeyTools.listKeys()
         trustedHostCount = (try? model.hostKeyStore.allTrustedHosts().count) ?? 0
+        trustedCertCount = (try? model.certificateTrustStore.allTrustedCertificates().count) ?? 0
     }
 
     private func revealSSHFolder() {

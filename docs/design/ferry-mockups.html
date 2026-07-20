@@ -439,7 +439,7 @@
   <div class="inner">
     <button data-target="s-main" class="active">1 · Main window</button>
     <button data-target="s-conn">2 · Connection sheet</button>
-    <button data-target="s-hostkey">3 · Host key prompt</button>
+    <button data-target="s-hostkey">3 · Host key &amp; cert prompts</button>
     <button data-target="s-tunnels">4 · Tunnel manager</button>
     <button data-target="s-settings">5 · Settings</button>
     <button data-target="s-icon">6 · App icon</button>
@@ -703,12 +703,51 @@
     </div>
   </div></div>
 
+  <h3 style="margin-top:34px">FTPS certificate verification</h3>
+  <p class="sub">The TLS analogue of the host-key prompt (ADR-033). Shown when an FTPS server's certificate isn't signed by an authority the Mac trusts (self-signed / private CA), and — with the alarming styling — when a pinned certificate later changes.</p>
+
+  <div class="mock-wrap"><div class="window dialog mock">
+    <div class="dlg-body">
+      <div class="dlg-icon">📜</div>
+      <div>
+        <h3>Untrusted certificate for "ftp.internal"</h3>
+        <p>This server's TLS certificate is not signed by an authority your Mac trusts (it may be self-signed). Verify the fingerprint below matches the server you trust, then continue.</p>
+        <div class="fingerprint">Subject&nbsp; CN = ftp.internal<br>Issuer&nbsp;&nbsp; CN = Acme Internal CA<br>Valid&nbsp;&nbsp;&nbsp; Jul 17 2026 – Jul 14 2036 GMT<br>SHA-256 · E1:E5:43:02:95:6A:21:38:FB:5C:EE:28:F6:E8:18:37:22:AD:68:61</div>
+        <div class="check"><span class="box on"></span> Remember this certificate (pin it in Ferry)</div>
+      </div>
+    </div>
+    <div class="sheet-foot">
+      <button class="btn danger">Cancel</button>
+      <div class="flex"></div>
+      <button class="btn primary">Trust &amp; Connect</button>
+    </div>
+  </div></div>
+
+  <div style="height:26px"></div>
+
+  <div class="mock-wrap"><div class="window dialog mock">
+    <div class="dlg-body">
+      <div class="dlg-icon">⚠️</div>
+      <div>
+        <h3 style="color:var(--danger)">Certificate has CHANGED for "ftp.internal"</h3>
+        <p>The certificate offered by <b>ftp.internal</b> is different from the one you trusted before. This can mean the certificate was renewed — or that the connection is being intercepted. <b>Do not continue unless you know why it changed.</b></p>
+        <div class="fingerprint">was&nbsp; SHA-256 · E1:E5:43:02:95:6A:21:38:FB:5C:EE:28:F6:E8:18:37<br>now&nbsp; SHA-256 · 7B:2C:AA:19:04:DE:80:C1:33:84:65:F8:46:9B:0A:CE:FE:2F</div>
+      </div>
+    </div>
+    <div class="sheet-foot">
+      <button class="btn primary">Disconnect (Recommended)</button>
+      <div class="flex"></div>
+      <button class="btn danger">Replace Certificate &amp; Connect…</button>
+    </div>
+  </div></div>
+
   <div class="notes">
-    <h3>Review notes — Host key prompts</h3>
+    <h3>Review notes — Trust prompts</h3>
     <ol>
-      <li><b>First contact (top)</b> — standard TOFU flow; "Remember" is on by default; fingerprint is selectable for out-of-band comparison.</li>
-      <li><b>Changed key (bottom)</b> — deliberately alarming; the safe action is the primary button, the dangerous one requires an extra confirmation ("…") and is styled as destructive.</li>
+      <li><b>Host-key first contact (top)</b> — standard TOFU flow; "Remember" is on by default; fingerprint is selectable for out-of-band comparison.</li>
+      <li><b>Changed key / changed certificate</b> — deliberately alarming; the safe action is the primary button, the dangerous one requires an extra confirmation ("…") and is styled as destructive.</li>
       <li>Keys accepted here go to Ferry's own host-key store; we can also <b>read</b> the user's OpenSSH <code>known_hosts</code> to pre-trust hosts (never write to it).</li>
+      <li><b>FTPS certificates</b> follow the identical model: an accepted certificate is <b>pinned</b> by its whole-cert SHA-256 fingerprint and re-checked on every connect and auto-reconnect. Pins live in Ferry's own trust store (never the Keychain — a certificate is public) and are reviewable in Settings ▸ Keys ▸ Trusted certificates. "Remember" off trusts for the session only.</li>
     </ol>
   </div>
 </section>
@@ -894,6 +933,10 @@
         <label>Known hosts</label>
         <div class="row-flex"><span style="font-size:12px">Ferry trusts <b>12</b> host keys</span><button class="tbtn">Manage…</button></div>
         <div class="hint">Ferry's own trust store. Your <b>~/.ssh/known_hosts</b> is also read (never written) so hosts you already know skip the prompt.</div>
+
+        <label>Trusted certificates</label>
+        <div class="row-flex"><span style="font-size:12px">Ferry pins <b>2</b> FTPS certificates</span><button class="tbtn">Manage…</button></div>
+        <div class="hint">Self-signed or private-CA FTPS certificates you've trusted. Ferry pins each one and re-checks it on every connect (ADR-033).</div>
       </div>
     </div>
     <div class="sheet-foot"><div class="flex"></div><span style="font-size:11.5px;color:var(--faint)">Changes apply immediately</span></div>

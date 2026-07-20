@@ -64,6 +64,13 @@ public enum HelpContent {
             The first time you connect to an SSH server, Ferry shows the server’s host-key \
             fingerprint and asks you to trust it (trust on first use). If a known server \
             ever offers a different key, Ferry warns you before continuing.
+
+            FTPS servers work the same way for certificates. If a server’s TLS certificate \
+            isn’t signed by an authority your Mac already trusts — for example a self-signed \
+            or private-CA certificate — Ferry shows its fingerprint and asks you to trust it. \
+            Once trusted, the certificate is pinned: Ferry checks for exactly that certificate \
+            on every later connection and warns you if it ever changes. You can review or \
+            forget trusted certificates in Settings ▸ Keys ▸ Trusted certificates.
             """),
         HelpTopic(
             title: "Importing connections",

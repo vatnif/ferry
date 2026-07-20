@@ -326,6 +326,9 @@ enum TerminalEndClassifier {
             return "The server’s host key isn’t trusted."
         case .tlsFailed(let reason):
             return reason
+        case .certificateUntrusted, .certificateChanged:
+            // FTPS-only errors; an SSH terminal never produces them.
+            return "The server’s TLS certificate isn’t trusted."
         }
     }
 }

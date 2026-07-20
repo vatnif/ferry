@@ -39,6 +39,9 @@ struct MainWindow: View {
         .sheet(item: $model.hostKeyPrompt) { prompt in
             HostKeyPromptSheet(prompt: prompt)
         }
+        .sheet(item: $model.certificatePrompt) { prompt in
+            CertificatePromptSheet(prompt: prompt)
+        }
         .sheet(item: $model.sshImport) { context in
             SSHImportSheet(hosts: context.hosts) { model.importSSHHosts($0) }
         }

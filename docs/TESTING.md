@@ -72,6 +72,15 @@ against it.
   connection failure a few times (vsftpd can briefly drop while the container settles) but
   never retry auth failures.
 
+**M20 checkpoint C — FTPS certificate trust (ADR-033):** the same :2990 self-signed server
+also exercises the **real** trust path (no `allowInvalidCertificate`). `TestServers.
+captureFTPSCertificate()` connects with no pin and returns the offered certificate (via the
+`.certificateUntrusted` error); `connectFTPS(trusting:)` connects pinning a certificate. The
+cert's DER SHA-256 golden value (`e1e543…`, from `openssl x509 -outform der | openssl dgst
+-sha256`) is asserted in both the unit fixture and the integration tests. **No testinfra
+changes** — the existing `ftps` container is reused. If the test cert is ever regenerated,
+update the golden in `CertificateInfoTests` and `FTPSCertTrustTests`.
+
 **M13 SCP setup:**
 - atmoz/sftp (:2222) forces `internal-sftp` (blocks exec) and ships no `scp` binary, so it
   **cannot** serve SCP. A purpose-built exec-capable OpenSSH server is added at
@@ -189,6 +198,30 @@ tests bypass them). Covered by the checklist below.
    connections are untouched (fresh ids). Connecting an imported profile prompts for its password.
 5. **Bad file** — importing a non-Ferry `.json` shows a clear "isn't a Ferry export" error.
 6. **App Store build** — export/import are present and work (save/open panels are sandbox-legal).
+
+### M20 checkpoint C manual checklist (FTPS certificate trust — ADR-033)
+
+The trust prompt + Settings management sheet aren't headless-drivable (the sheets launch from a
+live FTPS connect / the Settings window); the capture/pin/mismatch logic is automated against
+:2990. Verify by hand once against a self-signed FTPS server (the test container works — connect
+Ferry to `ftps://localhost:2990`, user `ferry`/`ferrypass`):
+
+1. **First contact** — connecting shows the 📜 "Untrusted certificate" sheet with Subject/Issuer/
+   validity + a `SHA-256 · …` colon-hex fingerprint. **Trust & Connect** (Remember on) connects and
+   browses.
+2. **Pinned reconnect** — disconnect and reconnect the same profile: it connects **with no prompt**
+   (the pin matched). Toggling keep-alive and killing the connection auto-reconnects silently too.
+3. **Manage** — Settings ▸ Keys ▸ Trusted certificates lists the endpoint + fingerprint; **Forget**
+   it, then reconnect → the first-contact prompt appears again.
+4. **Session-only** — trust with **Remember off**: it connects; after quitting Ferry the endpoint is
+   *not* in the trusted list and re-prompts next launch.
+5. **Changed cert** — regenerate the server cert (or point at a different self-signed server on the
+   same host:port) while pinned: the ⚠️ "Certificate has CHANGED" alarm shows was→now fingerprints;
+   Disconnect is primary; **Replace Certificate & Connect…** requires the second confirmation.
+6. **Public-CA FTPS** — a server whose cert chains to a system-trusted root connects with **no**
+   prompt (verification passes normally).
+7. **App Store build** — the whole flow works (pure libcurl + a store under the container; no
+   `#if APPSTORE` gating).
 
 ## M20 checkpoint A additions (Competitor importers — FileZilla/Cyberduck/WinSCP)
 
@@ -455,6 +488,19 @@ instead (ADR-025).
 - `FerryIntegrationTests/FTPSTests` (Docker FTPS :2990): explicit-TLS connect + home, list,
   multi-chunk download byte-exact over the encrypted data channel, upload↔download round
   trip, wrong-password → `authenticationFailed`.
+- `FerryCoreTests/CertificateInfoTests` (unit, ADR-033): build `CertificateInfo` from
+  `CURLINFO_CERTINFO` field lines (the real :2990 cert as fixture), whole-cert DER SHA-256
+  vs the openssl golden, colon-hex display fingerprint, bare-base64 tolerance, missing-cert
+  → nil.
+- `FerryCoreTests/CertificateTrustStoreTests` (unit, temp JSON file): trust round-trip +
+  reopen, per-endpoint (`host:port`) scoping, case-insensitive host, first-contact vs
+  changed, replace/remove, `allTrustedCertificates` listing, `parseKey` (incl. IPv6),
+  corrupt-file → starts clean.
+- `FerryIntegrationTests/FTPSCertTrustTests` (Docker FTPS :2990, **real** trust path — no
+  `allowInvalidCertificate`): first contact captures the cert + fingerprint matches the
+  golden; trust→connect+browse; reconnect (`reestablish`) re-pins with no re-prompt (the
+  supervised-reconnect invariant); a mismatched pin is rejected as `.certificateChanged`
+  carrying both stored + offered.
 - `FerryUITests/testConnectBrowseAndDownloadAgainstFTPServer`: create an FTP connection
   through the UI (picks the FTP protocol segment), connect via the password prompt (no
   host-key TOFU for FTP), browse into fixtures, download through the queue, disconnect.

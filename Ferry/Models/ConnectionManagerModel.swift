@@ -19,6 +19,9 @@ final class ConnectionManagerModel {
     var keyPassphrasePrompt: KeyPassphrasePrompt?
     /// Non-nil presents the host-key trust dialog (screen 3: TOFU or changed).
     var hostKeyPrompt: HostKeyPrompt?
+    /// Non-nil presents the FTPS certificate trust dialog (cert TOFU or changed,
+    /// ADR-033) — the TLS analog of `hostKeyPrompt`.
+    var certificatePrompt: CertificatePrompt?
     /// The open connection tabs (DESIGN.md screen 1 tab strip, M16 checkpoint B
     /// / ADR-027). Each tab holds its own `ConnectionPhase`; the selected tab
     /// drives the detail column. The window always keeps at least one tab (the
@@ -74,6 +77,9 @@ final class ConnectionManagerModel {
     let vault: CredentialVault
     /// Trust anchor for SSH host keys (TOFU). Same data dir as connections.json.
     let hostKeyStore: HostKeyStore
+    /// Trust anchor for pinned FTPS certificates (cert TOFU, ADR-033). Same data
+    /// dir as connections.json / known_hosts.
+    let certificateTrustStore: CertificateTrustStore
 
     /// The user's OpenSSH `known_hosts`, read as pre-trust so already-known
     /// hosts skip the TOFU prompt (M11 checkpoint B). Re-read at each connect so
@@ -182,6 +188,23 @@ final class ConnectionManagerModel {
         var isChanged: Bool { !stored.isEmpty }
     }
 
+    /// Presents the FTPS certificate-trust dialog (ADR-033) — the TLS analog of
+    /// `HostKeyPrompt`. Carries everything needed to re-drive the FTP connect
+    /// once the user trusts (or replaces) the certificate.
+    struct CertificatePrompt: Identifiable {
+        let id = UUID()
+        var profile: ConnectionProfile
+        /// The certificate the server offered.
+        var offered: CertificateInfo
+        /// The certificate Ferry already pinned for this endpoint. Empty ⇒ first
+        /// contact (TOFU); non-empty ⇒ the certificate has CHANGED.
+        var stored: [CertificateInfo]
+        /// The password to reuse on the retry (FTP is password-only).
+        var password: String
+        var tabID: UUID?
+        var isChanged: Bool { !stored.isEmpty }
+    }
+
     enum ConnectionPhase {
         case idle
         case connecting(profileName: String)
@@ -206,14 +229,18 @@ final class ConnectionManagerModel {
             let base = URL(fileURLWithPath: dir, isDirectory: true)
             store = ConnectionStore(fileURL: base.appendingPathComponent("connections.json"))
             hostKeyStore = HostKeyStore(fileURL: base.appendingPathComponent("known_hosts"))
+            certificateTrustStore = CertificateTrustStore(fileURL: base.appendingPathComponent("trusted_certs.json"))
         } else if let defaultStore = try? ConnectionStore.default(),
-                  let defaultHostKeys = try? HostKeyStore.default() {
+                  let defaultHostKeys = try? HostKeyStore.default(),
+                  let defaultCerts = try? CertificateTrustStore.default() {
             store = defaultStore
             hostKeyStore = defaultHostKeys
+            certificateTrustStore = defaultCerts
         } else {
             let tmp = FileManager.default.temporaryDirectory
             store = ConnectionStore(fileURL: tmp.appendingPathComponent("ferry-fallback-connections.json"))
             hostKeyStore = HostKeyStore(fileURL: tmp.appendingPathComponent("ferry-fallback-known_hosts"))
+            certificateTrustStore = CertificateTrustStore(fileURL: tmp.appendingPathComponent("ferry-fallback-trusted_certs.json"))
         }
         vault = CredentialVault(service: env["FERRY_KEYCHAIN_SERVICE"] ?? CredentialVault.defaultService)
 
@@ -1075,11 +1102,13 @@ final class ConnectionManagerModel {
 
     /// FTP / FTPS connect (M12). Password auth only; TLS posture is derived
     /// from the scheme + port: `.ftps` on 990 is implicit, otherwise explicit
-    /// AUTH TLS (ADR-019). Certificates are verified against the system trust
-    /// store (no self-signed override in the UI yet — a cert-trust prompt is a
-    /// backlog item).
+    /// AUTH TLS (ADR-019). For FTPS, a certificate the user has pinned for this
+    /// endpoint (CertificateTrustStore) is threaded through so the connection is
+    /// verified against it; an untrusted / changed certificate surfaces the cert
+    /// TOFU prompt (ADR-033). `sessionTrustedCert` carries a "don't remember"
+    /// decision so it survives an in-flight retry without being persisted.
     private func startFTPConnection(profile: ConnectionProfile, credential: SSHAuthCredential,
-                                    tab: ConnectionTab) {
+                                    tab: ConnectionTab, sessionTrustedCert: CertificateInfo? = nil) {
         guard case .password(let password) = credential else {
             tab.phase = .idle
             errorMessage = "FTP connections authenticate with a password."
@@ -1090,6 +1119,8 @@ final class ConnectionManagerModel {
         case .ftps: security = profile.port == 990 ? .implicit : .explicit
         default: security = .none
         }
+        let pinned = sessionTrustedCert
+            ?? (try? certificateTrustStore.trustedCertificate(host: profile.host, port: profile.port))
         Task {
             do {
                 let ftp = try await FTPSource.connect(host: profile.host,
@@ -1097,12 +1128,13 @@ final class ConnectionManagerModel {
                                                       username: profile.username,
                                                       password: password,
                                                       security: security,
+                                                      trustedCertificate: pinned,
                                                       displayName: profile.name)
                 let session = BrowserSession(profile: profile, remote: ftp, bookmarks: nil)
                 await session.start()
                 finishConnect(session, into: tab)
             } catch let error as RemoteSourceError {
-                handleFTPConnectError(error, profile: profile, tab: tab)
+                handleFTPConnectError(error, profile: profile, password: password, tab: tab)
             } catch {
                 tab.phase = .idle
                 errorMessage = "Could not connect: \(error.localizedDescription)"
@@ -1111,18 +1143,73 @@ final class ConnectionManagerModel {
     }
 
     private func handleFTPConnectError(_ error: RemoteSourceError, profile: ConnectionProfile,
-                                       tab: ConnectionTab) {
-        tab.phase = .idle
+                                       password: String, tab: ConnectionTab) {
         switch error {
-        case .authenticationFailed:
-            errorMessage = "The server rejected the login for \(profile.username)@\(profile.host). Check the username and password."
-        case .connectionFailed(let detail):
-            errorMessage = "Could not connect to \(profile.host):\(String(profile.port)) — \(detail)"
-        case .tlsFailed(let detail):
-            errorMessage = "The secure (TLS) connection to \(profile.host) failed: \(detail). The server’s certificate may be untrusted, or the TLS mode (implicit vs. explicit) may not match the port."
-        case .hostKeyUnknown, .hostKeyChanged:
-            errorMessage = "Unexpected host-key error on an FTP connection."
+        case .certificateUntrusted(let offered):
+            // Tab returns to idle behind the sheet (mirrors the host-key flow);
+            // the retry re-enters `.connecting`. A cancelled sheet leaves it idle.
+            tab.phase = .idle
+            certificatePrompt = CertificatePrompt(profile: profile, offered: offered,
+                                                  stored: [], password: password, tabID: tab.id)
+        case .certificateChanged(let stored, let offered):
+            tab.phase = .idle
+            certificatePrompt = CertificatePrompt(profile: profile, offered: offered,
+                                                  stored: [stored], password: password, tabID: tab.id)
+        default:
+            tab.phase = .idle
+            switch error {
+            case .authenticationFailed:
+                errorMessage = "The server rejected the login for \(profile.username)@\(profile.host). Check the username and password."
+            case .connectionFailed(let detail):
+                errorMessage = "Could not connect to \(profile.host):\(String(profile.port)) — \(detail)"
+            case .tlsFailed(let detail):
+                errorMessage = "The secure (TLS) connection to \(profile.host) failed: \(detail). The TLS mode (implicit vs. explicit) may not match the port."
+            case .hostKeyUnknown, .hostKeyChanged:
+                errorMessage = "Unexpected host-key error on an FTP connection."
+            case .certificateUntrusted, .certificateChanged:
+                break   // handled above
+            }
         }
+    }
+
+    /// The user approved an FTPS certificate (cert TOFU) — pin it (when
+    /// `remember`) and retry, mirroring `trustHostKeyAndConnect`. A "don't
+    /// remember" decision trusts the certificate for this session only: it is
+    /// threaded into the retry (so an in-session reconnect honours it) but not
+    /// persisted.
+    func trustCertificateAndConnect(_ prompt: CertificatePrompt, remember: Bool) {
+        guard let tab = tab(withID: prompt.tabID) else { return }
+        if remember {
+            do {
+                try certificateTrustStore.trust(prompt.offered, host: prompt.profile.host, port: prompt.profile.port)
+            } catch {
+                errorMessage = "Could not save the certificate: \(error.localizedDescription)"
+                tab.phase = .idle
+                return
+            }
+            tab.phase = .connecting(profileName: prompt.profile.name)
+            startFTPConnection(profile: prompt.profile, credential: .password(prompt.password), tab: tab)
+        } else {
+            tab.phase = .connecting(profileName: prompt.profile.name)
+            startFTPConnection(profile: prompt.profile, credential: .password(prompt.password),
+                               tab: tab, sessionTrustedCert: prompt.offered)
+        }
+    }
+
+    /// The user chose to replace a CHANGED FTPS certificate (second confirmation
+    /// already given by the UI) — repin and retry, mirroring
+    /// `replaceHostKeyAndConnect`.
+    func replaceCertificateAndConnect(_ prompt: CertificatePrompt) {
+        guard let tab = tab(withID: prompt.tabID) else { return }
+        do {
+            try certificateTrustStore.replace(with: prompt.offered, host: prompt.profile.host, port: prompt.profile.port)
+        } catch {
+            errorMessage = "Could not update the certificate: \(error.localizedDescription)"
+            tab.phase = .idle
+            return
+        }
+        tab.phase = .connecting(profileName: prompt.profile.name)
+        startFTPConnection(profile: prompt.profile, credential: .password(prompt.password), tab: tab)
     }
 
     private func handleConnectError(_ error: RemoteSourceError,
@@ -1148,6 +1235,10 @@ final class ConnectionManagerModel {
         case .tlsFailed(let detail):
             // TLS is an FTPS concern; an SSH connect shouldn't produce it.
             errorMessage = "Unexpected TLS error connecting to \(profile.host): \(detail)"
+        case .certificateUntrusted, .certificateChanged:
+            // Certificate trust is an FTPS concern (handled in
+            // handleFTPConnectError); an SSH connect should never produce it.
+            errorMessage = "Unexpected certificate error on an SSH connection to \(profile.host)."
         }
     }
 

@@ -24,10 +24,22 @@ public enum RemoteSourceError: Error, Equatable {
     /// trusts for this endpoint — a possible MITM. The app shows the changed-key
     /// alarm; there is no silent-accept path.
     case hostKeyChanged(stored: [HostKeyInfo], offered: HostKeyInfo)
-    /// The TLS handshake failed — bad/expired/untrusted certificate, or a
-    /// protocol/version mismatch (FTPS, M12). The associated text is a
-    /// human-readable reason for the error alert.
+    /// The TLS handshake failed — a protocol/version mismatch, cipher problem,
+    /// or other non-trust TLS error (FTPS, M12). The associated text is a
+    /// human-readable reason for the error alert. A certificate the user could
+    /// choose to trust surfaces as `.certificateUntrusted` instead.
     case tlsFailed(String)
+    /// First contact: the FTPS server offered a certificate that does not chain
+    /// to a system-trusted root and Ferry has never trusted for this endpoint.
+    /// The app shows the cert TOFU prompt, and on approval pins the certificate
+    /// and retries — DOMAIN.md → FTP/FTPS, ADR-033. The analog of
+    /// `.hostKeyUnknown`.
+    case certificateUntrusted(CertificateInfo)
+    /// The FTPS server offered a certificate that differs from the one Ferry has
+    /// pinned for this endpoint — a possible MITM, or a legitimately rotated
+    /// certificate. The app shows the changed-certificate alarm; there is no
+    /// silent-accept path. The analog of `.hostKeyChanged`.
+    case certificateChanged(stored: CertificateInfo, offered: CertificateInfo)
 }
 
 /// FileSystemSource over SFTP via Citadel (ADR-011). Read side since M6,

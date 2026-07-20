@@ -43,10 +43,12 @@ tab 7 "Terminal" added in M15.5, approved 2026-07-18, ADR-023).
   picker UI** (mockup tab 7 — the setting is storage-only for now, changeable via
   `defaults write`) and the scrollback-lines setting (SwiftTerm recomputes its options
   on resize, needs care).
-- Screen 3 (host keys): **live (M11)** — TOFU first-contact prompt (🔑, selectable
-  fingerprint box, "Remember this key" default-on) and the changed-key alarm (⚠️,
-  Disconnect primary, Replace gated behind a second confirmation). Plus the connect-time
-  key-passphrase prompt for encrypted keys. Pending in this screen: `~/.ssh/config` Import…
+- Screen 3 (host keys & certs): **live (M11; FTPS certs M20 checkpoint C)** — TOFU
+  first-contact prompt (🔑, selectable fingerprint box, "Remember this key" default-on) and
+  the changed-key alarm (⚠️, Disconnect primary, Replace gated behind a second confirmation).
+  Plus the connect-time key-passphrase prompt for encrypted keys. The FTPS certificate
+  prompts (📜 untrusted-cert TOFU + ⚠️ changed-cert alarm) mirror the host-key pair exactly
+  (ADR-033, signed off 2026-07-20). Pending in this screen: `~/.ssh/config` Import…
   and `~/.ssh/known_hosts` pre-trust (M11 checkpoint B). Screen 4 (tunnels): live (M14).
   Screen 5 (settings): **live (M16 checkpoint A)** — the Settings window with all five tabs
   (General · Transfers · Keys · Terminal · Advanced). General/Keys/Advanced are net-new UI
@@ -124,6 +126,16 @@ needed) · Cancel · Save (accent).
   warning. Buttons: **Disconnect (Recommended)** = primary; "Replace Key & Connect…" =
   destructive + requires second confirmation.
 
+FTPS certificate dialogs (ADR-033) — the TLS analogue, identical structure:
+- **Untrusted certificate (TOFU)**: 📜, "Untrusted certificate for X", explainer, detail
+  box (Subject / Issuer / Valid range + `SHA-256 · E1:E5:…` colon-hex fingerprint,
+  selectable), "Remember this certificate" default-on. Buttons: Cancel (destructive-styled)
+  ←→ **Trust & Connect** (primary).
+- **Changed certificate**: ⚠️, red title "Certificate has CHANGED", was/now fingerprints,
+  MITM warning. Buttons: **Disconnect (Recommended)** = primary; "Replace Certificate &
+  Connect…" = destructive + requires second confirmation. Pins live in Ferry's own trust
+  store (never the Keychain); reviewable in Settings ▸ Keys ▸ Trusted certificates.
+
 ## Screen 4 — Tunnel manager
 
 Per-connection window: table Active (toggle) / Type pill (LOCAL accent · REMOTE amber ·
@@ -145,7 +157,8 @@ Advanced** were only sketched in the M0 review notes — they were drawn into
 `ferry-mockups.html` screen 5 as M16 proposals and signed off 2026-07-19 (rule 3):
 General (default local folder · Light/Dark/System appearance · reopen-last-connections);
 Keys (SSH key list · Generate/Import [Direct only] · ssh-agent disabled/"planned" · manage
-Ferry's known hosts); Advanced (logging level + reveal · experimental-features flag). The
+Ferry's known hosts · **manage trusted FTPS certificates** [ADR-033, added M20 checkpoint C,
+signed off 2026-07-20]); Advanced (logging level + reveal · experimental-features flag). The
 **Terminal** tab renders the already-approved tab 7 over M15's storage plus built-in font +
 scrollback. Bandwidth + checksum ship **visible-but-disabled** ("v1.x") rather than hidden.
 

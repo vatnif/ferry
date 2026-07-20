@@ -139,9 +139,27 @@ this document, not the other way round.*
   servers without it report the command unsupported). No host-key trust (that's SSH-only).
 - **TLS modes**: plain FTP, **explicit FTPS** (`AUTH TLS`, the default for the `ftps`
   scheme on any port but 990), and **implicit FTPS** (`ftps://`, assumed on port 990).
-  Certificates are verified against the system trust store. A self-signed / private-CA
-  server currently fails with a clear TLS error — a certificate-trust prompt (the analogue
-  of host-key TOFU) is a post-v1 backlog item.
+  Certificates are verified against the system trust store; a certificate that chains to a
+  trusted root connects with no prompt.
+- **Certificate trust-on-first-use** (M20 checkpoint C, ADR-033) — the TLS analogue of
+  host-key TOFU, and the exact same trust model. When an FTPS server's certificate does
+  **not** chain to a system-trusted root (self-signed or private-CA), the connect surfaces
+  the offered certificate (subject/issuer/validity + its **SHA-256 fingerprint over the
+  DER**) and the app shows a trust prompt. On acceptance the certificate is **pinned** in
+  Ferry's `CertificateTrustStore` (plaintext JSON at `…/Ferry/trusted_certs.json`, keyed
+  `host:port` — a certificate is public information, never a secret, so it is not in the
+  Keychain). Every later connection to that endpoint is verified against the pin by
+  fingerprint (system verification stays off, but a differing certificate is rejected
+  **before any byte flows**, on both the control and data channels, via libcurl's
+  pre-request hook). A certificate that no longer matches the pin raises a **changed-
+  certificate alarm** (safe action — Disconnect — is primary; Replace is gated behind a
+  second confirmation), exactly like the changed-host-key alarm. The pin is held in the
+  connection's parameters, so `reestablish()` (the ConnectionSupervisor auto-reconnect path)
+  re-applies the identical pin — a supervised reconnect can never silently downgrade trust.
+  "Trust for this session only" (Remember off) pins for the live session without persisting.
+  Trusted certificates are reviewable/removable in Settings ▸ Keys ▸ Trusted certificates.
+  (`allowInvalidCertificate` remains as a test-only hook that skips verification entirely;
+  it is never enabled in the app.)
 - **Resume**: downloads `REST` from the `.ferrypart` size; uploads `APPE` from the remote
   size (FTP can't truncate, so upload resume requires the remote size to equal the offset).
 

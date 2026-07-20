@@ -99,6 +99,17 @@ final class HelpContentTests: XCTestCase {
         XCTAssertTrue(body.lowercased().contains("no password"), "must state exports carry no passwords")
     }
 
+    func testTopicsDocumentCertificateTrust() {
+        // M20 checkpoint C: FTPS certificate trust-on-first-use is user-facing
+        // and must stay documented (the user mandated updating Help for any new
+        // feature).
+        let body = HelpContent.topics.first { $0.title == "Getting connected" }?.body ?? ""
+        XCTAssertTrue(body.lowercased().contains("certificate"),
+                      "the connect topic omits FTPS certificate trust")
+        XCTAssertTrue(body.lowercased().contains("pinned") || body.lowercased().contains("pin"),
+                      "the connect topic should explain that a trusted certificate is pinned")
+    }
+
     func testTopicsIncludeResumeExplainer() {
         XCTAssertFalse(HelpContent.topics.isEmpty)
         for topic in HelpContent.topics {
