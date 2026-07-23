@@ -95,6 +95,16 @@ final class HostKeyStoreTests: XCTestCase {
         XCTAssertTrue(try store.contains(host: "b.com", port: 22))
     }
 
+    func testReadsCRLFFile() throws {
+        // Ferry writes LF, but the file is user-editable — a Windows-touched
+        // copy has CRLF, which Swift folds into one Character; a split on "\n"
+        // would see it as a single line and trust nothing.
+        let line = "example.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINPThizqWf0Z6Lvo9v8G5cPHYG667J3hD7XRkVP/e4k/"
+        try Data("\(line)\r\n".utf8).write(to: fileURL)
+        XCTAssertTrue(try store.contains(host: "example.com", port: 22))
+        XCTAssertEqual(try store.trustedKeys(host: "example.com", port: 22).count, 1)
+    }
+
     func testNonDefaultPortUsesBracketSpec() throws {
         try store.trust(keyA, host: "example.com", port: 2222)
         let text = try String(contentsOf: fileURL, encoding: .utf8)

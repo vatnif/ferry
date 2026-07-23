@@ -109,6 +109,16 @@ final class SSHConfigParserTests: XCTestCase {
         XCTAssertEqual(hosts.first?.hostName, "web.example.com")
     }
 
+    func testParsesCRLFLineEndings() {
+        // Swift folds "\r\n" into one Character; a split on "\n" would see a
+        // Windows-copied config as a single line and import nothing.
+        let text = "Host prod-web\r\n    HostName web.example.com\r\n    Port 2222\r\n\r\nHost second\r\n"
+        let hosts = SSHConfigParser.parse(text)
+        XCTAssertEqual(hosts.map(\.alias), ["prod-web", "second"])
+        XCTAssertEqual(hosts[0].hostName, "web.example.com")
+        XCTAssertEqual(hosts[0].port, 2222)
+    }
+
     func testEmptyConfigYieldsNothing() {
         XCTAssertTrue(SSHConfigParser.parse("").isEmpty)
         XCTAssertTrue(SSHConfigParser.parse("# just a comment\n").isEmpty)

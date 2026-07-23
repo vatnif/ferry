@@ -24,7 +24,9 @@ public struct KnownHostsFile: Sendable {
     /// a hand-edited file with one bad line still pre-trusts everything else.
     public init(text: String) {
         entries = text
-            .split(separator: "\n", omittingEmptySubsequences: false)
+            // \.isNewline, not "\n": Swift folds CRLF into one Character, so a
+            // Windows-copied known_hosts would otherwise parse as a single line.
+            .split(omittingEmptySubsequences: false, whereSeparator: \.isNewline)
             .compactMap { Entry(rawLine: String($0)) }
     }
 

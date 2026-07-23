@@ -133,7 +133,9 @@ public struct HostKeyStore: Sendable {
 
     private func existingLines() throws -> [String] {
         guard let text = try? String(contentsOf: fileURL, encoding: .utf8) else { return [] }
-        return text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        // \.isNewline, not "\n": Swift folds CRLF into one Character, so a
+        // Windows-edited file would otherwise parse as a single line.
+        return text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline).map(String.init)
     }
 
     private func entries() throws -> [Entry] {

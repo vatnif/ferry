@@ -47,6 +47,17 @@ final class SSHKeyLoaderTests: XCTestCase {
         }
     }
 
+    func testCRLFKeyLoads() throws {
+        // A key copied through Windows (e.g. exported next to a WinSCP setup)
+        // arrives with CRLF endings. Swift folds "\r\n" into one Character, so
+        // a split on "\n" would leave the PEM as one line and fail to decode.
+        let pem = try Self.generateKey(type: "ed25519", passphrase: "")
+        let crlf = Data(String(decoding: pem, as: UTF8.self)
+            .replacingOccurrences(of: "\n", with: "\r\n").utf8)
+        XCTAssertFalse(try SSHKeyLoader.isEncrypted(pem: crlf))
+        XCTAssertNoThrow(try SSHKeyLoader.authenticationMethod(username: "ferry", pem: crlf, passphrase: nil))
+    }
+
     func testGarbageIsRejected() {
         let pem = Data("not a key".utf8)
         XCTAssertThrowsError(try SSHKeyLoader.authenticationMethod(

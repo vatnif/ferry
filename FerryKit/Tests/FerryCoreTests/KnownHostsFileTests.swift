@@ -73,6 +73,15 @@ final class KnownHostsFileTests: XCTestCase {
         XCTAssertEqual(file.storedInfos(host: "example.com", port: 22).count, 1)
     }
 
+    func testParsesCRLFLineEndings() {
+        // Swift folds "\r\n" into one Character; a split on "\n" would see a
+        // Windows-copied known_hosts as a single line and pre-trust nothing.
+        let file = KnownHostsFile(text: "example.com \(key)\r\nother.com \(key)\r\n")
+        XCTAssertTrue(file.contains(host: "example.com", port: 22))
+        XCTAssertTrue(file.contains(host: "other.com", port: 22))
+        XCTAssertEqual(file.storedInfos(host: "example.com", port: 22).first?.sha256, sha256)
+    }
+
     func testEmptyAndUnparseableInputYieldEmptyFile() {
         XCTAssertTrue(KnownHostsFile(text: "").isEmpty)
         XCTAssertTrue(KnownHostsFile(text: "\n#only a comment\n   \n").isEmpty)

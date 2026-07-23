@@ -28,9 +28,7 @@ enum SSHKeyLoader {
     static func authenticationMethod(username: String,
                                      pem: Data,
                                      passphrase: String?) throws -> SSHAuthenticationMethod {
-        guard let text = String(data: pem, encoding: .utf8) else {
-            throw SSHKeyLoadError.malformed(reason: "not UTF-8 text")
-        }
+        let text = try normalizedText(from: pem)
         let header = try parseHeader(pem: pem, text: text)
         let decryptionKey = passphrase.flatMap { $0.data(using: .utf8) }
 
@@ -64,10 +62,18 @@ enum SSHKeyLoader {
     /// True if the key is encrypted (would need a passphrase). Lets the app
     /// decide whether to prompt before attempting a load.
     static func isEncrypted(pem: Data) throws -> Bool {
+        try parseHeader(pem: pem, text: normalizedText(from: pem)).isEncrypted
+    }
+
+    /// Decodes the key bytes and normalizes CRLF/CR to LF: a key copied
+    /// through Windows arrives with CRLF, and Citadel's OpenSSH boundary
+    /// check accepts only LF (`invalidOpenSSHBoundary` otherwise).
+    private static func normalizedText(from pem: Data) throws -> String {
         guard let text = String(data: pem, encoding: .utf8) else {
             throw SSHKeyLoadError.malformed(reason: "not UTF-8 text")
         }
-        return try parseHeader(pem: pem, text: text).isEncrypted
+        return text.replacingOccurrences(of: "\r\n", with: "\n")
+                   .replacingOccurrences(of: "\r", with: "\n")
     }
 
     // MARK: OpenSSH envelope parsing
@@ -116,7 +122,9 @@ enum SSHKeyLoader {
     }
 
     private static func base64Body(of pem: String) throws -> [UInt8] {
-        let base64 = pem.split(separator: "\n")
+        // \.isNewline, not "\n": Swift folds CRLF into one Character, so a
+        // Windows-saved key would otherwise fail base64 decoding.
+        let base64 = pem.split(whereSeparator: \.isNewline)
             .filter { !$0.hasPrefix("-----") }
             .joined()
         guard let data = Data(base64Encoded: base64) else {

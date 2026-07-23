@@ -61,7 +61,9 @@ public enum SSHConfigParser {
             current = nil
         }
 
-        for rawLine in text.split(separator: "\n", omittingEmptySubsequences: false) {
+        // \.isNewline, not "\n": Swift folds CRLF into one Character, so a
+        // Windows-copied config would otherwise parse as a single line.
+        for rawLine in text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline) {
             let line = rawLine.trimmingCharacters(in: .whitespaces)
             guard !line.isEmpty, !line.hasPrefix("#") else { continue }
             guard let (keyword, value) = splitKeyword(line) else { continue }
