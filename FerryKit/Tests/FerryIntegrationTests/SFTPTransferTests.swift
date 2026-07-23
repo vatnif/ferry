@@ -22,7 +22,9 @@ final class SFTPTransferTests: XCTestCase {
         try? await source?.delete(at: remoteDir)
         await source?.disconnect()
         source = nil
-        try? FileManager.default.removeItem(at: localDir)
+        // if-let: when setUp skips (server down) localDir is still nil, and
+        // unwrapping the IUO here would crash the whole xctest process.
+        if let localDir { try? FileManager.default.removeItem(at: localDir) }
     }
 
     private func waitForFinish(engine: TransferEngine, id: UUID,

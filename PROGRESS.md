@@ -772,6 +772,17 @@ secret-free profile export/import · **C** FTPS self-signed cert TOFU (ADR-033, 
 
 ## Session log
 
+- **2026-07-23 (b)** — **CRLF hardening + integration-test crash fix** (follow-ups from the
+  WinSCP session, user-approved). (1) The same LF-only split fixed in `SSHConfigParser`,
+  `KnownHostsFile`, `HostKeyStore`, and `SSHKeyLoader` (Windows-copied config/known_hosts/key
+  would parse as one line); `SSHKeyLoader` additionally normalizes CRLF→LF before handing the
+  PEM to Citadel, whose OpenSSH boundary check is LF-only (`invalidOpenSSHBoundary`). CRLF
+  regression tests added to all four suites. (2) Four integration-test tearDowns
+  (`EditorRoundTrip`/`SFTPRobustness`/`SFTPTransfer`/`FTPTransfer`) force-unwrapped `localDir`,
+  which is still nil when setUp skips because the server is down — the IUO unwrap killed the
+  whole xctest process (signal 5) instead of skipping; now `if let`-guarded (the pattern
+  `SCPTransferTests` already used). Verified both ways: servers down → 422 tests, 103 skipped,
+  0 failures, no crash; servers up → all pass.
 - **2026-07-23** — **WinSCP import CRLF fix** (bug found by the user against a real export).
   `WinSCPImporter.parse` split on the literal `"\n"`, but Swift folds `"\r\n"` into a *single*
   `Character` — so a real (always-CRLF, Windows-written) `WinSCP.ini` was one giant "line",

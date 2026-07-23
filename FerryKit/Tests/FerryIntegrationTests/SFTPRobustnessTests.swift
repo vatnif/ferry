@@ -22,7 +22,9 @@ final class SFTPRobustnessTests: XCTestCase {
     override func tearDown() async throws {
         await source?.disconnect()
         source = nil
-        try? FileManager.default.removeItem(at: localDir)
+        // if-let: when setUp skips (server down) localDir is still nil, and
+        // unwrapping the IUO here would crash the whole xctest process.
+        if let localDir { try? FileManager.default.removeItem(at: localDir) }
     }
 
     // MARK: Helpers
