@@ -772,6 +772,16 @@ secret-free profile export/import · **C** FTPS self-signed cert TOFU (ADR-033, 
 
 ## Session log
 
+- **2026-07-23** — **WinSCP import CRLF fix** (bug found by the user against a real export).
+  `WinSCPImporter.parse` split on the literal `"\n"`, but Swift folds `"\r\n"` into a *single*
+  `Character` — so a real (always-CRLF, Windows-written) `WinSCP.ini` was one giant "line",
+  no `[Sessions\…]` header matched, and the import reported nothing found. Now splits with
+  `whereSeparator: \.isNewline`; regression test `testParsesCRLFLineEndings` added (existing
+  fixtures were all LF, which is why the suite never caught it). Verified against the user's
+  real 97-section export: 49 connections parse, hierarchy intact. Same LF-only split exists in
+  `SSHConfigParser`/`KnownHostsFile`/`HostKeyStore`/`SSHKeyLoader` (latent — macOS-origin files
+  are LF; a Windows-copied key/config would hit it) — flagged, not yet changed.
+
 - **2026-07-19 (f)** — **Post-v1 roadmap planned** (ADR-029). M17/M18 deferred by user
   decision (still required before sale). The rough backlog became five release-themed phases
   in ROADMAP.md: **G v1.1 Workflow** (M19 editor round-trip · M20 importers/export + FTPS

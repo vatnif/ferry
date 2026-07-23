@@ -35,7 +35,9 @@ public enum WinSCPImporter {
             fields = [:]
         }
 
-        for rawLine in text.split(separator: "\n", omittingEmptySubsequences: false) {
+        // WinSCP writes CRLF; Swift folds "\r\n" into ONE Character, so splitting
+        // on "\n" would see the whole file as a single line. Split on any newline.
+        for rawLine in text.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline) {
             let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !line.isEmpty, !line.hasPrefix(";"), !line.hasPrefix("#") else { continue }
 

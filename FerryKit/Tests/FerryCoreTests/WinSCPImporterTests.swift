@@ -119,6 +119,19 @@ final class WinSCPImporterTests: XCTestCase {
         XCTAssertNil(s.identityFile)
     }
 
+    func testParsesCRLFLineEndings() {
+        // Real exports are CRLF (WinSCP is Windows-only). Swift folds "\r\n"
+        // into a single Character, so a split on "\n" sees one giant line and
+        // finds nothing — this fixture guards against that regression.
+        let ini = "[Sessions\\CY/prod%20web]\r\nHostName=web.example.com\r\n"
+                + "UserName=deploy\r\n\r\n[Sessions\\other]\r\nHostName=other.example.com\r\n"
+        let sessions = WinSCPImporter.parse(ini)
+        XCTAssertEqual(sessions.map(\.host), ["web.example.com", "other.example.com"])
+        XCTAssertEqual(sessions[0].folderPath, ["CY"])
+        XCTAssertEqual(sessions[0].name, "prod web")
+        XCTAssertEqual(sessions[0].user, "deploy")
+    }
+
     func testEmptyInput() {
         XCTAssertTrue(WinSCPImporter.parse("").isEmpty)
         XCTAssertTrue(WinSCPImporter.parse("[Configuration\\Foo]\nBar=1").isEmpty)
