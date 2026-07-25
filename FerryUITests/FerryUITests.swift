@@ -345,10 +345,14 @@ final class FerryUITests: XCTestCase {
         let app = launchIsolatedApp(extraEnvironment: ["FERRY_SSH_CONFIG": configPath])
         XCTAssertTrue(app.staticTexts["Connections"].waitForExistence(timeout: 10))
 
-        // Drive the canonical entry: File ▸ Import from SSH Config… (the toolbar
-        // control mirrors this but can fold into the toolbar overflow).
+        // Drive the canonical entry: File ▸ Import Connections ▸ From SSH Config…
+        // (the toolbar control mirrors this but can fold into the toolbar
+        // overflow). M20 checkpoint A moved the single item into a submenu.
         app.menuBars.menuBarItems["File"].click()
-        let configItem = app.menuItems["Import from SSH Config…"]
+        let importMenu = app.menuItems["Import Connections"]
+        XCTAssertTrue(importMenu.waitForExistence(timeout: 5))
+        importMenu.hover()
+        let configItem = app.menuItems["From SSH Config…"]
         XCTAssertTrue(configItem.waitForExistence(timeout: 5))
         configItem.click()
 
