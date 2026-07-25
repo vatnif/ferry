@@ -21,6 +21,12 @@ this document, not the other way round.*
   `password`, `keyPassphrase`; accessibility WhenUnlocked; login keychain — ADR-010).
   Implemented by `CredentialVault` (store = upsert, delete = idempotent).
 - Empty stored password ⇒ prompt at connect time, with "remember" opt-in.
+- **Keychain access never runs on the main actor** (ADR-034): macOS can put its authorization
+  panel in front of any `SecItem*` call, which blocks the caller for as long as the panel is
+  up. UI paths use `CredentialVault.retrieveAsync`/`storeAsync`/`deleteAllAsync`.
+- **A denied panel is not a missing secret** (ADR-034): if the user denies Keychain access
+  (`errSecUserCanceled`), the connect aborts with an explanation. Ferry does **not** fall back
+  to its own password prompt, which would read as "Ferry forgot my password".
 - Deleting a profile deletes its Keychain items. (`.ferrypart` leftovers are not tracked
   per profile — they live wherever the user transfers to; stale ones are GC'd on
   encounter after 30 days, ADR-014.)

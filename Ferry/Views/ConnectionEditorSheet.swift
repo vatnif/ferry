@@ -160,7 +160,9 @@ struct ConnectionEditorSheet: View {
         guard !loaded else { return }
         loaded = true
         if let id = context.profileID, let profile = model.library.profile(withID: id) {
-            draft = ProfileDraft.fromExisting(profile, in: model)
+            // Reading the stored secret can block on a Keychain panel, so the
+            // sheet fills in asynchronously rather than freezing (ADR-034).
+            Task { draft = await ProfileDraft.fromExisting(profile, in: model) }
         } else {
             draft = ProfileDraft.forNewProfile(folderID: context.initialFolderID)
         }

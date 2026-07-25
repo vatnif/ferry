@@ -28,4 +28,19 @@ final class CredentialVaultTests: XCTestCase {
         XCTAssertEqual(CredentialVault.defaultService, "com.gfragos.Ferry")
         XCTAssertEqual(CredentialVault().service, CredentialVault.defaultService)
     }
+
+    // MARK: Status mapping (ADR-034)
+
+    func testUserCanceledStatusGetsItsOwnCase() {
+        // Denying the macOS Keychain panel must be distinguishable from any
+        // other failure, so the UI can explain instead of silently re-prompting.
+        XCTAssertEqual(CredentialVault.error(for: errSecUserCanceled), .userCanceled)
+    }
+
+    func testOtherStatusesKeepTheirRawValue() {
+        XCTAssertEqual(CredentialVault.error(for: errSecAuthFailed),
+                       .unexpectedStatus(errSecAuthFailed))
+        XCTAssertEqual(CredentialVault.error(for: errSecInteractionNotAllowed),
+                       .unexpectedStatus(errSecInteractionNotAllowed))
+    }
 }

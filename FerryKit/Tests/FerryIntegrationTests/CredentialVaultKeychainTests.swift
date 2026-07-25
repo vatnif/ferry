@@ -79,6 +79,43 @@ final class CredentialVaultKeychainTests: XCTestCase {
         XCTAssertNil(try vault.retrieve(role: .keyPassphrase, profileID: id))
     }
 
+    // MARK: Off-the-main-actor variants (ADR-034)
+
+    func testAsyncVariantsRoundTrip() async throws {
+        let id = makeProfileID()
+        try await vault.storeAsync("async-p@ss", role: .password, profileID: id)
+        let read = try await vault.retrieveAsync(role: .password, profileID: id)
+        XCTAssertEqual(read, "async-p@ss")
+    }
+
+    func testAsyncRetrieveOfAbsentSecretReturnsNil() async throws {
+        let absent = try await vault.retrieveAsync(role: .keyPassphrase, profileID: makeProfileID())
+        XCTAssertNil(absent)
+    }
+
+    func testAsyncDeleteAllRemovesEveryRole() async throws {
+        let id = makeProfileID()
+        try await vault.storeAsync("p", role: .password, profileID: id)
+        try await vault.storeAsync("k", role: .keyPassphrase, profileID: id)
+
+        try await vault.deleteAllAsync(for: id)
+        let password = try await vault.retrieveAsync(role: .password, profileID: id)
+        let passphrase = try await vault.retrieveAsync(role: .keyPassphrase, profileID: id)
+        XCTAssertNil(password)
+        XCTAssertNil(passphrase)
+    }
+
+    /// The UI calls these from the main actor (ADR-034): they must suspend and
+    /// resume there cleanly, not deadlock against their own detached work.
+    @MainActor
+    func testAsyncVariantsAreCallableFromTheMainActor() async throws {
+        let id = makeProfileID()
+        try await vault.storeAsync("off-main", role: .password, profileID: id)
+        let read = try await vault.retrieveAsync(role: .password, profileID: id)
+        XCTAssertEqual(read, "off-main")
+        XCTAssertTrue(Thread.isMainThread, "resumes back on the main actor")
+    }
+
     func testServicesAreIsolatedFromEachOther() throws {
         let id = makeProfileID()
         let otherVault = CredentialVault(service: "com.gfragos.Ferry.tests.other")

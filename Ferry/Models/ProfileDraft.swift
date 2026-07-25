@@ -59,8 +59,11 @@ struct ProfileDraft {
         return draft
     }
 
+    /// Async because it reads the profile's secrets: a Keychain read can block
+    /// behind a macOS authorization panel, and doing that on the main actor
+    /// freezes the editor sheet as it opens (ADR-034).
     @MainActor
-    static func fromExisting(_ profile: ConnectionProfile, in model: ConnectionManagerModel) -> ProfileDraft {
+    static func fromExisting(_ profile: ConnectionProfile, in model: ConnectionManagerModel) async -> ProfileDraft {
         var draft = ProfileDraft()
         draft.name = profile.name
         draft.scheme = profile.scheme
@@ -74,11 +77,13 @@ struct ProfileDraft {
         switch profile.authMethod {
         case .password:
             draft.authChoice = .password
-            draft.password = (try? model.vault.retrieve(role: .password, profileID: profile.id)) ?? ""
+            draft.password = (try? await model.vault.retrieveAsync(role: .password,
+                                                                   profileID: profile.id)) ?? ""
         case .publicKey(let path):
             draft.authChoice = .publicKey
             draft.privateKeyPath = path
-            draft.keyPassphrase = (try? model.vault.retrieve(role: .keyPassphrase, profileID: profile.id)) ?? ""
+            draft.keyPassphrase = (try? await model.vault.retrieveAsync(role: .keyPassphrase,
+                                                                        profileID: profile.id)) ?? ""
         case .agent:
             draft.authChoice = .agent
         }

@@ -291,11 +291,14 @@ final class ConnectionManagerModel {
             return
         }
         mutate { $0.removeItem(withID: id) }
-        for profile in doomedProfiles {
-            do {
-                try vault.deleteAll(for: profile.id)
-            } catch {
-                errorMessage = "The connection was deleted, but removing its stored password failed: \(error.localizedDescription)"
+        let vault = vault
+        Task {
+            for profile in doomedProfiles {
+                do {
+                    try await vault.deleteAllAsync(for: profile.id)
+                } catch {
+                    errorMessage = "The connection was deleted, but removing its stored password failed: \(Self.describe(error))"
+                }
             }
         }
         if selectedItemID == id { selectedItemID = nil }
@@ -311,9 +314,13 @@ final class ConnectionManagerModel {
         let parent = library.parentFolderID(ofItem: originalID)
         mutate { $0.add(.profile(copy), toFolder: parent) }
         // Duplicate the secrets too, so the copy connects like the original.
-        for role in CredentialRole.allCases {
-            if let secret = try? vault.retrieve(role: role, profileID: originalID) {
-                try? vault.store(secret, role: role, profileID: copy.id)
+        let vault = vault
+        let newID = copy.id
+        Task.detached(priority: .userInitiated) {
+            for role in CredentialRole.allCases {
+                if let secret = try? vault.retrieve(role: role, profileID: originalID) {
+                    try? vault.store(secret, role: role, profileID: newID)
+                }
             }
         }
     }
@@ -596,29 +603,38 @@ final class ConnectionManagerModel {
             selectedItemID = profile.id
         }
 
-        do {
-            try storeSecrets(from: draft, profileID: profileID)
-        } catch {
-            errorMessage = "The connection was saved, but storing its secret in the Keychain failed: \(error.localizedDescription)"
+        // Keychain writes hop off the main actor: an ACL check on an existing
+        // item can put a macOS panel in front of the write (ADR-034).
+        let vault = vault
+        Task {
+            do {
+                try await Self.storeSecrets(from: draft, profileID: profileID, vault: vault)
+            } catch {
+                errorMessage = "The connection was saved, but storing its secret in the Keychain failed: \(Self.describe(error))"
+            }
         }
     }
 
     /// Keychain policy per auth method: only the active method's secret is
     /// kept; empty secret ⇒ item removed ⇒ prompt at connect (DOMAIN.md).
-    private func storeSecrets(from draft: ProfileDraft, profileID: UUID) throws {
-        switch draft.authChoice {
-        case .password:
-            try upsertOrDelete(draft.password, role: .password, profileID: profileID)
-            try vault.delete(role: .keyPassphrase, profileID: profileID)
-        case .publicKey:
-            try upsertOrDelete(draft.keyPassphrase, role: .keyPassphrase, profileID: profileID)
-            try vault.delete(role: .password, profileID: profileID)
-        case .agent:
-            try vault.deleteAll(for: profileID)
-        }
+    private nonisolated static func storeSecrets(from draft: ProfileDraft, profileID: UUID,
+                                                 vault: CredentialVault) async throws {
+        try await Task.detached(priority: .userInitiated) {
+            switch draft.authChoice {
+            case .password:
+                try upsertOrDelete(draft.password, role: .password, profileID: profileID, vault: vault)
+                try vault.delete(role: .keyPassphrase, profileID: profileID)
+            case .publicKey:
+                try upsertOrDelete(draft.keyPassphrase, role: .keyPassphrase, profileID: profileID, vault: vault)
+                try vault.delete(role: .password, profileID: profileID)
+            case .agent:
+                try vault.deleteAll(for: profileID)
+            }
+        }.value
     }
 
-    private func upsertOrDelete(_ secret: String, role: CredentialRole, profileID: UUID) throws {
+    private nonisolated static func upsertOrDelete(_ secret: String, role: CredentialRole,
+                                                   profileID: UUID, vault: CredentialVault) throws {
         if secret.isEmpty {
             try vault.delete(role: role, profileID: profileID)
         } else {
@@ -648,7 +664,10 @@ final class ConnectionManagerModel {
         let tab = targetTab(newTab: inNewTab)
         prepareForConnect(tab)
         tab.profileID = profileID
-        resolveCredential(profile: profile, intent: .browser, tab: tab)
+        // The credential read can block on a macOS Keychain panel, so it never
+        // runs inline on the main actor (ADR-034). The tab is already prepared,
+        // so restore-many keeps its tab order regardless of resolution order.
+        Task { await resolveCredential(profile: profile, intent: .browser, tab: tab) }
     }
 
     // MARK: Tabs (M16 checkpoint B, ADR-027)
@@ -816,7 +835,7 @@ final class ConnectionManagerModel {
                 errorMessage = "The built-in terminal requires macOS 15 or later."
                 return
             }
-            resolveCredential(profile: profile, intent: .terminal, tab: nil)
+            Task { await resolveCredential(profile: profile, intent: .terminal, tab: nil) }
         case .external(let terminal):
             launchExternalTerminal(terminal, profile: profile)
         case .unavailable(let reason):
@@ -857,17 +876,22 @@ final class ConnectionManagerModel {
     /// otherwise the matching prompt (which carries the intent + target tab
     /// forward). `tab` is nil for the terminal-only intent.
     private func resolveCredential(profile: ConnectionProfile, intent: ConnectIntent,
-                                   tab: ConnectionTab?) {
+                                   tab: ConnectionTab?) async {
         switch profile.authMethod {
         case .password:
-            if let stored = (try? vault.retrieve(role: .password, profileID: profile.id)) ?? nil {
-                startResolved(profile: profile, credential: .password(stored), intent: intent, tab: tab)
-            } else {
-                passwordPrompt = PasswordPrompt(profileID: profile.id, profileName: profile.name,
-                                                intent: intent, tabID: tab?.id)
+            do {
+                if let stored = try await vault.retrieveAsync(role: .password, profileID: profile.id) {
+                    startResolved(profile: profile, credential: .password(stored), intent: intent, tab: tab)
+                } else {
+                    passwordPrompt = PasswordPrompt(profileID: profile.id, profileName: profile.name,
+                                                    intent: intent, tabID: tab?.id)
+                }
+            } catch {
+                credentialReadFailed(error, secret: "password", profile: profile,
+                                     intent: intent, tab: tab)
             }
         case .publicKey(let path):
-            connectWithKey(profile: profile, path: path, intent: intent, tab: tab)
+            await connectWithKey(profile: profile, path: path, intent: intent, tab: tab)
         case .agent:
             infoMessage = "SSH-agent authentication is planned for a later release. Edit the connection to use a key file or password for now."
         }
@@ -876,9 +900,7 @@ final class ConnectionManagerModel {
     /// Continuation of `connect`/`openTerminal` after the user typed a password.
     func connectWithTypedPassword(_ password: String, prompt: PasswordPrompt, remember: Bool) {
         guard let profile = library.profile(withID: prompt.profileID) else { return }
-        if remember {
-            try? vault.store(password, role: .password, profileID: profile.id)
-        }
+        if remember { rememberSecret(password, role: .password, profileID: profile.id) }
         startResolved(profile: profile, credential: .password(password),
                       intent: prompt.intent, tab: tab(withID: prompt.tabID))
     }
@@ -887,7 +909,7 @@ final class ConnectionManagerModel {
     /// stored passphrase. The connect flow prompts for a passphrase only if the
     /// key turns out to be encrypted and the stored one is missing/wrong.
     private func connectWithKey(profile: ConnectionProfile, path: String,
-                                intent: ConnectIntent, tab: ConnectionTab?) {
+                                intent: ConnectIntent, tab: ConnectionTab?) async {
         let pem: Data
         do {
             pem = try Data(contentsOf: URL(fileURLWithPath: (path as NSString).expandingTildeInPath))
@@ -896,19 +918,74 @@ final class ConnectionManagerModel {
             if intent == .browser { tab?.phase = .idle }
             return
         }
-        let storedPassphrase = (try? vault.retrieve(role: .keyPassphrase, profileID: profile.id)) ?? nil
+        let storedPassphrase: String?
+        do {
+            storedPassphrase = try await vault.retrieveAsync(role: .keyPassphrase, profileID: profile.id)
+        } catch {
+            credentialReadFailed(error, secret: "passphrase", profile: profile,
+                                 intent: intent, tab: tab)
+            return
+        }
         startResolved(profile: profile,
                       credential: .privateKey(pem: pem, passphrase: storedPassphrase),
                       intent: intent, tab: tab)
+    }
+
+    /// A secret is stored but reading it failed. The common case is the user
+    /// denying the macOS Keychain authorization panel — say so instead of
+    /// falling through to a prompt that looks like Ferry forgot the secret
+    /// (ADR-034).
+    private func credentialReadFailed(_ error: Error, secret: String,
+                                      profile: ConnectionProfile,
+                                      intent: ConnectIntent, tab: ConnectionTab?) {
+        if case CredentialVaultError.userCanceled = error {
+            errorMessage = "Ferry could not use the saved \(secret) for “\(profile.name)”: macOS denied " +
+                           "access to your Keychain. Connect again and choose Allow, or re-enter the " +
+                           "\(secret) in the connection’s settings."
+        } else {
+            errorMessage = "Ferry could not read the saved \(secret) for “\(profile.name)”: " +
+                           "\(Self.describe(error))"
+        }
+        if intent == .browser { tab?.phase = .idle }
+    }
+
+    /// Stores a secret the user asked Ferry to remember. Off the main actor —
+    /// writing an existing item is ACL-checked, so it can prompt (ADR-034) —
+    /// and never blocking the connect it belongs to.
+    private func rememberSecret(_ secret: String, role: CredentialRole, profileID: UUID) {
+        let vault = vault
+        Task {
+            do {
+                try await vault.storeAsync(secret, role: role, profileID: profileID)
+            } catch {
+                errorMessage = "Ferry connected, but could not save the \(role == .password ? "password" : "passphrase") " +
+                               "in your Keychain: \(Self.describe(error))"
+            }
+        }
+    }
+
+    /// User-facing text for a Keychain failure. CredentialVaultError has no
+    /// localizedDescription worth showing, so name the cases we know.
+    static func describe(_ error: Error) -> String {
+        guard let vaultError = error as? CredentialVaultError else {
+            return error.localizedDescription
+        }
+        switch vaultError {
+        case .userCanceled:
+            return "macOS denied access to your Keychain."
+        case .corruptedItem:
+            return "the stored item is not readable text — delete and re-enter it."
+        case .unexpectedStatus(let status):
+            let detail = SecCopyErrorMessageString(status, nil) as String? ?? "Keychain error \(status)"
+            return detail
+        }
     }
 
     /// Continuation after the user typed a key passphrase.
     func connectWithTypedPassphrase(_ passphrase: String,
                                     prompt: KeyPassphrasePrompt, remember: Bool) {
         guard let profile = library.profile(withID: prompt.profileID) else { return }
-        if remember {
-            try? vault.store(passphrase, role: .keyPassphrase, profileID: profile.id)
-        }
+        if remember { rememberSecret(passphrase, role: .keyPassphrase, profileID: profile.id) }
         startResolved(profile: profile,
                       credential: .privateKey(pem: prompt.pem, passphrase: passphrase),
                       intent: prompt.intent, tab: tab(withID: prompt.tabID))

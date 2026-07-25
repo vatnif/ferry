@@ -755,6 +755,10 @@ secret-free profile export/import · **C** FTPS self-signed cert TOFU (ADR-033, 
 ## Known issues / open items
 
 - Bundle id `com.gfragos.Ferry` and ad-hoc signing are placeholders until the user has an Apple Developer account (BUILDING.md).
+- **Ad-hoc signing makes saved Keychain secrets unusable in local builds**: macOS re-shows its
+  authorization panel on every access and "Always Allow" cannot stick, because an ad-hoc
+  signature has no stable code identity. Leave "Remember in my Keychain" unticked while
+  developing, or set an Apple Development identity (BUILDING.md → Keychain prompts, ADR-034).
 - Trademark/domain check for the name "Ferry" is the user's task before sale.
 
 ## Next steps
@@ -771,6 +775,25 @@ secret-free profile export/import · **C** FTPS self-signed cert TOFU (ADR-033, 
    bookmark store for the App Store sandbox (M17, ADR-018).
 
 ## Session log
+
+- **2026-07-25** — **Toolbar tooltips + Keychain main-actor freeze (ADR-034)**. (1) Every
+  icon-only control now has a `.help()`: the browser toolbar was missing Back, Forward, Upload,
+  Download, New Folder, Refresh and the Filter field; the transfer-queue header was missing its
+  collapse chevron and Clear. (2) Diagnosed a report of "stuck in the Keychain password dialog,
+  then the app crashed": it never crashed (clean ⌘Q `terminate:` in the log, no crash report) —
+  `resolveCredential` read the Keychain **synchronously on the main actor**, so the macOS
+  authorization panel froze the UI for as long as it was on screen. `CredentialVault` gained
+  `retrieveAsync`/`storeAsync`/`deleteAllAsync` (detached hop) and every UI call site moved to
+  them (`resolveCredential`, `connectWithKey`, `saveDraft`, `deleteItem`, `duplicateProfile`,
+  remember-on-connect, `ProfileDraft.fromExisting`). `errSecUserCanceled` is now its own error
+  case: a denied panel aborts the connect with an explanation instead of silently re-showing
+  Ferry's password sheet as if the secret were missing. The panel loop itself is an **ad-hoc
+  signing** artifact (no stable code identity ⇒ no durable ACL entry ⇒ "Always Allow" cannot
+  stick) — documented in BUILDING.md; the user's two stale items were deleted to unblock.
+  (3) Fixed a **stale UI test**: `testImportFromSSHConfigAddsProfiles` still looked for a
+  top-level "Import from SSH Config…" menu item, which M20 checkpoint A (ea43d51) had moved
+  into the **Import Connections** submenu — red since 2026-07-20, unrelated to this session's
+  changes. 428 kit + 17 UI tests green (+4 kit). Both flavors build.
 
 - **2026-07-23 (b)** — **CRLF hardening + integration-test crash fix** (follow-ups from the
   WinSCP session, user-approved). (1) The same LF-only split fixed in `SSHConfigParser`,

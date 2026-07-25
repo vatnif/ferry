@@ -1104,3 +1104,40 @@ remove, corrupt-file recovery); `FTPSCertTrustTests` against :2990 drives the **
 (no `allowInvalidCertificate`): first-contact capture + fingerprint, trust→connect+browse, reconnect
 re-pins with no re-prompt, and a mismatched pin is rejected as `.certificateChanged`. HelpContent
 guard for the new user-facing behavior.
+
+## 2026-07-25 — ADR-034: Keychain access never blocks the main actor
+
+**Status: approved 2026-07-25** (bug fix, no milestone). Found while the user was stuck in a
+looping macOS Keychain dialog that ended with an apparently dead app.
+
+**What actually happened.** Login-keychain items carry an ACL, so macOS can put its authorization
+panel ("Ferry wants to use your confidential information stored in …") in front of *any*
+`SecItem*` call. `ConnectionManagerModel.resolveCredential` called `CredentialVault.retrieve`
+synchronously on the main actor, so the whole UI froze for as long as that panel stayed up — 16 s
+in the reported case, and indefinitely while the panel was left open. The app never crashed; it
+was frozen, then quit with ⌘Q ("Termination complete" in the log, no crash report).
+
+**Decision.** No UI code path may call the synchronous `CredentialVault` methods. The vault gains
+`retrieveAsync` / `storeAsync` / `deleteAllAsync`, which hop to a detached task before touching
+`SecItem*`; the synchronous forms stay for tests and for code already off the main actor. Converted
+call sites: `resolveCredential`, `connectWithKey`, `saveDraft`→`storeSecrets`, `deleteItem`,
+`duplicateProfile`, `connectWithTypedPassword`/`connectWithTypedPassphrase` (via `rememberSecret`),
+and `ProfileDraft.fromExisting` (the editor sheet now fills in asynchronously). `connect` prepares
+its tab synchronously before awaiting, so restoring several connections keeps its tab order.
+
+**Second decision — a denied panel is not a missing secret.** `retrieve` used to be called as
+`try? … ?? nil`, collapsing every failure into "nothing stored", which then showed Ferry's own
+password sheet as if it had forgotten the credential. `errSecUserCanceled` now maps to
+`CredentialVaultError.userCanceled`, and the connect aborts with an explanation
+(`credentialReadFailed`) instead of re-prompting. Other statuses surface via
+`SecCopyErrorMessageString`.
+
+**Not decided here.** Ad-hoc-signed builds cannot hold a durable trusted-application ACL entry, so
+locally-built Ferry re-prompts on every access to a stored secret no matter what the user clicks —
+"Always Allow" cannot stick without a stable code-signing identity. That is a development-
+environment problem (see BUILDING.md → Keychain prompts), not something the app can fix, and it
+does not change ADR-010's choice of the login keychain over the data-protection keychain.
+
+**Tests**: `CredentialVaultTests` covers the status→error mapping (`errSecUserCanceled` vs raw
+statuses); `CredentialVaultKeychainTests` round-trips the async variants against the real Keychain
+and asserts they are callable from the main actor without deadlocking.

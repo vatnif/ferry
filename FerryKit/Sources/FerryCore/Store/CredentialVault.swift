@@ -13,6 +13,11 @@ public enum CredentialVaultError: Error, Equatable {
     /// The secret exists but its bytes are not valid UTF-8 — the item was
     /// tampered with or written by something else.
     case corruptedItem
+    /// macOS put its authorization panel in front of the item and the user
+    /// denied it (or dismissed the panel) — errSecUserCanceled. Distinct from
+    /// "no secret stored" so callers can explain instead of silently
+    /// re-prompting (ADR-034).
+    case userCanceled
     /// Any other Keychain failure, with the raw status for diagnostics
     /// (message via SecCopyErrorMessageString).
     case unexpectedStatus(OSStatus)
@@ -25,6 +30,12 @@ public enum CredentialVaultError: Error, Equatable {
 /// "com.gfragos.Ferry"), account = "<profileUUID>/<role>". Accessibility is
 /// kSecAttrAccessibleWhenUnlocked. Uses the login (file-based) keychain, not
 /// the data-protection keychain — see ADR-010.
+///
+/// **Never call the synchronous methods from the main actor.** Login-keychain
+/// items carry an ACL, so macOS can put an authorization panel in front of any
+/// `SecItem*` call; the call then blocks for as long as that panel is on
+/// screen. On the main actor that freezes the whole UI. UI code uses the
+/// `…Async` variants below, which hop off the main actor first (ADR-034).
 public struct CredentialVault: Sendable {
     public static let defaultService = "com.gfragos.Ferry"
 
@@ -53,10 +64,10 @@ public struct CredentialVault: Sendable {
             let updateStatus = SecItemUpdate(baseQuery(account: account) as CFDictionary,
                                              update as CFDictionary)
             guard updateStatus == errSecSuccess else {
-                throw CredentialVaultError.unexpectedStatus(updateStatus)
+                throw Self.error(for: updateStatus)
             }
         default:
-            throw CredentialVaultError.unexpectedStatus(status)
+            throw Self.error(for: status)
         }
     }
 
@@ -79,7 +90,7 @@ public struct CredentialVault: Sendable {
         case errSecItemNotFound:
             return nil
         default:
-            throw CredentialVaultError.unexpectedStatus(status)
+            throw Self.error(for: status)
         }
     }
 
@@ -87,7 +98,7 @@ public struct CredentialVault: Sendable {
     public func delete(role: CredentialRole, profileID: UUID) throws {
         let status = SecItemDelete(baseQuery(account: Self.account(role: role, profileID: profileID)) as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else {
-            throw CredentialVaultError.unexpectedStatus(status)
+            throw Self.error(for: status)
         }
     }
 
@@ -97,6 +108,36 @@ public struct CredentialVault: Sendable {
         for role in CredentialRole.allCases {
             try delete(role: role, profileID: profileID)
         }
+    }
+
+    // MARK: Off-the-main-actor variants (ADR-034)
+
+    /// `retrieve` executed off the main actor, so a macOS authorization panel
+    /// blocks only this task instead of freezing the UI.
+    public func retrieveAsync(role: CredentialRole, profileID: UUID) async throws -> String? {
+        try await offMainActor { try $0.retrieve(role: role, profileID: profileID) }
+    }
+
+    /// `store` executed off the main actor (updating an existing item is
+    /// ACL-checked too, so it can prompt just like a read).
+    public func storeAsync(_ secret: String, role: CredentialRole, profileID: UUID) async throws {
+        try await offMainActor { try $0.store(secret, role: role, profileID: profileID) }
+    }
+
+    /// `deleteAll` executed off the main actor.
+    public func deleteAllAsync(for profileID: UUID) async throws {
+        try await offMainActor { try $0.deleteAll(for: profileID) }
+    }
+
+    private func offMainActor<T: Sendable>(
+        _ body: @escaping @Sendable (CredentialVault) throws -> T) async throws -> T {
+        let vault = self
+        return try await Task.detached(priority: .userInitiated) { try body(vault) }.value
+    }
+
+    /// errSecUserCanceled is its own case; everything else keeps its raw status.
+    static func error(for status: OSStatus) -> CredentialVaultError {
+        status == errSecUserCanceled ? .userCanceled : .unexpectedStatus(status)
     }
 
     /// Stable Keychain account name. Part of the persistence contract —

@@ -67,6 +67,27 @@ UI tests need a one-time `sudo DevToolsSecurity -enable`.
 - **Versioning**: `MARKETING_VERSION` (semver, mirror `FerryVersion.current`) +
   `CURRENT_PROJECT_VERSION` (monotonic build number).
 
+### Keychain prompts in local builds (consequence of ad-hoc signing)
+
+Login-keychain items carry an ACL naming the app allowed to read them, identified by its code
+signature. An ad-hoc signature has no stable identity, so **every** local build is a different
+app to macOS: any profile whose password was saved by an earlier build triggers the
+"Ferry wants to use your confidential information stored in …" panel on each connect, and
+*Always Allow* cannot make it stick. Typing the login password does not help — the keychain is
+already unlocked; the panel is authorizing the ACL change, not an unlock.
+
+Symptoms and handling while developing:
+
+- Panel reappears in a loop ⇒ expected with ad-hoc signing, not an app bug. Deny it, or clear
+  the saved secrets: `security delete-generic-password -s com.gfragos.Ferry` (once per item),
+  then leave "Remember in my Keychain" unticked and type the password at each connect.
+- Never rebuild while the app is running: replacing the bundle underneath a live process
+  invalidates its signature and guarantees the panel on the next Keychain access.
+- The real fix is a stable identity — an Apple Development certificate is enough (no paid
+  membership needed for local runs); set `CODE_SIGN_IDENTITY` accordingly and the ACL survives
+  rebuilds. Until then, `security find-identity -v -p codesigning` reports 0 identities here.
+- The app no longer freezes behind that panel (ADR-034), but it still cannot dismiss it.
+
 ## Release process (filled in at M17)
 
 Planned: Developer ID signing → notarization (`notarytool`) → stapled DMG → Sparkle
