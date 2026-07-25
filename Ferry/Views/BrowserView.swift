@@ -141,12 +141,14 @@ struct BrowserView: View {
                 Label("Back", systemImage: "chevron.left")
             }
             .disabled(session.activePane.backStack.isEmpty)
+            .help("Back to the previous folder in the active pane")
             Button {
                 session.goForward(session.activePane)
             } label: {
                 Label("Forward", systemImage: "chevron.right")
             }
             .disabled(session.activePane.forwardStack.isEmpty)
+            .help("Forward to the next folder in the active pane")
 
             Button {
                 transferSelection(from: session.local)
@@ -154,6 +156,7 @@ struct BrowserView: View {
                 Label("Upload", systemImage: "arrow.up")
             }
             .disabled(session.local.selection.isEmpty)
+            .help("Upload the selected local files to the server")
             .accessibilityIdentifier("browser.upload")
             Button {
                 transferSelection(from: session.remote)
@@ -161,6 +164,7 @@ struct BrowserView: View {
                 Label("Download", systemImage: "arrow.down")
             }
             .disabled(session.remote.selection.isEmpty)
+            .help("Download the selected remote files to this Mac")
             .accessibilityIdentifier("browser.download")
 
             Button {
@@ -168,6 +172,7 @@ struct BrowserView: View {
             } label: {
                 Label("New Folder", systemImage: "folder.badge.plus")
             }
+            .help("Create a new folder in the active pane")
             .accessibilityIdentifier("browser.newFolder")
 
             Button {
@@ -178,6 +183,7 @@ struct BrowserView: View {
             } label: {
                 Label("Refresh", systemImage: "arrow.clockwise")
             }
+            .help("Reload both panes")
             .accessibilityIdentifier("browser.refresh")
 
             Toggle(isOn: linkedBinding) {
@@ -205,6 +211,7 @@ struct BrowserView: View {
             TextField("Filter", text: $session.filterText, prompt: Text("Filter"))
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 150)
+                .help("Filter the file lists by name")
                 .accessibilityIdentifier("browser.filter")
 
             Button {

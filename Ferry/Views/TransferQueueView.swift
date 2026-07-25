@@ -44,6 +44,7 @@ struct TransferQueueView: View {
                     .buttonStyle(.plain)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .help("Remove finished transfers from the list")
                     .accessibilityIdentifier("queue.clear")
             }
             Button {
@@ -54,6 +55,7 @@ struct TransferQueueView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
+            .help(collapsed ? "Show the transfer queue" : "Hide the transfer queue")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 5)
