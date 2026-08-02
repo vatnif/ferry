@@ -40,12 +40,20 @@ struct FerryApp: App {
         }
 
         // Standalone terminal windows (screen 7, M15.5): pop-outs and
-        // terminal-only sessions, keyed by controller id.
-        WindowGroup("Terminal", id: "terminal", for: UUID.self) { $controllerID in
-            TerminalWindowView(controllerID: controllerID)
-                .environment(model)
+        // terminal-only sessions, keyed by controller id. A terminal window is
+        // only ever a view onto a live in-memory session, so it must not be
+        // restored: macOS otherwise reopens it after a relaunch pointing at a
+        // controller that no longer exists (ADR-037). The scene itself is
+        // macOS-15-only — so is every path that opens it (Citadel's withPTY
+        // gate, ADR-023), so there is nothing to open on macOS 14.
+        if #available(macOS 15.0, *) {
+            WindowGroup("Terminal", id: "terminal", for: UUID.self) { $controllerID in
+                TerminalWindowView(controllerID: controllerID)
+                    .environment(model)
+            }
+            .defaultSize(width: 640, height: 400)
+            .restorationBehavior(.disabled)
         }
-        .defaultSize(width: 640, height: 400)
 
         // In-app help + acknowledgements (Help menu, M16 checkpoint C,
         // ADR-028) — standalone single-instance windows so they are

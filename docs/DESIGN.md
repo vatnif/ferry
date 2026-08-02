@@ -177,7 +177,9 @@ ADR-023).*
 - **Pop-out window**: ⧉ moves the *same live shell* (session + scrollback intact) to a
   per-connection window titled "Terminal — <profile>"; its header swaps the pop-out
   action for "⇤ Dock in Window", which reverses the move. A popped-out window survives
-  disconnecting/closing the browser tab (it owns its session).
+  disconnecting/closing the browser tab (it owns its session) — but never survives
+  quitting Ferry: the session dies with the process, so terminal windows are excluded
+  from macOS window restoration and a window whose session is gone closes (ADR-037).
 - **Terminal-only connections**: an **Open Terminal** item in the sidebar profile
   context menu (SSH profiles only) opens a shell *without* connecting the browser,
   honoring the same dispatch setting — built-in → the standalone terminal window

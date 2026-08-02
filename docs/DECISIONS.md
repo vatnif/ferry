@@ -1224,13 +1224,43 @@ terminal out left **"Terminal" windows with dead sessions** hanging around in la
 tests' runtimes (they had been waiting out `waitForExistence` timeouts).
 
 **Known, not fixed here.** Outside the tests, macOS still restores those dead terminal windows on a
-normal relaunch — quit with a popped-out terminal and the next launch shows an empty window reading
-"This terminal session has ended." The fix is to opt the terminal `WindowGroup` out of restoration
-(`restorationBehavior(.disabled)`, macOS 15+, so it needs an availability-split scene); it is a
-separate behaviour change and is left for its own decision.
+relaunch — an empty window reading "This terminal session has ended." **Fixed in ADR-037.**
 
 **Tests**: no new tests — `testAppLaunchesWithSidebarAndEmptyState` already asserted the sidebar's
 "Connections" header and was one of the four tests failing; the other three
 (`testHelpMenuOpensGuideWindow`, `testHelpMenuOpensAcknowledgementsWindow`,
 `testImportFromSSHConfigAddsProfiles`) pass again with window state isolated. Full suite: 429 kit +
 19 XCUITests, all green.
+
+## 2026-08-02 — ADR-037: Terminal windows are never restored
+
+**Status: approved 2026-08-02** (bug fix, no milestone). The open item left by ADR-036.
+
+**What actually happened.** A standalone terminal window (pop-out or terminal-only) is a view onto a
+live in-memory `TerminalController`; its SSH session cannot outlive the process. macOS does not know
+that, so after an abnormal termination it restored those windows into the next launch, where
+`TerminalWindowView` failed to resolve the id and rendered its "This terminal session has ended."
+placeholder — an empty, dead-end window, and up to three of them were observed at once. Confirmed as
+restoration by launching with `-ApplePersistenceIgnoreState YES`, which made them disappear.
+
+**Decision.** Opt the scene out: `WindowGroup("Terminal", …).restorationBehavior(.disabled)`. The
+modifier is macOS 15+, and `if #available` in a `@SceneBuilder` has no `else` branch — which is
+correct here rather than a compromise: **every** path that opens this window is already macOS-15
+gated (both `BrowserView` call sites sit inside `#available` checks, and `pendingTerminalWindowID`
+is only set by the `@available(macOS 15.0, *)` `startTerminalOnly`), because the built-in terminal
+needs Citadel's `withPTY` (ADR-023). On macOS 14 the scene has nothing to open, so it does not exist.
+
+**Second decision — a window with no controller closes itself.** `TerminalWindowView`'s fallback
+branch used to display the "session has ended" text; it now dismisses instead. A missing controller
+means the window outlived what it was a view onto (a restored window, or a re-dock that deregistered
+before the dismiss landed) — there is nothing to show and nothing to reconnect to. This also covers
+any restoration path the scene modifier does not.
+
+**Verification — and its limit, stated plainly.** The live paths were re-checked by hand against the
+Docker server (connect → open terminal → pop out → re-dock: the window opens, the shell keeps
+running, re-docking returns it to its tab) and by the two ADR-035 XCUITests; full suite green (429
+kit + 19 XCUITests). But the restoration *itself* could not be re-triggered on demand once the
+system's saved state had been cleared: neither ⌘Q nor SIGKILL with a popped-out window reproduced
+it afterwards. So the fix rests on the observed failure plus the documented API for exactly this
+case, **not** on a live before/after. A regression test is not practical either — cross-launch OS
+restoration is not something XCUITest can drive, and the suite now explicitly disables it (ADR-036).

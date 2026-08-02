@@ -168,8 +168,9 @@ struct TerminalPanelView: View {
 
 /// Content of the standalone terminal window (pop-out and terminal-only
 /// sessions, screen 7 notes 2 & 4). Looks the controller up by id — the
-/// window survives its browser tab; a missing controller means the session
-/// was ended elsewhere.
+/// window survives its browser tab, but never the session itself: a missing
+/// controller means the window has outlived what it showed, so it closes
+/// (ADR-037). The scene opts out of state restoration for the same reason.
 struct TerminalWindowView: View {
     @Environment(ConnectionManagerModel.self) private var model
     @Environment(\.dismiss) private var dismiss
@@ -198,9 +199,14 @@ struct TerminalWindowView: View {
                 }
             }
         } else {
-            Text("This terminal session has ended.")
-                .foregroundStyle(.secondary)
+            // No controller for this id: the window outlived the session it was
+            // a view onto (a restored window after relaunch, or a re-dock that
+            // deregistered before the dismiss landed). There is nothing to show
+            // and nothing to reconnect to — close rather than leave a dead-end
+            // window on screen (ADR-037).
+            Color.clear
                 .frame(minWidth: 480, minHeight: 280)
+                .onAppear { dismiss() }
         }
     }
 }

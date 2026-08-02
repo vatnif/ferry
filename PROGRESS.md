@@ -37,7 +37,31 @@ Post-v1 plan (Phases G–K, M19–M31): see `docs/ROADMAP.md`. M20 is **split in
 secret-free profile export/import · **C** FTPS self-signed cert TOFU (ADR-033, committed 92796ff).
 **M20 complete.** M17/M18 still deferred.
 
-## Current state of the code (bug fix — sidebar hidden at launch, ADR-036 — awaiting review)
+## Current state of the code (bug fix — terminal windows are never restored, ADR-037 — awaiting review)
+
+- Closes the item ADR-036 left open. A standalone terminal window is a view onto a live in-memory
+  `TerminalController`, so after an abnormal termination macOS restored empty windows reading "This
+  terminal session has ended" (up to three seen at once; proven to be restoration because
+  `-ApplePersistenceIgnoreState YES` made them vanish).
+- **Fix**: `.restorationBehavior(.disabled)` on the terminal `WindowGroup`. The modifier is macOS
+  15+ and `if #available` in a `@SceneBuilder` has no `else`, which is right here — every opener of
+  that window is already macOS-15 gated (both `BrowserView` sites, and `pendingTerminalWindowID`
+  which only `startTerminalOnly` sets), because the built-in terminal needs Citadel's `withPTY`.
+  On macOS 14 the scene has nothing to open, so it no longer exists.
+- **Also**: `TerminalWindowView` now dismisses when its controller id doesn't resolve instead of
+  showing the dead-end "session has ended" text — that state only means the window outlived what it
+  was a view onto.
+- **Verified**: pop-out → re-dock re-checked by hand against :2223 (window opens, shell keeps
+  running, re-dock returns it to its tab) plus the two ADR-035 XCUITests; **429 kit + 19 XCUITests
+  green**. **Limit, stated plainly**: once the system's saved state was cleared, the restoration
+  could not be re-triggered on demand (neither ⌘Q nor SIGKILL with a window open reproduced it), so
+  this rests on the observed failure + the documented API, not a live before/after. No regression
+  test — cross-launch OS restoration isn't XCUITest-drivable, and the suite now disables it.
+- Noted in passing: `testEmbeddedTerminalTouchShowsFileInRemotePane` can flake on its 20 s
+  `browser.status.connected` wait when the whole suite hammers the emulated container; it passes on
+  re-run. Not chased.
+
+## Current state of the code (bug fix — sidebar hidden at launch, ADR-036 — committed 2e84f7e)
 
 - **The app launched with the sidebar hidden.** `MainWindow`'s `NavigationSplitView` never set
   `columnVisibility`, and `.automatic` resolved to hidden on this macOS: the window showed only the
@@ -832,6 +856,14 @@ secret-free profile export/import · **C** FTPS self-signed cert TOFU (ADR-033, 
 
 ## Session log
 
+- **2026-08-02 (cont. 2)** — **Terminal windows are never restored (ADR-037)**. Closed the item
+  ADR-036 left open: macOS restored popped-out terminal windows after an abnormal termination, so a
+  relaunch showed empty "This terminal session has ended" windows. Opted the scene out with
+  `restorationBehavior(.disabled)` (macOS-15-only scene — every opener is already gated), and made
+  `TerminalWindowView` dismiss itself when its controller id no longer resolves. Pop-out/re-dock
+  re-verified by hand + the ADR-035 tests; 429 kit + 19 XCUITests green. Honest caveat recorded in
+  the ADR: after the saved state cleared, the restoration couldn't be re-triggered on demand, so
+  there is no live before/after and no regression test (XCUITest can't drive OS restoration).
 - **2026-08-02 (cont.)** — **Sidebar hidden at launch (ADR-036)**. Chased the four XCUITests that
   were failing on a clean tree. Root cause: `NavigationSplitView` with `.automatic` visibility
   opened with the sidebar hidden, so Ferry launched with its connection manager off screen — the
