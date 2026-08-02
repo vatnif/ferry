@@ -225,6 +225,17 @@ final class BrowserSession {
     var filterText = ""
     var activePaneKind: PaneModel.Kind = .remote
 
+    /// Presentation state for this session's own modal decisions (ADR-035).
+    /// It lives here rather than in `BrowserView`'s `@State` because every
+    /// connected tab renders that view at the same structural position: SwiftUI
+    /// shares one instance's state across tabs, so staging started in one tab
+    /// could surface its alert over another and act on *its* session.
+    var pendingConflicts: [TransferRequest] = []
+    var pendingResumeDecisions: [ResumeDecision] = []
+    var showTunnels = false
+    /// Non-nil presents the New Folder alert, holding the typed name.
+    var newFolderName: String?
+
     /// Sync browsing (DESIGN.md screen 1): anchors are captured when the
     /// link is switched on; navigation mirrors relative paths.
     private(set) var linked = false

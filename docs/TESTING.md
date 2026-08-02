@@ -537,6 +537,30 @@ instead (ADR-025).
   Docker proxy may accept-then-reset); a refused `tcpip-forward` (port 22, sshd's own)
   reports "refused"; the live connection count tracks a held-open connection 0 → 1 → 0.
 
+## ADR-035 additions (per-tab terminal identity — 430 kit tests + 21 UI)
+
+Guards the cross-tab bleed of the embedded terminal. Both UI tests were confirmed
+to **fail** before the fix and pass after; they need the :2223 container (the only
+shell-capable server), and both tabs connect there since one shell-capable host is
+enough to tell the shells apart.
+
+- `FerryTerminalUITests/TerminalSessionBridgeTests.testEachBridgeOwnsItsOwnViewAndOutput`
+  (unit, stub sessions): two bridges make two distinct `TerminalView`s, and neither
+  output nor keystrokes cross between them.
+- `FerryUITests.testTerminalsInTwoTabsStayIndependent`: tab 0's shell is branded
+  (`MARK=A`); a tab whose terminal was never opened shows no panel; tab 1's
+  `touch "…/mark-${MARK:-none}.txt"` must land in tab 1's own shell
+  (`mark-none.txt`, never `mark-A.txt`); after switching back, tab 0's panel must
+  still reach the shell it branded (`back-A.txt`).
+- `FerryUITests.testRedockedTerminalReturnsToItsOwnTab`: the worst variant — pop
+  tab 0's terminal out, open tab 1's docked terminal, press "Dock in Window" while
+  tab 1 is on screen, then switch back: tab 0's panel must host its own shell
+  (`redock-A.txt`). The pop-out window is dragged clear of the main window by its
+  title bar first, or the tab strip isn't hittable.
+- Debug builds also assert `view === bridge.view` in `SSHTerminalView.updateNSView`,
+  so any future host that reuses one controller's emulator for another trips
+  immediately under XCUITest.
+
 ## M15.5 checkpoint B additions (272 kit tests, all green)
 
 - `FerryCoreTests/TerminalSessionUnitTests` (unit, no server): the end-reason

@@ -1141,3 +1141,56 @@ does not change ADR-010's choice of the login keychain over the data-protection 
 **Tests**: `CredentialVaultTests` covers the status→error mapping (`errSecUserCanceled` vs raw
 statuses); `CredentialVaultKeychainTests` round-trips the async variants against the real Keychain
 and asserts they are callable from the main actor without deadlocking.
+
+## 2026-08-02 — ADR-035: Per-controller SwiftUI identity for the embedded terminal
+
+**Status: approved 2026-08-02** (bug fix, no milestone). Reported by the user: with two connected
+tabs, the terminal opened in the first tab kept showing up under the second tab's file panes, and
+opening a terminal in both made the UI incoherent.
+
+**What actually happened.** The models were never at fault: since M15.5 each tab owns its own
+`TerminalController` → `TerminalSession` → `TerminalSessionBridge` (ADR-023/ADR-027). The defect
+was SwiftUI **view identity**. `DetailPlaceholderView` builds `BrowserView` inside a `switch`
+branch with no `.id(...)`, so every connected tab renders its browser at the *same structural
+position* — one identity. SwiftUI therefore updates that tree on a tab switch instead of rebuilding
+it, which is harmless for data-driven views but not for `SSHTerminalView`, the app's only
+`NSViewRepresentable`: `makeNSView` runs **once per identity**, so a tab switch called only
+`updateNSView`, handing back the first tab's live `SwiftTerm.TerminalView` while the struct's
+`bridge` now pointed at another tab's session. The wrong screen was shown, the reused view's
+delegate was still the first bridge (so keystrokes ran on the *other* server), and the second
+tab's bridge never attached — its pump never started, so that shell's output accumulated
+unconsumed in an unbounded `AsyncStream` and its PTY stayed 80×24.
+
+The bleed needed both panels open: switching to a tab whose panel is closed flips the `if` in
+`BrowserView`, which destroys the subtree and gives the next panel a fresh identity. Detaching
+(pop-out) also hid it, because `WindowGroup("Terminal", …)` gives each popped-out terminal its own
+scene and view tree. The worst variant was re-docking: "Dock in Window" pressed while *another*
+tab's panel is open returns a terminal to a tab that isn't on screen, and the switch back reused
+the other tab's emulator — leaving the re-docked shell alive but invisible and unreachable.
+
+**Decision — identity where the emulator lives, not on the whole browser.**
+`TerminalPanelView` tags its `SSHTerminalView` with `.id(controller.id)`, so every host of the
+panel (docked, pop-out window, terminal-only window) gets one emulator per controller; the docked
+`TerminalPanelView` in `BrowserView` also carries `.id(terminal.id)` for its own local state.
+Deliberately **not** `.id(tab.id)` on `BrowserView`: that rebuilds the whole subtree on every tab
+switch and resets the `HSplitView` divider each time. Because nothing calls `detach()`, a departing
+tab's `TerminalView` stays retained by its bridge with scrollback and pump intact and is re-hosted
+on return — the same mechanism pop-out/re-dock already relies on.
+
+**Second decision — a tab's modal state belongs to its session.** `BrowserView`'s `@State` was
+shared across tabs for the same reason. Staged conflicts, resume decisions, the New Folder name and
+the tunnel sheet flag moved onto `BrowserSession` (`pendingConflicts`, `pendingResumeDecisions`,
+`newFolderName`, `showTunnels`). These present modal UI, so the leak was mostly latent — but
+staging is async: dropping files in one tab and switching before it finished surfaced the
+"already exists" alert over another tab, where **Replace** enqueued into *that* tab's session, i.e.
+a transfer to the wrong server. `terminalDragBase` stays `@State` (it lives for one drag).
+
+**Tripwire.** `SSHTerminalView.updateNSView` now asserts `view === bridge.view`. Nothing there can
+re-host an NSView, so a debug build fails loudly instead of silently driving the wrong server.
+
+**Tests**: `FerryUITests.testTerminalsInTwoTabsStayIndependent` (two tabs, two shells told apart by
+a variable set in the first — the second tab's `touch` must land in its own shell, and the first
+tab's panel must still reach its own after switching back) and
+`testRedockedTerminalReturnsToItsOwnTab` (pop out, re-dock from the other tab, switch back). Both
+were confirmed to fail before the fix. `TerminalSessionBridgeTests.testEachBridgeOwnsItsOwnViewAndOutput`
+pins the bridge half: distinct views, no crossed output, no crossed keystrokes.

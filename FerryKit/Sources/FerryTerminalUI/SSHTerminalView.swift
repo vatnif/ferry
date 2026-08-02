@@ -32,6 +32,13 @@ public struct SSHTerminalView: NSViewRepresentable {
     }
 
     public func updateNSView(_ view: TerminalView, context: Context) {
+        // `makeNSView` runs once per SwiftUI identity: being handed a view that
+        // isn't this bridge's means the host reused one controller's emulator
+        // for another's (the M16-B tab bug, ADR-035). Nothing here can re-host
+        // an NSView, so fail loudly in development instead of silently showing —
+        // and typing into — the wrong server.
+        assert(view === bridge.view,
+               "terminal view/bridge mismatch — the host must give each controller its own identity")
         if view.font != font {
             view.font = font
         }

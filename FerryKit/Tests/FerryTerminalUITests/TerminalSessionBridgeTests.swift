@@ -116,6 +116,40 @@ final class TerminalSessionBridgeTests: XCTestCase {
         XCTAssertEqual(second.font.pointSize, 14, "font refreshes on reuse")
     }
 
+    func testEachBridgeOwnsItsOwnViewAndOutput() async throws {
+        // Two terminals (two connection tabs, ADR-035) must never share an
+        // emulator: each bridge makes its own view, and a session's output
+        // reaches only that session's view. The SwiftUI half of the contract —
+        // giving each controller its own view identity so `makeNSView` runs per
+        // controller — is covered by FerryUITests.
+        let sessionA = StubSession()
+        let sessionB = StubSession()
+        let bridgeA = TerminalSessionBridge(session: sessionA)
+        let bridgeB = TerminalSessionBridge(session: sessionB)
+        let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+
+        let viewA = bridgeA.makeOrReuseView(font: font, scrollback: 1000)
+        let viewB = bridgeB.makeOrReuseView(font: font, scrollback: 1000)
+        XCTAssertFalse(viewA === viewB, "each bridge must own a distinct emulator")
+
+        var deliveredA: [Data] = []
+        var deliveredB: [Data] = []
+        bridgeA.outputSink = { deliveredA.append($0) }
+        bridgeB.outputSink = { deliveredB.append($0) }
+
+        sessionA.continuation.yield(Data("from-a".utf8))
+        try await waitUntil("A's chunk") { deliveredA.count == 1 }
+        // Give a wrongly-crossed pump a real chance to misbehave.
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertEqual(deliveredA, [Data("from-a".utf8)])
+        XCTAssertTrue(deliveredB.isEmpty, "A's output must not reach B's view")
+
+        // Keystrokes route by view, too.
+        bridgeB.send(source: viewB, data: Array("whoami\n".utf8)[...])
+        try await waitUntil("B's keystrokes") { sessionB.sent.count == 1 }
+        XCTAssertTrue(sessionA.sent.isEmpty, "B's keystrokes must not reach A's shell")
+    }
+
     func testScrollbackAppliesAndReasserts() {
         // The Settings scrollback (M16, ADR-025) reaches the emulator on
         // creation and survives a resize (the bridge re-asserts it).

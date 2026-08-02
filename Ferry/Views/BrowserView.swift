@@ -12,18 +12,15 @@ struct BrowserView: View {
     /// back to the disconnected (grey-dot) state (M16 checkpoint B).
     let tab: ConnectionTab
 
-    @State private var newFolderName: String?
-    /// Baseline height while dragging the terminal panel's resize handle.
+    // The New Folder name, the staged conflicts / resume decisions (DOMAIN.md:
+    // Ask is the default exists-policy; interrupted policy == Ask, M16) and the
+    // tunnel sheet all live on the session, not in `@State`: this view has one
+    // SwiftUI identity across every tab, so local state would follow the user
+    // into another tab and act on the wrong connection (ADR-035).
+
+    /// Baseline height while dragging the terminal panel's resize handle. Local
+    /// on purpose — it only lives for the duration of one drag.
     @State private var terminalDragBase: CGFloat?
-    /// Conflicts awaiting the user's per-file decision (DOMAIN.md: Ask is
-    /// the default exists-policy); the alert walks this list front to back,
-    /// with Replace All / Skip All applying to the rest.
-    @State private var pendingConflicts: [TransferRequest] = []
-    /// Interrupted downloads awaiting a Resume/Start-Over decision (interrupted
-    /// policy == Ask, M16). Presented after any conflicts are resolved.
-    @State private var pendingResumeDecisions: [BrowserSession.ResumeDecision] = []
-    /// Presents the tunnel manager (screen 4).
-    @State private var showTunnels = false
     /// Observed so the Terminal toolbar control re-resolves its dispatch the
     /// moment Settings ▸ Terminal changes (M16).
     @AppStorage(AppSettings.Key.terminalPreference)
@@ -64,6 +61,11 @@ struct BrowserView: View {
                         Task { await terminal.shutdown() }
                     })
                 .frame(height: terminal.panelHeight)
+                // Per-tab identity (ADR-035): every connected tab renders its
+                // browser at the same structural position, so the panel needs an
+                // explicit identity or SwiftUI carries one tab's panel — and its
+                // local state — into the next.
+                .id(terminal.id)
                 // No container identifier: SwiftUI would propagate it to every
                 // child, clobbering the panel controls' own identifiers.
             }
@@ -74,47 +76,47 @@ struct BrowserView: View {
             Divider()
             statusBar
         }
-        .alert("“\(pendingConflicts.first?.displayName ?? "")” already exists", isPresented: conflictsPresented) {
+        .alert("“\(session.pendingConflicts.first?.displayName ?? "")” already exists", isPresented: conflictsPresented) {
             Button("Replace", role: .destructive) {
-                if let first = pendingConflicts.first { session.enqueueReplacing([first]) }
-                pendingConflicts.removeFirst()
+                if let first = session.pendingConflicts.first { session.enqueueReplacing([first]) }
+                session.pendingConflicts.removeFirst()
             }
-            if pendingConflicts.count > 1 {
-                Button("Replace All (\(pendingConflicts.count))", role: .destructive) {
-                    session.enqueueReplacing(pendingConflicts)
-                    pendingConflicts = []
+            if session.pendingConflicts.count > 1 {
+                Button("Replace All (\(session.pendingConflicts.count))", role: .destructive) {
+                    session.enqueueReplacing(session.pendingConflicts)
+                    session.pendingConflicts = []
                 }
             }
-            Button("Skip") { pendingConflicts.removeFirst() }
-            Button(pendingConflicts.count > 1 ? "Skip All" : "Cancel", role: .cancel) {
-                pendingConflicts = []
+            Button("Skip") { session.pendingConflicts.removeFirst() }
+            Button(session.pendingConflicts.count > 1 ? "Skip All" : "Cancel", role: .cancel) {
+                session.pendingConflicts = []
             }
         } message: {
             Text(conflictMessage)
         }
-        .alert("Resume “\(pendingResumeDecisions.first?.displayName ?? "")”?", isPresented: resumePresented) {
+        .alert("Resume “\(session.pendingResumeDecisions.first?.displayName ?? "")”?", isPresented: resumePresented) {
             Button("Resume") {
-                if let first = pendingResumeDecisions.first { session.enqueueResuming([first.request]) }
-                if !pendingResumeDecisions.isEmpty { pendingResumeDecisions.removeFirst() }
+                if let first = session.pendingResumeDecisions.first { session.enqueueResuming([first.request]) }
+                if !session.pendingResumeDecisions.isEmpty { session.pendingResumeDecisions.removeFirst() }
             }
-            if pendingResumeDecisions.count > 1 {
-                Button("Resume All (\(pendingResumeDecisions.count))") {
-                    session.enqueueResuming(pendingResumeDecisions.map(\.request))
-                    pendingResumeDecisions = []
+            if session.pendingResumeDecisions.count > 1 {
+                Button("Resume All (\(session.pendingResumeDecisions.count))") {
+                    session.enqueueResuming(session.pendingResumeDecisions.map(\.request))
+                    session.pendingResumeDecisions = []
                 }
             }
             Button("Start Over", role: .destructive) {
-                if let first = pendingResumeDecisions.first { session.enqueueReplacing([first.request]) }
-                if !pendingResumeDecisions.isEmpty { pendingResumeDecisions.removeFirst() }
+                if let first = session.pendingResumeDecisions.first { session.enqueueReplacing([first.request]) }
+                if !session.pendingResumeDecisions.isEmpty { session.pendingResumeDecisions.removeFirst() }
             }
-            Button(pendingResumeDecisions.count > 1 ? "Skip All" : "Skip", role: .cancel) {
-                pendingResumeDecisions = []
+            Button(session.pendingResumeDecisions.count > 1 ? "Skip All" : "Skip", role: .cancel) {
+                session.pendingResumeDecisions = []
             }
         } message: {
             Text(resumeMessage)
         }
         .toolbar { toolbarContent }
-        .sheet(isPresented: $showTunnels) {
+        .sheet(isPresented: $session.showTunnels) {
             if let tunnels = session.tunnels {
                 TunnelManagerSheet(profileID: session.profile.id, controller: tunnels)
                     .environment(model)
@@ -122,7 +124,7 @@ struct BrowserView: View {
         }
         .alert("New Folder", isPresented: newFolderPresented) {
             TextField("Folder name", text: newFolderBinding)
-            Button("Cancel", role: .cancel) { newFolderName = nil }
+            Button("Cancel", role: .cancel) { session.newFolderName = nil }
             Button("Create") { createFolder() }
         } message: {
             Text("Create a folder in the \(session.activePaneKind == .local ? "local" : "remote") pane at \(session.activePane.path)")
@@ -168,7 +170,7 @@ struct BrowserView: View {
             .accessibilityIdentifier("browser.download")
 
             Button {
-                newFolderName = ""
+                session.newFolderName = ""
             } label: {
                 Label("New Folder", systemImage: "folder.badge.plus")
             }
@@ -195,7 +197,7 @@ struct BrowserView: View {
 
             if session.tunnels != nil {
                 Button {
-                    showTunnels = true
+                    session.showTunnels = true
                 } label: {
                     Label("Tunnels", systemImage: "point.3.connected.trianglepath.dotted")
                 }
@@ -374,30 +376,30 @@ struct BrowserView: View {
     // MARK: Transfers
 
     private var conflictsPresented: Binding<Bool> {
-        Binding(get: { !pendingConflicts.isEmpty }, set: { if !$0 { pendingConflicts = [] } })
+        Binding(get: { !session.pendingConflicts.isEmpty }, set: { if !$0 { session.pendingConflicts = [] } })
     }
 
     /// Resume decisions wait until conflicts are cleared, so only one alert is
     /// ever on screen.
     private var resumePresented: Binding<Bool> {
-        Binding(get: { pendingConflicts.isEmpty && !pendingResumeDecisions.isEmpty },
-                set: { if !$0 { pendingResumeDecisions = [] } })
+        Binding(get: { session.pendingConflicts.isEmpty && !session.pendingResumeDecisions.isEmpty },
+                set: { if !$0 { session.pendingResumeDecisions = [] } })
     }
 
     private var resumeMessage: String {
-        guard let first = pendingResumeDecisions.first else { return "" }
+        guard let first = session.pendingResumeDecisions.first else { return "" }
         let bytes = ByteCountFormatter.string(fromByteCount: first.partialBytes, countStyle: .file)
         let base = "A partial download of \(bytes) exists. Resume continues from there; Start Over re-downloads from the beginning."
-        let remaining = pendingResumeDecisions.count - 1
+        let remaining = session.pendingResumeDecisions.count - 1
         return remaining > 0 ? "\(base)\n\(remaining) more after this one." : base
     }
 
     private var conflictMessage: String {
-        guard let first = pendingConflicts.first else { return "" }
+        guard let first = session.pendingConflicts.first else { return "" }
         let what = first.kind == .directory
             ? "A folder with this name exists at \(first.destinationPath) — replacing merges its contents, overwriting same-named files."
             : "Replacing overwrites \(first.destinationPath). This cannot be undone."
-        let remaining = pendingConflicts.count - 1
+        let remaining = session.pendingConflicts.count - 1
         return remaining > 0 ? "\(what)\n\(remaining) more conflict\(remaining == 1 ? "" : "s") after this one." : what
     }
 
@@ -425,26 +427,26 @@ struct BrowserView: View {
     /// Surfaces whatever staging left for the user: conflicts first (exists
     /// policy Ask), then resume decisions (interrupted policy Ask, M16).
     private func applyStaging(_ result: BrowserSession.StagingResult) {
-        pendingConflicts = result.conflicts
-        pendingResumeDecisions = result.resumeDecisions
+        session.pendingConflicts = result.conflicts
+        session.pendingResumeDecisions = result.resumeDecisions
     }
 
     // MARK: New folder
 
     private var newFolderPresented: Binding<Bool> {
-        Binding(get: { newFolderName != nil }, set: { if !$0 { newFolderName = nil } })
+        Binding(get: { session.newFolderName != nil }, set: { if !$0 { session.newFolderName = nil } })
     }
 
     private var newFolderBinding: Binding<String> {
-        Binding(get: { newFolderName ?? "" }, set: { newFolderName = $0 })
+        Binding(get: { session.newFolderName ?? "" }, set: { session.newFolderName = $0 })
     }
 
     private func createFolder() {
-        guard let name = newFolderName?.trimmingCharacters(in: .whitespaces), !name.isEmpty else {
-            newFolderName = nil
+        guard let name = session.newFolderName?.trimmingCharacters(in: .whitespaces), !name.isEmpty else {
+            session.newFolderName = nil
             return
         }
-        newFolderName = nil
+        session.newFolderName = nil
         let pane = session.activePane
         let target = BrowserSession.join(pane.path, name)
         Task {

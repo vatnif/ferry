@@ -35,6 +35,13 @@ struct TerminalPanelView: View {
             SSHTerminalView(bridge: controller.bridge,
                             font: TerminalAppearance.font(family: fontName, size: fontSize),
                             scrollback: scrollbackLines)
+                // One emulator per controller, not per slot (ADR-035). SwiftUI
+                // calls `makeNSView` once per identity, so without this the
+                // docked panel — shared structurally by every connection tab —
+                // keeps hosting the first tab's live TerminalView while its
+                // `bridge` points at another tab's session: the wrong screen,
+                // and keystrokes on the wrong server.
+                .id(controller.id)
                 .accessibilityIdentifier("terminal.view")
             if let ended = controller.endedMessage {
                 endedBanner(ended)

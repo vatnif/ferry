@@ -121,6 +121,13 @@ FerryTerminalUI (second FerryKit product, M15.5)
   `SupervisedConnection`; `SFTPSource.reestablish()` rebuilds its transport in place so
   panes/transfers keep their source reference across drops.
 - **UI fidelity**: views implement `docs/DESIGN.md` / the approved mockups 1:1.
+- **Per-tab view identity** (ADR-035): every connected tab renders `BrowserView` at the
+  same structural position, so anything that must not be shared between tabs needs an
+  explicit `.id(...)` or a home on `BrowserSession`. This is load-bearing for AppKit-backed
+  views — an `NSViewRepresentable`'s `makeNSView` runs once per identity, so a shared slot
+  silently re-hosts one tab's live NSView for another's model (`SSHTerminalView` carries
+  `.id(controller.id)`; a debug assert catches regressions). Per-tab modal state
+  (staged conflicts/resume decisions, New Folder, tunnel sheet) lives on the session.
 
 ## Concurrency model (Swift 6, strict)
 

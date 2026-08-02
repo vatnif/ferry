@@ -37,6 +37,43 @@ Post-v1 plan (Phases G–K, M19–M31): see `docs/ROADMAP.md`. M20 is **split in
 secret-free profile export/import · **C** FTPS self-signed cert TOFU (ADR-033, committed 92796ff).
 **M20 complete.** M17/M18 still deferred.
 
+## Current state of the code (bug fix — per-tab terminal identity, ADR-035 — awaiting review)
+
+- **User-reported**: with two connected tabs, the terminal opened in tab 1 kept appearing under
+  tab 2's file panes, and opening a terminal in both made things incoherent. **Reproduced** with a
+  new XCUITest before any code change.
+- **Root cause is the view layer, not the models.** Per-tab ownership was already correct
+  (`ConnectionTab.phase → BrowserSession → TerminalController`, ADR-023/027). But
+  `DetailPlaceholderView` builds `BrowserView` in a `switch` branch with no `.id(...)`, so every
+  connected tab shares one SwiftUI identity. `SSHTerminalView` is the app's only
+  `NSViewRepresentable` and `makeNSView` runs **once per identity** — a tab switch called only
+  `updateNSView`, keeping tab 1's live `TerminalView` while the struct's `bridge` pointed at tab 2's
+  session: wrong screen, keystrokes on the wrong server (the reused view's delegate is still bridge
+  1), and tab 2's bridge never attached (no pump → its shell's output piled up unconsumed; PTY
+  stuck at 80×24).
+- **Only bites with both panels open** — switching to a tab whose panel is closed destroys the
+  subtree, so the next panel gets a fresh identity. **Detaching sidesteps it** (a pop-out lives in
+  its own `WindowGroup` scene). **Worst variant: re-dock** — "Dock in Window" pressed while another
+  tab's panel is open strands the returning shell (alive, invisible, unreachable).
+- **Fix**: `.id(controller.id)` on the `SSHTerminalView` inside `TerminalPanelView` (covers docked
+  panel + both window flavours) and `.id(terminal.id)` on the docked panel in `BrowserView`.
+  Deliberately *not* `.id(tab.id)` on `BrowserView` — that rebuilds the whole subtree per switch and
+  resets the `HSplitView` divider. Debug tripwire: `updateNSView` asserts `view === bridge.view`.
+- **Same root cause, also fixed**: `BrowserView`'s `@State` was shared across tabs. Staged
+  conflicts, resume decisions, `newFolderName` and `showTunnels` moved onto `BrowserSession`;
+  staging is async, so dropping files in one tab and switching before it finished could surface the
+  "already exists" alert over another tab and enqueue into *its* session (transfer to the wrong
+  server). `terminalDragBase` stays `@State`.
+- **Tests**: +1 kit (`TerminalSessionBridgeTests.testEachBridgeOwnsItsOwnViewAndOutput`) and +2
+  XCUITests (`testTerminalsInTwoTabsStayIndependent`, `testRedockedTerminalReturnsToItsOwnTab`),
+  both confirmed failing before the fix. **430 kit tests green** (18 skipped); UI suite green
+  except four **pre-existing** failures unrelated to this change (verified on a clean tree):
+  `testAppLaunchesWithSidebarAndEmptyState`, both Help-window tests, and
+  `testImportFromSSHConfigAddsProfiles` — the sidebar also fails to appear when driving the app by
+  hand, so this needs its own investigation.
+- Docs updated: ADR-035, ARCHITECTURE (per-tab view identity), TESTING (new tests). No mockup/spec
+  change — this restores what DESIGN.md screen 7 already specifies.
+
 ## Current state of the code (M20 checkpoint C — FTPS certificate TOFU — done, committed 92796ff)
 
 - **Third and final M20 checkpoint** (Phase G / v1.1; ADR-033) — **completes M20**. Pays down the
@@ -776,6 +813,20 @@ secret-free profile export/import · **C** FTPS self-signed cert TOFU (ADR-033, 
 
 ## Session log
 
+- **2026-08-02** — **Per-tab terminal identity (ADR-035)**. Chased a user report that the first
+  tab's embedded terminal followed into the second tab. Verified the models are per-tab and the
+  fault is SwiftUI view identity: `BrowserView` has one identity across all tabs, so
+  `SSHTerminalView` (the only `NSViewRepresentable`) never re-ran `makeNSView` on a tab switch and
+  kept hosting the first tab's live emulator — wrong screen *and* keystrokes on the wrong server.
+  Detaching a terminal sidesteps it (own scene); re-docking from another tab is the worst case
+  (the returning shell is stranded). Fixed with `.id(controller.id)` on the emulator +
+  `.id(terminal.id)` on the docked panel, plus a debug assert in `updateNSView`; moved
+  `BrowserView`'s cross-tab `@State` (staged conflicts/resume decisions, New Folder, tunnel sheet)
+  onto `BrowserSession`, which also closes a wrong-server transfer window. +1 kit test, +2
+  XCUITests, both confirmed red before the fix. **Found in passing, not fixed:** four XCUITests
+  fail on a clean tree too — the sidebar ("Connections") and both Help windows don't show up under
+  automation, and the SSH-config import test fails; the sidebar is also missing when driving the
+  built app by hand. Needs its own session.
 - **2026-07-25** — **Toolbar tooltips + Keychain main-actor freeze (ADR-034)**. (1) Every
   icon-only control now has a `.help()`: the browser toolbar was missing Back, Forward, Upload,
   Download, New Folder, Refresh and the Filter field; the transfer-queue header was missing its

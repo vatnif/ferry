@@ -632,6 +632,198 @@ final class FerryUITests: XCTestCase {
         XCTAssertTrue(connectButton.waitForExistence(timeout: 5))
     }
 
+    /// Two connected tabs each own their embedded terminal (ADR-035). Both tabs
+    /// connect to the exec-capable server (:2223 — the only shell-capable
+    /// container), and the shells are told apart by a variable set in the first
+    /// one: a `touch "…/mark-${MARK:-none}.txt"` typed into the *second* tab's
+    /// panel must land in the second tab's own shell (`mark-none.txt`), never in
+    /// the first tab's (`mark-A.txt`). Before the identity fix, SwiftUI reused
+    /// the first tab's `TerminalView` for the second tab's panel, so the
+    /// keystrokes — and the visible screen — belonged to the wrong server.
+    @MainActor
+    func testTerminalsInTwoTabsStayIndependent() throws {
+        try XCTSkipUnless(scpServerUp, "SSH/SCP test server not running — testinfra/start.sh")
+        guard #available(macOS 15.0, *) else {
+            throw XCTSkip("The embedded terminal requires macOS 15+")
+        }
+        let app = launchIsolatedApp()
+        createSSHProfile(app, named: "docker-terminal")
+
+        // Tab 0: connect, open the terminal, and brand its shell.
+        connectSelectedTab(app)
+        let firstRunning = openTerminalInSelectedTab(app)
+        typeInTerminal(app, "MARK=A\n", below: firstRunning)
+
+        // Tab 1: a second session to the same server. Its terminal was never
+        // opened, so no panel may be on screen — the panel is per tab.
+        app.buttons["tabStrip.newTab"].click()
+        connectSelectedTab(app)
+        XCTAssertFalse(app.staticTexts["terminal.state.running"].exists,
+                       "a tab whose terminal was never opened must show no terminal panel")
+        XCTAssertFalse(app.staticTexts["terminal.state.connecting"].exists)
+
+        // Open tab 1's own terminal and let its shell name itself.
+        let secondRunning = openTerminalInSelectedTab(app)
+        typeInTerminal(app, "touch \"/home/ferry/mark-${MARK:-none}.txt\"\n", below: secondRunning)
+
+        app.buttons["browser.refresh"].click()
+        var ownShellFile = app.staticTexts["mark-none.txt"].firstMatch
+        if !ownShellFile.waitForExistence(timeout: 5) {
+            app.buttons["browser.refresh"].click()
+            ownShellFile = app.staticTexts["mark-none.txt"].firstMatch
+        }
+        XCTAssertTrue(ownShellFile.waitForExistence(timeout: 10),
+                      "the second tab's keystrokes must reach the second tab's own shell")
+        XCTAssertFalse(app.staticTexts["mark-A.txt"].exists,
+                       "the second tab's keystrokes must not reach the first tab's shell")
+
+        // Switch back: tab 0's panel must still drive tab 0's branded shell.
+        app.buttons["tabStrip.tab.0"].firstMatch.click()
+        let backRunning = app.staticTexts["terminal.state.running"].firstMatch
+        XCTAssertTrue(backRunning.waitForExistence(timeout: 10),
+                      "the first tab's terminal panel survives a switch away and back")
+        typeInTerminal(app, "touch \"/home/ferry/back-${MARK:-none}.txt\"\n", below: backRunning)
+        app.buttons["browser.refresh"].click()
+        var brandedFile = app.staticTexts["back-A.txt"].firstMatch
+        if !brandedFile.waitForExistence(timeout: 5) {
+            app.buttons["browser.refresh"].click()
+            brandedFile = app.staticTexts["back-A.txt"].firstMatch
+        }
+        XCTAssertTrue(brandedFile.waitForExistence(timeout: 10),
+                      "the first tab's panel must still type into the shell it branded")
+        XCTAssertFalse(app.staticTexts["back-none.txt"].exists,
+                       "switching back must not route the first tab's panel into the second tab's shell")
+
+        // Clean the server up through the shell that is still on screen.
+        typeInTerminal(app, "rm -f /home/ferry/mark-*.txt /home/ferry/back-*.txt\n", below: backRunning)
+    }
+
+    /// Re-docking a popped-out terminal while *another* tab's panel is open
+    /// (ADR-035, the worst variant of the identity bug): the returning terminal
+    /// belongs to a tab that isn't on screen, so nothing re-hosts it until the
+    /// user switches back — and if that switch reuses the other tab's emulator,
+    /// the re-docked shell is stranded, alive but invisible and unreachable.
+    /// Here the first tab's shell is branded, popped out, re-docked from the
+    /// second tab, and must still be the shell its own panel types into.
+    @MainActor
+    func testRedockedTerminalReturnsToItsOwnTab() throws {
+        try XCTSkipUnless(scpServerUp, "SSH/SCP test server not running — testinfra/start.sh")
+        guard #available(macOS 15.0, *) else {
+            throw XCTSkip("The embedded terminal requires macOS 15+")
+        }
+        let app = launchIsolatedApp()
+        createSSHProfile(app, named: "docker-terminal")
+        let main = app.windows["Ferry"]
+
+        // Tab 0: connect, open the terminal, brand its shell, pop it out.
+        connectSelectedTab(app)
+        let firstRunning = openTerminalInSelectedTab(app)
+        typeInTerminal(app, "MARK=A\n", below: firstRunning)
+        app.buttons["terminal.popOut"].firstMatch.click()
+
+        let terminalWindow = app.windows["Terminal — docker-terminal"]
+        XCTAssertTrue(terminalWindow.waitForExistence(timeout: 10),
+                      "⧉ should move the shell into its own window")
+        XCTAssertFalse(main.staticTexts["terminal.state.running"].exists,
+                       "a popped-out terminal leaves no docked panel behind")
+
+        // The pop-out lands on top of the main window; drag it clear by its
+        // title bar so both windows stay clickable for the rest of the test.
+        terminalWindow.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.02))
+            .press(forDuration: 0.3,
+                   thenDragTo: main.coordinate(withNormalizedOffset: CGVector(dx: 0.25, dy: 1.02)))
+
+        // Tab 1: its own session with its own docked terminal.
+        app.buttons["tabStrip.newTab"].click()
+        connectSelectedTab(app)
+        _ = openTerminalInSelectedTab(app)
+
+        // Re-dock tab 0's terminal while tab 1 is the tab on screen.
+        let redock = terminalWindow.buttons["terminal.redock"].firstMatch
+        XCTAssertTrue(redock.waitForExistence(timeout: 5),
+                      "a terminal whose tab is still connected can return to it")
+        redock.click()
+        XCTAssertTrue(main.staticTexts["terminal.state.running"].waitForExistence(timeout: 10))
+
+        // Back to tab 0: the panel must host the shell it branded, not tab 1's.
+        app.buttons["tabStrip.tab.0"].firstMatch.click()
+        let backRunning = main.staticTexts["terminal.state.running"].firstMatch
+        XCTAssertTrue(backRunning.waitForExistence(timeout: 10),
+                      "the re-docked terminal must be back in its own tab")
+        typeInTerminal(app, "touch \"/home/ferry/redock-${MARK:-none}.txt\"\n", below: backRunning)
+        app.buttons["browser.refresh"].firstMatch.click()
+        var brandedFile = app.staticTexts["redock-A.txt"].firstMatch
+        if !brandedFile.waitForExistence(timeout: 5) {
+            app.buttons["browser.refresh"].firstMatch.click()
+            brandedFile = app.staticTexts["redock-A.txt"].firstMatch
+        }
+        XCTAssertTrue(brandedFile.waitForExistence(timeout: 10),
+                      "the re-docked panel must type into the shell it owns")
+        XCTAssertFalse(app.staticTexts["redock-none.txt"].exists,
+                       "the re-docked panel must not be wired to the other tab's shell")
+
+        typeInTerminal(app, "rm -f /home/ferry/redock-*.txt\n", below: backRunning)
+    }
+
+    // MARK: Embedded-terminal test helpers (M15.5 + M16-B)
+
+    /// Creates an SSH profile pointing at the exec-capable Docker server
+    /// (:2223 — atmoz on :2222 forbids shells). No password is stored, so every
+    /// connect prompts (rule 6).
+    @MainActor
+    private func createSSHProfile(_ app: XCUIApplication, named name: String) {
+        app.buttons["sidebar.newConnection"].click()
+        let nameField = app.textFields["editor.name"]
+        XCTAssertTrue(nameField.waitForExistence(timeout: 5))
+        nameField.click(); nameField.typeText(name)
+        let hostField = app.textFields["editor.host"]
+        hostField.click(); hostField.typeText("127.0.0.1")
+        let portField = app.textFields["editor.port"]
+        portField.click(); portField.typeKey("a", modifierFlags: .command); portField.typeText("2223")
+        let userField = app.textFields["editor.username"]
+        userField.click(); userField.typeText("ferry")
+        app.buttons["editor.save"].click()
+    }
+
+    /// Connects the sidebar-selected profile in the selected tab.
+    @MainActor
+    private func connectSelectedTab(_ app: XCUIApplication) {
+        let connectButton = app.buttons["detail.connect"]
+        XCTAssertTrue(connectButton.waitForExistence(timeout: 5))
+        connectButton.click()
+        let passwordField = app.secureTextFields["passwordPrompt.password"]
+        XCTAssertTrue(passwordField.waitForExistence(timeout: 5))
+        passwordField.click(); passwordField.typeText("ferrypass")
+        app.buttons["passwordPrompt.connect"].click()
+        trustHostKeyIfPrompted(app)
+        XCTAssertTrue(app.staticTexts["browser.status.connected"].waitForExistence(timeout: 20))
+    }
+
+    /// Opens the docked terminal in the selected tab and waits for its shell.
+    /// The toolbar control is a Toggle, which the a11y tree exposes as a
+    /// checkbox. Only the selected tab's panel is ever in the tree.
+    @MainActor
+    private func openTerminalInSelectedTab(_ app: XCUIApplication) -> XCUIElement {
+        let toggle = app.checkBoxes["browser.terminal"].firstMatch
+        let control = toggle.waitForExistence(timeout: 5)
+            ? toggle
+            : app.descendants(matching: .any)["browser.terminal"].firstMatch
+        XCTAssertTrue(control.waitForExistence(timeout: 5))
+        control.click()
+        let running = app.windows["Ferry"].staticTexts["terminal.state.running"].firstMatch
+        XCTAssertTrue(running.waitForExistence(timeout: 20), "the shell should reach running")
+        return running
+    }
+
+    /// SwiftTerm's NSView takes keys on click; aim just below the header.
+    @MainActor
+    private func typeInTerminal(_ app: XCUIApplication, _ text: String, below running: XCUIElement) {
+        running.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+            .withOffset(CGVector(dx: 0, dy: 80))
+            .click()
+        app.typeText(text)
+    }
+
     // NOTE (M16): the SwiftUI `Settings` scene does not open under XCUITest in
     // this harness — neither ⌘, nor the app-menu item routes to it via
     // automation (it works for real users). The Settings window is therefore
