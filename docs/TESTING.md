@@ -29,6 +29,11 @@ testinfra/stop.sh
 - **UI tests one-time setup**: `sudo DevToolsSecurity -enable` in a real terminal
   (otherwise: "Timed out while enabling automation mode"). Done on this machine
   2026-07-05 — only needed again on a new dev machine.
+- UI tests isolate three things (`launchIsolatedApp`): the data dir (`FERRY_DATA_DIR`),
+  the Keychain service (`FERRY_KEYCHAIN_SERVICE`), and **window state**
+  (`-ApplePersistenceIgnoreState YES`, ADR-036). Without the last one macOS restores
+  the previous Ferry's windows into the freshly-launched test app — a popped-out
+  terminal from an earlier run reappears (dead session) inside `app.windows`.
 
 ## Test servers (`testinfra/`)
 

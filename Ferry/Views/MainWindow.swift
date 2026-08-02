@@ -9,12 +9,18 @@ struct MainWindow: View {
     @Environment(\.openWindow) private var openWindow
     /// Settings ▸ General appearance (M16), applied app-wide via NSApp.
     @AppStorage(AppSettings.Key.appearance) private var appearanceRaw = AppSettings.Default.appearance.rawValue
+    /// The sidebar is the connection manager (DESIGN.md screen 1), so it must be
+    /// on screen at launch. Left to `.automatic`, `NavigationSplitView` opened
+    /// with the sidebar *hidden* — the window showed only the empty detail state
+    /// and the connection list was reachable only via the toolbar's Show Sidebar
+    /// (ADR-036). Driving the visibility keeps the user's in-session toggle.
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     var body: some View {
         @Bindable var model = model
         VStack(spacing: 0) {
             TabStripView()
-            NavigationSplitView {
+            NavigationSplitView(columnVisibility: $columnVisibility) {
                 SidebarView()
                     .navigationSplitViewColumnWidth(min: 200, ideal: 230)
             } detail: {

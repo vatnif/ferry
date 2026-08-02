@@ -37,7 +37,26 @@ Post-v1 plan (Phases G–K, M19–M31): see `docs/ROADMAP.md`. M20 is **split in
 secret-free profile export/import · **C** FTPS self-signed cert TOFU (ADR-033, committed 92796ff).
 **M20 complete.** M17/M18 still deferred.
 
-## Current state of the code (bug fix — per-tab terminal identity, ADR-035 — awaiting review)
+## Current state of the code (bug fix — sidebar hidden at launch, ADR-036 — awaiting review)
+
+- **The app launched with the sidebar hidden.** `MainWindow`'s `NavigationSplitView` never set
+  `columnVisibility`, and `.automatic` resolved to hidden on this macOS: the window showed only the
+  "No Connection Selected" placeholder, with the connection list reachable only via the system
+  "Show Sidebar" toolbar button. Not stale prefs — clearing the whole `com.gfragos.Ferry` defaults
+  domain changed nothing, and it reproduces at `ec114e2` (before the tab strip, split view at the
+  window root). Fixed by binding `@State columnVisibility = .all`; the user's Hide/Show toggle
+  still works for the session, and the choice is deliberately not persisted.
+- **UI tests now isolate window state too** (`-ApplePersistenceIgnoreState YES`): macOS was
+  restoring the previous Ferry's windows into each test app, so runs that popped a terminal out
+  left dead "Terminal" windows in later tests' `app.windows`.
+- **This closed all four pre-existing UI-test failures** (`testAppLaunchesWithSidebarAndEmptyState`,
+  both Help-window tests, `testImportFromSSHConfigAddsProfiles`) — they were failing on a clean
+  tree, not because of the ADR-035 work. **Full suite green: 429 kit + 19 XCUITests.**
+- **Known, not fixed**: on a normal relaunch macOS still restores popped-out terminal windows with
+  dead sessions ("This terminal session has ended."). Needs `restorationBehavior(.disabled)` on the
+  terminal `WindowGroup` (macOS 15+, availability-split scene) — its own decision, see ADR-036.
+
+## Current state of the code (bug fix — per-tab terminal identity, ADR-035 — committed 5334cb7)
 
 - **User-reported**: with two connected tabs, the terminal opened in tab 1 kept appearing under
   tab 2's file panes, and opening a terminal in both made things incoherent. **Reproduced** with a
@@ -813,6 +832,15 @@ secret-free profile export/import · **C** FTPS self-signed cert TOFU (ADR-033, 
 
 ## Session log
 
+- **2026-08-02 (cont.)** — **Sidebar hidden at launch (ADR-036)**. Chased the four XCUITests that
+  were failing on a clean tree. Root cause: `NavigationSplitView` with `.automatic` visibility
+  opened with the sidebar hidden, so Ferry launched with its connection manager off screen — the
+  give-away was a system "Show Sidebar" button in the toolbar and a split view reporting one
+  full-width column. Not stale prefs (clearing the defaults domain changed nothing; reproduces at
+  `ec114e2`). Bound an explicit `columnVisibility = .all`. Also isolated **window state** in UI
+  tests (`-ApplePersistenceIgnoreState YES`) — macOS was restoring dead popped-out terminal windows
+  into later tests' `app.windows`. All four tests pass again; **429 kit + 19 XCUITests green**.
+  Left open (ADR-036): a normal relaunch still restores dead terminal windows.
 - **2026-08-02** — **Per-tab terminal identity (ADR-035)**. Chased a user report that the first
   tab's embedded terminal followed into the second tab. Verified the models are per-tab and the
   fault is SwiftUI view identity: `BrowserView` has one identity across all tabs, so

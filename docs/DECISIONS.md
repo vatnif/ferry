@@ -1194,3 +1194,43 @@ tab's panel must still reach its own after switching back) and
 `testRedockedTerminalReturnsToItsOwnTab` (pop out, re-dock from the other tab, switch back). Both
 were confirmed to fail before the fix. `TerminalSessionBridgeTests.testEachBridgeOwnsItsOwnViewAndOutput`
 pins the bridge half: distinct views, no crossed output, no crossed keystrokes.
+
+## 2026-08-02 — ADR-036: The sidebar is shown explicitly; UI tests ignore restored window state
+
+**Status: approved 2026-08-02** (bug fix, no milestone). Found while investigating four XCUITests
+that failed on a clean tree.
+
+**What actually happened.** `MainWindow` used `NavigationSplitView { … } detail: { … }` without a
+`columnVisibility`, i.e. `.automatic` — and on this macOS the window opened with the **sidebar
+hidden**. Ferry's sidebar *is* the connection manager, so the app launched showing nothing but the
+"No Connection Selected" placeholder, with the connection list reachable only through the
+system-supplied "Show Sidebar" toolbar button (whose presence is what finally identified the
+state — the accessibility tree reported the split view with a single, full-width column). It was
+not stale preferences: clearing the `com.gfragos.Ferry` defaults domain, including the
+`NSSplitView Subview Frames …` key, changed nothing, and the same failure reproduces at
+`ec114e2` — before the tab strip existed, when the split view was still the window root.
+
+**Decision.** Drive the visibility: `@State private var columnVisibility: NavigationSplitViewVisibility = .all`
+bound into `NavigationSplitView(columnVisibility:)`. The sidebar is on screen at launch (DESIGN.md
+screen 1) and the user's Hide/Show toggle still works for the session. Deliberately not persisted
+across launches — the failure mode being fixed is "the connection manager is invisible", and a
+remembered `.detailOnly` would bring it straight back.
+
+**Second decision — UI tests isolate window state.** `launchIsolatedApp` now passes
+`-ApplePersistenceIgnoreState YES` alongside the `FERRY_DATA_DIR` / Keychain isolation. macOS was
+restoring the previous Ferry's windows into each freshly-launched test app: runs that popped a
+terminal out left **"Terminal" windows with dead sessions** hanging around in later tests'
+`app.windows`. Window state is now as isolated as the data directory. This also cut the failing
+tests' runtimes (they had been waiting out `waitForExistence` timeouts).
+
+**Known, not fixed here.** Outside the tests, macOS still restores those dead terminal windows on a
+normal relaunch — quit with a popped-out terminal and the next launch shows an empty window reading
+"This terminal session has ended." The fix is to opt the terminal `WindowGroup` out of restoration
+(`restorationBehavior(.disabled)`, macOS 15+, so it needs an availability-split scene); it is a
+separate behaviour change and is left for its own decision.
+
+**Tests**: no new tests — `testAppLaunchesWithSidebarAndEmptyState` already asserted the sidebar's
+"Connections" header and was one of the four tests failing; the other three
+(`testHelpMenuOpensGuideWindow`, `testHelpMenuOpensAcknowledgementsWindow`,
+`testImportFromSSHConfigAddsProfiles`) pass again with window state isolated. Full suite: 429 kit +
+19 XCUITests, all green.

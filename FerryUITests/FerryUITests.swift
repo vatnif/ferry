@@ -11,6 +11,11 @@ final class FerryUITests: XCTestCase {
         try? FileManager.default.createDirectory(atPath: dataDir, withIntermediateDirectories: true)
         app.launchEnvironment["FERRY_DATA_DIR"] = dataDir
         app.launchEnvironment["FERRY_KEYCHAIN_SERVICE"] = "com.gfragos.Ferry.uitests"
+        // Isolate window state too (ADR-036): macOS otherwise restores the
+        // windows of whichever Ferry ran last — a previous test's popped-out
+        // terminal windows reappear (with dead sessions) inside the next test's
+        // app and pollute `app.windows` queries.
+        app.launchArguments += ["-ApplePersistenceIgnoreState", "YES"]
         for (key, value) in extraEnvironment { app.launchEnvironment[key] = value }
         app.launch()
         return app
