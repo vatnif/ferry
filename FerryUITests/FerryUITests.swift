@@ -1032,4 +1032,121 @@ final class FerryUITests: XCTestCase {
         // Dismiss without launching anything.
         app.typeKey(.escape, modifierFlags: [])
     }
+
+    // MARK: Remote→Finder drag-out (ADR-038)
+
+    /// Creates the Docker SFTP connection and connects, leaving the remote pane
+    /// listed. Used by the drag-out tests below.
+    @MainActor
+    private func connectToTestServer(_ app: XCUIApplication, localStart: String? = nil) {
+        app.buttons["sidebar.newConnection"].click()
+        let nameField = app.textFields["editor.name"]
+        XCTAssertTrue(nameField.waitForExistence(timeout: 5))
+        nameField.click(); nameField.typeText("docker-sftp")
+        let hostField = app.textFields["editor.host"]
+        hostField.click(); hostField.typeText("127.0.0.1")
+        // The port field is pre-filled with "22". Select-all alone can lose the
+        // race with the field taking keyboard focus, and the typed text then
+        // *appends* ("222222"), which fails validation and leaves the sheet open.
+        // Deleting the selection explicitly makes the clear unambiguous.
+        let portField = app.textFields["editor.port"]
+        portField.click()
+        portField.typeKey("a", modifierFlags: .command)
+        portField.typeKey(.delete, modifierFlags: [])
+        portField.typeText("2222")
+        XCTAssertEqual(portField.value as? String, "2222", "port field must be replaced, not appended to")
+        let userField = app.textFields["editor.username"]
+        userField.click(); userField.typeText("ferry")
+        if let localStart {
+            let localStartField = app.textFields["editor.localStart"]
+            localStartField.click(); localStartField.typeText(localStart)
+        }
+        app.buttons["editor.save"].click()
+
+        let connectButton = app.buttons["detail.connect"]
+        XCTAssertTrue(connectButton.waitForExistence(timeout: 5))
+        connectButton.click()
+        let passwordField = app.secureTextFields["passwordPrompt.password"]
+        XCTAssertTrue(passwordField.waitForExistence(timeout: 5))
+        passwordField.click(); passwordField.typeText("ferrypass")
+        app.buttons["passwordPrompt.connect"].click()
+        trustHostKeyIfPrompted(app)
+        XCTAssertTrue(app.staticTexts["browser.status.connected"].waitForExistence(timeout: 15))
+    }
+
+    /// The remote row's icon is an AppKit drag handle (ADR-038). Finder drops
+    /// can't be driven from XCUITest, but the handle's *click* contract can —
+    /// and that is what would silently regress. Also covers the behaviour
+    /// ADR-013 gave up: a double-click on the icon now navigates.
+    @MainActor
+    func testRemoteRowIconClickSelectsAndDoubleClickNavigates() throws {
+        try XCTSkipUnless(sftpServerUp, "SFTP test server not running — testinfra/start.sh")
+        let app = launchIsolatedApp()
+        connectToTestServer(app)
+
+        let downloadButton = app.buttons["browser.download"]
+        XCTAssertTrue(downloadButton.waitForExistence(timeout: 10))
+        XCTAssertFalse(downloadButton.isEnabled, "nothing selected yet")
+
+        let fixturesIcon = app.images["row.icon.fixtures"].firstMatch
+        XCTAssertTrue(fixturesIcon.waitForExistence(timeout: 10),
+                      "the remote row icon should be an addressable drag handle")
+
+        fixturesIcon.click()
+        XCTAssertTrue(downloadButton.isEnabled,
+                      "a single click on the icon must select the row, not start a drag")
+
+        fixturesIcon.doubleClick()
+        XCTAssertTrue(app.staticTexts["hello.txt"].firstMatch.waitForExistence(timeout: 10),
+                      "a double-click on the icon must navigate into the folder (ADR-013 wart)")
+    }
+
+    /// The handle must not swallow right-clicks — AppKit has to walk up to the
+    /// table, where SwiftUI installed the row context menu.
+    @MainActor
+    func testRemoteRowIconRightClickShowsContextMenu() throws {
+        try XCTSkipUnless(sftpServerUp, "SFTP test server not running — testinfra/start.sh")
+        let app = launchIsolatedApp()
+        connectToTestServer(app)
+
+        let fixturesIcon = app.images["row.icon.fixtures"].firstMatch
+        XCTAssertTrue(fixturesIcon.waitForExistence(timeout: 10))
+        fixturesIcon.rightClick()
+
+        XCTAssertTrue(app.menuItems["Rename…"].waitForExistence(timeout: 5),
+                      "right-clicking the icon must still reach the row context menu")
+        app.typeKey(.escape, modifierFlags: [])
+    }
+
+    /// **The M8 regression gate.** The icon's drag is now an AppKit promise
+    /// session; it must still satisfy `FileBrowserPane`'s
+    /// `.dropDestination(for: String.self)`, i.e. the inter-pane download. If
+    /// this fails, the promise provider stopped writing the `ferryitem|…`
+    /// payload and pane-to-pane drag is broken (ADR-038 risk 1).
+    @MainActor
+    func testRemoteRowIconDragToLocalPaneStillEnqueuesDownload() throws {
+        try XCTSkipUnless(sftpServerUp, "SFTP test server not running — testinfra/start.sh")
+        let app = launchIsolatedApp()
+        let downloadDir = NSTemporaryDirectory() + "ferry-uitests-dragout-\(UUID().uuidString)"
+        try FileManager.default.createDirectory(atPath: downloadDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(atPath: downloadDir) }
+        connectToTestServer(app, localStart: downloadDir)
+
+        let fixturesRow = app.staticTexts["fixtures"].firstMatch
+        XCTAssertTrue(fixturesRow.waitForExistence(timeout: 10))
+        fixturesRow.doubleClick()
+        let fileIcon = app.images["row.icon.hello.txt"].firstMatch
+        XCTAssertTrue(fileIcon.waitForExistence(timeout: 10))
+
+        // Drag the icon onto the local pane's header, which sits inside the
+        // pane's drop destination.
+        let localPane = app.staticTexts["LOCAL"].firstMatch
+        XCTAssertTrue(localPane.exists)
+        fileIcon.press(forDuration: 0.6, thenDragTo: localPane)
+
+        XCTAssertTrue(app.staticTexts["DONE"].firstMatch.waitForExistence(timeout: 20),
+                      "the inter-pane drag must still enqueue a download")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: downloadDir + "/hello.txt"),
+                      "the dragged file must land in the local pane's directory")
+    }
 }

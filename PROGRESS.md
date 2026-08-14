@@ -30,6 +30,7 @@
 | M18 | Sale readiness | todo (deferred 2026-07-19 — required before sale) |
 | M19 | Editor round-trip (Phase G) | **done** (ADR-030, 2026-07-20) |
 | M20 | Switchers & trust (Phase G) | **done** — A committed ea43d51; B committed ccb252b; C committed 92796ff |
+| M21 (pulled forward) | Remote→Finder drag-out (`NSFilePromiseProvider`) | **in progress** — checkpoint A committed d5dd7ef; B/C todo |
 | M21–M31 | Post-v1 Phases G–K (v1.1–v1.5) | todo (planned 2026-07-19, ADR-029) |
 
 Post-v1 plan (Phases G–K, M19–M31): see `docs/ROADMAP.md`. M20 is **split into 3 checkpoints**
@@ -37,7 +38,50 @@ Post-v1 plan (Phases G–K, M19–M31): see `docs/ROADMAP.md`. M20 is **split in
 secret-free profile export/import · **C** FTPS self-signed cert TOFU (ADR-033, committed 92796ff).
 **M20 complete.** M17/M18 still deferred.
 
-## Current state of the code (bug fix — terminal windows are never restored, ADR-037 — awaiting review)
+## Current state of the code (M21 pulled forward — remote→Finder drag-out, checkpoint A — committed d5dd7ef)
+
+- **The remote pane's rows can now be dragged out to Finder** (spike level — ADR-038 to be
+  written in checkpoint C). Full plan + the complete measured record:
+  `/Users/gfragos/.claude/plans/quirky-cuddling-quasar.md` (the only durable copy of the
+  measurements until ADR-038 exists — keep it).
+- **New**: `Ferry/Models/RemoteDragBridge.swift` (session-scoped `NSDraggingSource` + promise
+  delegates; checkpoint-A stub promise `useStubPromise = true` — 30 s fake progress then a tiny
+  file/directory), `Ferry/Views/RemoteDragHandle.swift` (transparent AppKit overlay on the row
+  icon: click selects, double-click navigates/Quick Looks — retiring that ADR-013 wart — ⌘/⇧
+  clicks forwarded to the table's native toggle/extend, drag past 3 pt starts the promise drag),
+  `Ferry/Models/RemoteDragPayload.swift` (Transferable over Ferry's declared drag type), and
+  **`Ferry/Info.plist`** — the target's first real plist, holding ONLY `UTExportedTypeDeclarations`
+  for `com.gfragos.ferry.drag-item`; merged with the generated plist (`GENERATE_INFOPLIST_FILE`
+  stays YES; `INFOPLIST_FILE` wired into the 4 app configs; `Info.plist` added to the
+  synchronized-folder membership-exception set).
+- **The drag shape, arrived at by measurement** (full matrix in the plan file): one dragging item
+  per row (the file promise — so Finder's count badge is truthful; it counts *dragging items*
+  regardless of type), with the M8 `ferryitem|…` payload appended straight to
+  `session.draggingPasteboard` under the declared type (SwiftUI decodes nothing off a
+  promise-bearing item, even declared/`.string` types; an undeclared UTI never matches; a
+  `.string` second item badged 2 per row and pasted raw text into TextEdit).
+  `FileBrowserPane`'s inter-pane drop is now `.dropDestination(for: RemoteDragPayload.self)`.
+- **Cancelled drags release their promise delegates** (`draggingSession(_:endedAt:)`, per-session
+  token tracking) — a no-drop drag would otherwise leak them; on a real drop they're retained
+  until the promise resolves (Finder can fulfil it after the session ends).
+- **User-verified by hand in BOTH flavors** (Finder is XCUITest-undrivable): truthful badge
+  (1 file → plain ＋, 2 → ＋2), file + folder promises land (30 s deferred completion honoured),
+  same-name drop, drop-onto-folder-icon, TextEdit no-op (no text leak), cancelled drag clean,
+  ⌘/⇧ selection, pane-to-pane real download. Sandbox writes to the drop folder work.
+  **Measured, do not re-litigate**: published `NSProgress` produces NO Finder indicator — dropped
+  from scope.
+- **Still open for checkpoint C**: dragging an unselected row doesn't update the selection to
+  match (decide); scroll-perf on multi-thousand-row listings unmeasured; multi-minute sandbox
+  extension lifetime unproven (stub is 30 s).
+- Tests: **429 kit + 22 XCUITests green** (+3 XCUITests: icon click/double-click, icon
+  right-click context menu, and the M8 regression gate — icon drag to the local pane still
+  enqueues a download). `testEmbeddedTerminalTouchShowsFileInRemotePane` remains the known
+  under-load flake (fails in 2 of 3 full-suite runs today, passes every solo re-run — the
+  pre-existing note stands). Both flavors build. **Awaiting review — nothing committed.**
+  Checkpoints B (groups/plan/policy in FerryCore) and C (real engine-backed promise, integration
+  tests, ADR-038 + docs) are next. **Approved & committed (d5dd7ef).**
+
+## Current state of the code (bug fix — terminal windows are never restored, ADR-037 — committed adcb099)
 
 - Closes the item ADR-036 left open. A standalone terminal window is a view onto a live in-memory
   `TerminalController`, so after an abnormal termination macOS restored empty windows reading "This
@@ -856,6 +900,22 @@ secret-free profile export/import · **C** FTPS self-signed cert TOFU (ADR-033, 
 
 ## Session log
 
+- **2026-08-14** — **M21 checkpoint A: remote→Finder drag-out spike (continued + closed)**.
+  Reviewed the uncommitted checkpoint-A tree before deciding next steps; found and fixed a
+  cancelled-drag promise-delegate leak and a ⌘/⇧-click selection regression on the new icon
+  handle. Then resolved the count-badge question by measurement (user decision: try the
+  declared-UTI fix, fall back to accepting the badge): declared `com.gfragos.ferry.drag-item`
+  via a new merged `Ferry/Info.plist` (first pbxproj `INFOPLIST_FILE` wiring); learned the badge
+  counts *dragging items* regardless of type (a non-consumable declared type still badged 2);
+  final working shape is one dragging item (the promise) + the payload appended directly to the
+  drag pasteboard — badge truthful, no text-paste leak, M8 pane-drop gate green. User ran the
+  full manual Finder matrix in both flavors — all pass, including the folder-drag re-verify and
+  sandbox. Full suite re-verified twice (429 kit + 22 XCUITests; the embedded-terminal flake
+  failed under full-suite load and passed every solo re-run, as documented). Mid-session macOS
+  TCC revoked Terminal's Documents access ("Operation not permitted" on every repo path) —
+  restored via `tccutil reset SystemPolicyDocumentsFolder com.apple.Terminal` + re-allow.
+  **Awaiting review; nothing committed.** Untracked `default.profraw` at the repo root is test
+  junk — delete or gitignore before committing.
 - **2026-08-02 (cont. 2)** — **Terminal windows are never restored (ADR-037)**. Closed the item
   ADR-036 left open: macOS restored popped-out terminal windows after an abnormal termination, so a
   relaunch showed empty "This terminal session has ended" windows. Opted the scene out with

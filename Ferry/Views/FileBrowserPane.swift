@@ -70,9 +70,11 @@ struct FileBrowserPane: View {
         .background(Color(nsColor: .textBackgroundColor))
         // Track the focused pane for the toolbar filter + nav buttons.
         .onTapGesture { session.activePaneKind = pane.kind }
-        // Inter-pane drops from the REMOTE side arrive as string payloads…
-        .dropDestination(for: String.self) { payloads, _ in
-            handleDrop(payloads)
+        // Inter-pane drops from the REMOTE side arrive as `ferryitem|…`
+        // payloads under Ferry's declared drag type, riding the same
+        // pasteboard item as the Finder file promise (ADR-038)…
+        .dropDestination(for: RemoteDragPayload.self) { payloads, _ in
+            handleDrop(payloads.map(\.value))
         }
         // …while Finder files and local-pane items arrive as file URLs (M10).
         .dropDestination(for: URL.self) { urls, _ in
@@ -227,16 +229,15 @@ struct FileBrowserPane: View {
         } primaryAction: { ids in
             guard let id = ids.first,
                   let item = pane.items.first(where: { $0.id == id }) else { return }
-            if item.isDirectory {
-                session.navigate(pane, to: item.path)
-            } else {
-                quickLook(item)
-            }
+            primaryAction(for: item)
         }
     }
 
     /// Icon = drag handle. Local items carry a file URL (Finder + upload to
-    /// the remote pane); remote items carry the string payload (download).
+    /// the remote pane). Remote items go through an AppKit file promise so they
+    /// can drag out to Finder (ADR-038) — SwiftUI's `.draggable` cannot carry an
+    /// `NSFilePromiseProvider`. The promise also writes the M8 `ferryitem|…`
+    /// string, so the inter-pane drag keeps working off the same gesture.
     @ViewBuilder
     private func icon(for item: FileItem) -> some View {
         let image = Image(systemName: item.iconName)
@@ -244,7 +245,41 @@ struct FileBrowserPane: View {
         if pane.kind == .local {
             image.draggable(URL(fileURLWithPath: item.path))
         } else {
-            image.draggable(Self.dragPayload(for: item, in: pane))
+            image.overlay {
+                RemoteDragHandle(item: item,
+                                 pane: pane,
+                                 bridge: session.drag,
+                                 itemsToDrag: { dragItems(startingFrom: item) },
+                                 onSingleClick: { selectOnly(item) },
+                                 onDoubleClick: { primaryAction(for: item) })
+            }
+            // Identified so XCUITests can drive the handle's click/double-click
+            // contract — the Finder half of the drag is only checkable by hand.
+            .accessibilityIdentifier("row.icon.\(item.name)")
+        }
+    }
+
+    /// Finder semantics: dragging a row inside the selection drags the whole
+    /// selection (in listing order); an unselected row drags only itself.
+    private func dragItems(startingFrom item: FileItem) -> [FileItem] {
+        guard pane.selection.contains(item.id), pane.selection.count > 1 else { return [item] }
+        return pane.items.filter { pane.selection.contains($0.id) }
+    }
+
+    private func selectOnly(_ item: FileItem) {
+        session.activePaneKind = pane.kind
+        pane.selection = [item.id]
+    }
+
+    /// Shared by the table's `primaryAction` and the icon handle's
+    /// double-click — before ADR-038 the icon swallowed double-clicks entirely
+    /// (the ADR-013 wart).
+    private func primaryAction(for item: FileItem) {
+        session.activePaneKind = pane.kind
+        if item.isDirectory {
+            session.navigate(pane, to: item.path)
+        } else {
+            quickLook(item)
         }
     }
 

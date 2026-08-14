@@ -26,3 +26,6 @@ testinfra/fixtures/seed/medium-1mb.bin
 # Generated test client SSH keypair (pubkey-auth integration tests) — never commit
 testinfra/fixtures/keys/
 testinfra/fixtures/certs/
+
+# Coverage profile data (emitted by test runs)
+*.profraw

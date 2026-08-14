@@ -200,6 +200,10 @@ final class BrowserSession {
     let local: PaneModel
     let remote: PaneModel
     let queue: TransferQueueModel
+    /// AppKit plumbing for remote→Finder drag-out (ADR-038). Session-scoped
+    /// because it must retain each promise's delegate until the promise
+    /// resolves — a `Table` row view can be recycled mid-drag.
+    let drag = RemoteDragBridge()
     /// Port-forward manager (SSH-based profiles only; nil for FTP/FTPS). Runs
     /// its own SSH session — see `TunnelEngine` (M14).
     let tunnels: TunnelController?
