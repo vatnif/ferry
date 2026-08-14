@@ -30,7 +30,7 @@
 | M18 | Sale readiness | todo (deferred 2026-07-19 — required before sale) |
 | M19 | Editor round-trip (Phase G) | **done** (ADR-030, 2026-07-20) |
 | M20 | Switchers & trust (Phase G) | **done** — A committed ea43d51; B committed ccb252b; C committed 92796ff |
-| M21 (pulled forward) | Remote→Finder drag-out (`NSFilePromiseProvider`) | **in progress** — checkpoint A committed d5dd7ef; B/C todo |
+| M21 (pulled forward) | Remote→Finder drag-out (`NSFilePromiseProvider`) | **in progress** — checkpoint A committed 735b955; B/C todo |
 | M21–M31 | Post-v1 Phases G–K (v1.1–v1.5) | todo (planned 2026-07-19, ADR-029) |
 
 Post-v1 plan (Phases G–K, M19–M31): see `docs/ROADMAP.md`. M20 is **split into 3 checkpoints**
@@ -38,7 +38,7 @@ Post-v1 plan (Phases G–K, M19–M31): see `docs/ROADMAP.md`. M20 is **split in
 secret-free profile export/import · **C** FTPS self-signed cert TOFU (ADR-033, committed 92796ff).
 **M20 complete.** M17/M18 still deferred.
 
-## Current state of the code (M21 pulled forward — remote→Finder drag-out, checkpoint A — committed d5dd7ef)
+## Current state of the code (M21 pulled forward — remote→Finder drag-out, checkpoint A — committed 735b955)
 
 - **The remote pane's rows can now be dragged out to Finder** (spike level — ADR-038 to be
   written in checkpoint C). Full plan + the complete measured record:
@@ -79,7 +79,7 @@ secret-free profile export/import · **C** FTPS self-signed cert TOFU (ADR-033, 
   under-load flake (fails in 2 of 3 full-suite runs today, passes every solo re-run — the
   pre-existing note stands). Both flavors build. **Awaiting review — nothing committed.**
   Checkpoints B (groups/plan/policy in FerryCore) and C (real engine-backed promise, integration
-  tests, ADR-038 + docs) are next. **Approved & committed (d5dd7ef).**
+  tests, ADR-038 + docs) are next. **Approved & committed (735b955).**
 
 ## Current state of the code (bug fix — terminal windows are never restored, ADR-037 — committed adcb099)
 
