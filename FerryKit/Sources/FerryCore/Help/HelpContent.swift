@@ -105,6 +105,17 @@ public enum HelpContent {
             buttons, to add them to the transfer queue at the bottom of the window. The \
             queue runs several transfers at once (set the limit in Settings ▸ Transfers) \
             and shows progress, speed and estimated time for each item.
+
+            You can also drag files and folders straight from the remote pane to a \
+            Finder window: grab the row’s icon and drop it where you want it. The \
+            download runs through the same transfer queue — watch its progress there — \
+            and Finder shows the item only once it has fully arrived. If a file with the \
+            same name is already at the drop location, Finder gives the new one a \
+            numbered name, as it does for drags from other apps. Pausing the transfer in \
+            Ferry lets Finder stop waiting, but the partial download is kept: press \
+            Resume and the file still lands where you dropped it. Dropping files from \
+            Finder onto a pane works in the other direction, adding uploads (or local \
+            copies) to the queue.
             """),
         HelpTopic(
             title: "Resuming interrupted transfers",

@@ -20,21 +20,24 @@ final class RemoteDragBridge: NSObject {
     /// promises, so `onFinish` would never run.
     private var sessionTokens: [ObjectIdentifier: [UUID]] = [:]
 
-    /// Checkpoint-A spike switch: vend a stub promise that reports fake bytes
-    /// for `stubDuration` and then writes a 10-byte file, instead of running a
-    /// real download. Proves deferred completion, the Finder progress question
-    /// and the hit-testing questions without any engine work.
-    var useStubPromise = true
-    var stubDuration: Duration = .seconds(30)
+    /// The owning BrowserSession — the promises download through its engine.
+    /// Weak both ways: the session retains this bridge.
+    weak var session: BrowserSession?
 
     /// Starts a drag session for `items` out of the remote pane. `iconFrame` is
     /// the handle's bounds, so the drag image lifts off the icon in place.
+    ///
+    /// Refuses to start (no dragging items are vended) when the pane is not
+    /// remote or the connection is declared lost — a promise that can never be
+    /// fulfilled would hang Finder. `.reconnecting` is NOT refused: the engine
+    /// retries transient failures, so a queued row is the honest behaviour.
     func beginDrag(_ items: [FileItem],
                    pane: PaneModel,
                    from view: NSView,
                    event: NSEvent,
                    iconFrame: NSRect) {
-        guard !items.isEmpty else { return }
+        guard !items.isEmpty, pane.kind == .remote, session?.health != .lost,
+              session != nil else { return }
         var draggingItems: [NSDraggingItem] = []
         var tokens: [UUID] = []
         for (index, item) in items.enumerated() {
@@ -77,11 +80,15 @@ final class RemoteDragBridge: NSObject {
     }
 
     private func makeProvider(for item: FileItem) -> (NSFilePromiseProvider, UUID)? {
-        // Checkpoint A: the stub measures Finder's behaviour. Checkpoint C
-        // replaces this with PromisedRemoteDownload (real engine transfer).
-        guard useStubPromise else { return nil }
+        guard session != nil else { return nil }
         let token = UUID()
-        let delegate = StubPromisedDownload(item: item, duration: stubDuration) { [weak self] in
+        // The delegate gets a closure, not the session: it re-resolves the
+        // weak reference when Finder actually requests the promise, which can
+        // be after the tab has closed — that must fail the promise, not hang.
+        let delegate = PromisedRemoteDownload(item: item) { [weak self] item, path in
+            guard let session = self?.session else { return nil }
+            return await session.beginDragOut(item, to: path)
+        } onFinish: { [weak self] in
             self?.promises.removeValue(forKey: token)
         }
         let provider = NSFilePromiseProvider(fileType: Self.fileType(for: item).identifier,
@@ -130,92 +137,6 @@ extension RemoteDragBridge: @preconcurrency NSDraggingSource {
         guard operation.isEmpty else { return }
         for token in tokens {
             promises.removeValue(forKey: token)
-        }
-    }
-}
-/// Checkpoint-A stub: holds the promise open for `duration` while reporting
-/// fake byte progress, then writes 10 bytes. Deliberately dumb — its only job
-/// is to answer the questions in the ADR-038 measurement matrix.
-private final class StubPromisedDownload: NSObject {
-    /// The promise's completion handler is not `Sendable`, but every touch of it
-    /// is main-actor-isolated — `operationQueue(for:)` returns `.main`, the
-    /// delegate callback runs there, and the Task that calls it is `@MainActor`.
-    /// That discipline is what makes the box safe.
-    struct SendableCompletion: @unchecked Sendable {
-        let call: (Error?) -> Void
-    }
-
-    private let item: FileItem
-    private let duration: Duration
-    private let onFinish: @MainActor () -> Void
-    private var claimed = false
-
-    init(item: FileItem, duration: Duration, onFinish: @MainActor @escaping () -> Void) {
-        self.item = item
-        self.duration = duration
-        self.onFinish = onFinish
-    }
-}
-
-extension StubPromisedDownload: @preconcurrency NSFilePromiseProviderDelegate {
-    func filePromiseProvider(_ filePromiseProvider: NSFilePromiseProvider,
-                             fileNameForType fileType: String) -> String {
-        item.name
-    }
-
-    /// All delegate callbacks land on the main actor, matching the
-    /// `@preconcurrency` conformance. Nothing here blocks it: the method
-    /// returns immediately and the handler fires from the Task.
-    func operationQueue(for filePromiseProvider: NSFilePromiseProvider) -> OperationQueue {
-        .main
-    }
-
-    func filePromiseProvider(_ filePromiseProvider: NSFilePromiseProvider,
-                             writePromiseTo url: URL,
-                             completionHandler: @escaping (Error?) -> Void) {
-        guard !claimed else {
-            completionHandler(CocoaError(.fileWriteUnknown))
-            return
-        }
-        claimed = true
-        FerryLog.debug("drag-out spike: Finder asked for \(url.path)")
-
-        let total: Int64 = 10_000_000
-        let progress = Progress(parent: nil, userInfo: [
-            .fileOperationKindKey: Progress.FileOperationKind.downloading,
-            .fileURLKey: url
-        ])
-        progress.kind = .file
-        progress.isCancellable = true
-        progress.totalUnitCount = total
-        progress.publish()
-
-        let completion = SendableCompletion(call: completionHandler)
-        Task { @MainActor [duration, onFinish, item] in
-            let ticks = 60
-            let step = duration / ticks
-            for tick in 1...ticks {
-                try? await Task.sleep(for: step)
-                progress.completedUnitCount = total / Int64(ticks) * Int64(tick)
-            }
-            progress.unpublish()
-            do {
-                // A promised folder must become a real directory at `url` —
-                // writing a plain file there is what made the checkpoint-A
-                // folder drags look broken.
-                if item.isDirectory {
-                    try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-                    try Data("spike\n".utf8).write(to: url.appendingPathComponent("spike.txt"))
-                } else {
-                    try Data("spike\n".utf8).write(to: url)
-                }
-                FerryLog.debug("drag-out spike: wrote \(url.lastPathComponent) after \(duration)")
-                completion.call(nil)
-            } catch {
-                FerryLog.error("drag-out spike: write failed — \(error.localizedDescription)")
-                completion.call(error)
-            }
-            onFinish()
         }
     }
 }

@@ -1264,3 +1264,129 @@ system's saved state had been cleared: neither ⌘Q nor SIGKILL with a popped-ou
 it afterwards. So the fix rests on the observed failure plus the documented API for exactly this
 case, **not** on a live before/after. A regression test is not practical either — cross-launch OS
 restoration is not something XCUITest can drive, and the suite now explicitly disables it (ADR-036).
+
+## 2026-08-15 — ADR-038: Remote→Finder drag-out (`NSFilePromiseProvider`) with a truthful completion
+
+**Status: behaviour choices approved 2026-08-14 (plan); shipped across M21 checkpoints A
+(735b955), B (1420349), and C.** Pulled forward out of the M21 bundle. Closes the ADR-015
+backlog item: remote rows now drag out to a Finder window and download there through the real
+transfer queue, giving parity across all four drag directions. The user decision that drives
+the whole design: **Finder's completion must be truthful** — the promise is signalled only
+after every byte has landed, never before.
+
+### The drag shape — measured, do not re-litigate
+
+`NSFilePromiseProvider` is `NSPasteboardWriting`, not `NSItemProvider`, so SwiftUI's
+`.draggable` cannot carry a file promise; the remote icon hosts a transparent AppKit overlay
+(`RemoteDragHandle`) and a session-scoped `NSDraggingSource` (`RemoteDragBridge`). The final
+shape, arrived at by a five-configuration measurement matrix (checkpoint A, both flavors,
+user-verified):
+
+- **One dragging item per row: the file promise.** Finder's count badge counts *dragging
+  items* regardless of whether it can consume their types (a second, non-Finder-consumable
+  item still badged "2" per row), so a truthful badge demands exactly one item per row.
+- **The M8 `ferryitem|…` inter-pane payload is appended straight to
+  `session.draggingPasteboard`** after `beginDraggingSession` — on the pasteboard (so the
+  other pane's drop decodes it) without being a countable dragging item. The mid-session
+  append does not disturb the promise.
+- The payload travels under Ferry's **declared** UTI `com.gfragos.ferry.drag-item`
+  (`Ferry/Info.plist` `UTExportedTypeDeclarations`, merged with the generated plist): an
+  undeclared identifier decodes zero items, and the private type cannot paste raw
+  `ferryitem|…` text into TextEdit/Mail the way `.string` did.
+- **SwiftUI's Transferable decoding reads NOTHING off a pasteboard item that also carries
+  file-promise types** — measured for `.string` and again for the declared type; AppKit
+  reads the same item fine. This is why the payload needs its own pasteboard item at all.
+- **Published `NSProgress` produces no Finder indicator whatsoever** — not even
+  indeterminate. Dropped from scope (it was flagged best-effort; Ferry's queue dock shows
+  real progress). With it went `cancelDragOut` — Finder's cancel button was its only caller.
+
+### Truthful completion: the transfer group
+
+`TransferEngine.performDirectory` marks a directory request `.completed` when its children
+are merely *enqueued* — awaiting the root would tell Finder "done" before a byte of a child
+has been copied. So drag-out items carry a `groupID` (children inherit it) and
+`TransferGroupTracker` (an actor constructed WITH the engine, so it can never miss a member)
+folds member snapshots into one `AsyncStream<TransferGroupEvent>`: `.progress` (aggregate;
+`totalBytes` nil until enumeration closes, then the exact sum), `.stalled`, `.finished`
+(failed ▸ cancelled ▸ completed precedence).
+
+The stopping rule *"every known member is finished"* is sound because children publish
+`.queued` synchronously inside the engine actor, before their parent's terminal event, and
+`publish` yields to subscribers in order — a new member's first event always precedes its
+parent's terminal event, at any depth. It needs three guards, each pinned by a test:
+**seed the group with the root id** (otherwise the rule is vacuously true for an empty
+group, e.g. after `clearFinished()`); **treat `.paused` explicitly** (it is not
+`isFinished`, so it would otherwise hang the group forever — it yields `.stalled`); and
+**freeze a concluded group** (`resume` on a failed directory re-enqueues members; they must
+not produce a second `.finished`).
+
+### Staging: always `.restart`, direct to the destination
+
+The promise delegate (`PromisedRemoteDownload`) hands Finder's chosen path to
+`BrowserSession.beginDragOut`, which opens the group **before** enqueueing (on the engine
+directly — `queue.enqueue` spawns an unordered Task that could race the registration) and
+builds a `DragOutPlan`:
+
+- **Mode is always `.restart`**, not merely tidy: the engine's resume heuristic would
+  silently append to any fresh, similar-sized `.ferrypart` left at the drop location by an
+  earlier drag of a *different* file, and a drag has no conflict prompt to reason about it.
+  Children inherit the mode, so a whole dropped tree restarts.
+- **Direct-to-destination** (a visible `.ferrypart` sibling during the download — already a
+  documented, user-facing concept in Ferry's help) rather than temp-then-move: a temp dir
+  may sit on a different volume than the drop target, degrading the move into a second full
+  copy with 2× peak space.
+- **Finder owns the destination path**: the `NSFilePromiseReceiver` resolves name conflicts
+  in the drop folder before handing over the promise, so none of the pane's
+  exists/dedup/resume policy applies — `stageTransfers` and `TransferNaming` are
+  deliberately not reused. Measured (user, 2026-08-15, closing matrix #7): on a same-name
+  drop Finder **renames silently** to a numbered name — no Keep Both/Replace prompt, which
+  Finder only shows for real-file copies. Standard platform behaviour for promise drags
+  (Safari images, Mail attachments behave the same); documented in the in-app help.
+- **Litter policy** (`litter(after:)`/`cleanUp`): nothing on `.completed`; a file's litter
+  is only its `.ferrypart` (never the destination URL — Finder's); a directory the drag
+  created is removed whole on failure/cancel; a **pre-existing directory is never deleted**
+  (we cannot tell our bytes from the user's). Cleanup runs only on `.finished`, never on
+  `.stalled`.
+
+### Outcome → promise mapping
+
+`.completed` → success. `.failed(msg)` → `NSFileWriteUnknownError` carrying Ferry's message
+(Finder shows it). `.cancelled` → `NSUserCancelledError` (silent abort). **Pause** →
+`.stalled`: the promise is released as a user-cancel (no alert) but the Ferry row and its
+partial data stay, the group stream stays open, and Resume still lands the file — cleanup
+never runs on a stall. Known, documented weirdness rather than fixed: Finder has stopped
+watching by then, and resuming a *failed* group after cleanup restarts from byte 0. A
+drag-out also waits behind already-queued transfers (priority insertion is backlog).
+
+### Boundary and lifetime rules
+
+- **The completion handler is a sanctioned exception** to ARCHITECTURE.md's "no completion
+  handlers in new code": that rule governs Ferry's own APIs; `NSFilePromiseProviderDelegate`
+  is an OS-imposed boundary and the handler's only job is to relay what an `AsyncStream`
+  already decided. The delegate class is deliberately **not** `@MainActor` — the protocol is
+  @objc, so witnesses cannot be actor-isolated; discipline is `operationQueue(for:) = .main`
+  plus a `@MainActor` Task, the same shape the checkpoint-A stub proved.
+- **Delegates are session-scoped and retained by the bridge** (`NSFilePromiseProvider`'s
+  delegate is weak, and a `Table` cell view can be recycled mid-drag — a row-owned delegate
+  would hang the promise silently). A drag that ends with **no drop** releases its
+  delegates immediately (`draggingSession(_:endedAt:)`); on a real drop they stay until
+  their own `onFinish` (Finder can fulfil a promise after the session ends). The delegate
+  holds a `@MainActor` closure, not the session: re-resolving the weak session when Finder
+  actually requests the promise means a closed tab **fails** the promise instead of hanging
+  Finder.
+- **Refuse to vend** (the drag never starts) when the pane isn't remote or the connection
+  is `.lost`. `.reconnecting` is *not* refused — the engine retries transient failures, so
+  a queued row is the honest behaviour.
+- **Sandbox (rule 5)**: the promise holds `startAccessingSecurityScopedResource()` on the
+  drop directory for its whole lifetime (a no-op returning false in the Direct build).
+  Checkpoint A measured the sandboxed write works across a 30 s promise; multi-minute
+  grants are covered by the held scope.
+
+### UI notes (rule 3)
+
+The mockups don't draw a drag affordance; the drag image is the row's own icon (today's
+feel, approved 2026-08-14). Two behaviour refinements ride along: **icon double-click now
+navigates / Quick Looks** (partially retiring the ADR-013 wart — the old `.draggable`
+swallowed it), and — decided in checkpoint C, matching Finder's mouse-down — **dragging an
+unselected row makes it the selection** (a row inside the selection still drags the whole
+selection in listing order, via `DragOutPolicy.itemsToDrag`).

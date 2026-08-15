@@ -95,8 +95,9 @@ capability flags **before** cloud backends and checksum/preserve.
   (📜 TOFU + ⚠️ changed) + Settings ▸ Keys ▸ Trusted certificates. **M20 complete.**
 - **M21** Pane power pack: batch rename (pattern/numbering/find-replace); remote file
   search (`find` via SSH exec fast-path, listing-walk fallback); server-side archive
-  compress/extract via exec (SSH-only); remote→Finder drag-out (`NSFilePromiseProvider`,
-  deferred from M10); terminal-follows-pane toggle (auto-`cd` on pane navigation).
+  compress/extract via exec (SSH-only); ~~remote→Finder drag-out (`NSFilePromiseProvider`,
+  deferred from M10)~~ **done — pulled forward 2026-08-14, shipped in three checkpoints
+  (ADR-038)**; terminal-follows-pane toggle (auto-`cd` on pane navigation).
 
 ### Phase H — v1.2 "Pro SSH core"
 - **M22** Multiplexed `SSHSessionManager`: one SSH session shared by SFTP + exec + tunnels

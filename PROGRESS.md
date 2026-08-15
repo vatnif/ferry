@@ -30,13 +30,66 @@
 | M18 | Sale readiness | todo (deferred 2026-07-19 — required before sale) |
 | M19 | Editor round-trip (Phase G) | **done** (ADR-030, 2026-07-20) |
 | M20 | Switchers & trust (Phase G) | **done** — A committed ea43d51; B committed ccb252b; C committed 92796ff |
-| M21 (pulled forward) | Remote→Finder drag-out (`NSFilePromiseProvider`) | **in progress** — A committed 735b955; B committed 1420349; C todo |
+| M21 (pulled forward) | Remote→Finder drag-out (`NSFilePromiseProvider`) | **done** — A 735b955; B 1420349; C approved 2026-08-15 |
 | M21–M31 | Post-v1 Phases G–K (v1.1–v1.5) | todo (planned 2026-07-19, ADR-029) |
 
 Post-v1 plan (Phases G–K, M19–M31): see `docs/ROADMAP.md`. M20 is **split into 3 checkpoints**
 (approved 2026-07-20): **A** competitor importers (FileZilla/Cyberduck/**WinSCP**) · **B**
 secret-free profile export/import · **C** FTPS self-signed cert TOFU (ADR-033, committed 92796ff).
 **M20 complete.** M17/M18 still deferred.
+
+## Current state of the code (M21 checkpoint C — engine-backed Finder drag-out — approved, completing the drag-out milestone)
+
+- **The Finder drag-out is real end-to-end**: the checkpoint-A stub
+  (`useStubPromise`/`StubPromisedDownload`) is deleted and a dropped remote row now
+  downloads through the session's transfer queue to the exact path Finder chose, with the
+  promise signalled only when the group tracker reports every member finished. **This
+  completes the drag-out item pulled forward from the M21 bundle** (ADR-038 written; plan
+  file `/Users/gfragos/.claude/plans/quirky-cuddling-quasar.md` is no longer the only copy
+  of the measured record).
+- **New `Ferry/Models/PromisedRemoteDownload.swift`** — the `NSFilePromiseProviderDelegate`
+  (deliberately not `@MainActor`: the protocol is @objc, so witnesses can't be
+  actor-isolated; discipline is `operationQueue = .main` + a `@MainActor` Task, the shape
+  the stub proved). Claim-once guard; holds a `@MainActor` closure rather than the session,
+  so a promise requested after the tab closed **fails** instead of hanging Finder. Outcome
+  mapping per ADR-038: completed → success; failed → `NSFileWriteUnknownError` carrying
+  Ferry's message; cancelled → `NSUserCancelledError`; **paused → `.stalled`** releases
+  Finder as a user-cancel while the stream stays open (cleanup only on `.finished`, so
+  Resume still lands the file). Holds `startAccessingSecurityScopedResource()` on the drop
+  directory for the promise's lifetime (sandbox, rule 5; no-op in Direct).
+- **`BrowserSession`**: the engine is hoisted so `queue` (TransferQueueModel) and the new
+  `groups: TransferGroupTracker` observe the SAME engine; new `beginDragOut(_:to:)` opens
+  the group **before** enqueueing on `queue.engine` directly (`queue.enqueue`'s unordered
+  Task would race registration) and builds the `DragOutPlan` (always `.restart`,
+  direct-to-destination). The plan's `cancelDragOut` was dropped — its only caller was the
+  Finder `NSProgress` cancel button, and NSProgress was measured a no-op in checkpoint A.
+- **`RemoteDragBridge`**: vends `PromisedRemoteDownload` per row; refuses to start a drag
+  when the pane isn't remote or `session.health == .lost` (`.reconnecting` is allowed —
+  the engine retries, a queued row is honest). Delegate-lifetime rules unchanged from A
+  (session-scoped retention, no-drop release, fulfil-after-session-end kept).
+- **Matrix #10 decided (new UI behaviour for sign-off)**: dragging an **unselected** row
+  now selects it (Finder's own mouse-down semantics); `FileBrowserPane.dragItems` routes
+  through checkpoint B's `DragOutPolicy.itemsToDrag` (in-selection drags the whole
+  selection in listing order — now the *sorted* listing, matching what's on screen).
+- Tests: **452 kit green (+5 `DragOutDownloadTests` vs live Docker SFTP, +1 HelpContent
+  drag-out guard**: file byte-exact
+  + no `.ferrypart`; nested-tree files all on disk at the instant `.finished` arrives;
+  cancel mid-transfer cleans up the created directory; `.restart` truncates a pre-seeded
+  garbage partial; monotonic aggregate progress with `totalBytes` closing to the exact
+  sum**)**. Both flavors build (Direct + AppStore). **XCUITests 22/22 green** — including
+  the two checkpoint-A icon hit-testing tests, the M8 drag regression gate, and (this
+  run) the usually-flaky embedded-terminal test. Docs
+  updated: **ADR-038**, DOMAIN, DESIGN, ARCHITECTURE, TESTING (checkpoint-C manual Finder
+  checklist), ROADMAP (item pulled out of the M21 bundle). No new dependency → LICENSING
+  untouched; no pbxproj edits (synchronized folders picked the new file up).
+- **User-verified by hand (2026-08-15) and approved**: the manual Finder matrix re-run
+  passed, including both flavors, and settled the last open measurement (matrix #7): a
+  same-name drop is **silently renamed by Finder** to a numbered name, no prompt — the
+  standard platform behaviour for promise drags, now recorded in ADR-038 and explained in
+  the in-app help ("Transferring files" gained a drag-out paragraph + a HelpContent guard
+  test). **Still open, honestly**: scroll-perf on multi-thousand-row listings remains
+  unmeasured; the multi-minute sandbox extension is mitigated by the held security scope
+  but only a 30 s promise was ever measured.
 
 ## Current state of the code (M21 checkpoint B — groups/plan/policy in FerryCore — committed 1420349)
 
@@ -927,17 +980,39 @@ secret-free profile export/import · **C** FTPS self-signed cert TOFU (ADR-033, 
 
 ## Next steps
 
-1. **M21 checkpoint C**: real engine-backed promise replacing the
-   `useStubPromise = true` stub in `RemoteDragBridge`, `DragOutDownloadTests` integration
-   suite, ADR-038 + the deferred doc updates (DOMAIN, DESIGN, ARCHITECTURE, ROADMAP), and the
-   re-run manual Finder matrix in both flavors. **M17/M18 (packaging, sale readiness) remain
-   deferred but required before sale.**
+1. The remaining M21 bundle items (batch rename, remote search, archives,
+   terminal-follows-pane) or **M17/M18 (packaging, sale readiness — required before
+   sale)**. The drag-out item is done (ADR-038).
 2. Backlog: multiplexed `SSHSessionManager` (ADR-021/022); FTP connection pooling
    (`CURLSH`) to avoid a login per op; per-file `MDTM` for precise FTP mtimes; route `~/.ssh`
    reads through the bookmark store for the App Store sandbox (M17, ADR-018).
 
 ## Session log
 
+- **2026-08-15 (cont.)** — **M21 checkpoint C: engine-backed Finder drag-out (built,
+  awaiting review)**. Replaced the checkpoint-A stub with the real pipeline:
+  `PromisedRemoteDownload` (promise delegate; not `@MainActor` — @objc-protocol witnesses
+  can't be isolated, so it keeps the stub's `.main`-queue + `@MainActor`-Task discipline;
+  holds a closure rather than the session so a closed tab fails the promise; claim-once;
+  security scope held on the drop dir for the promise's lifetime),
+  `BrowserSession.beginDragOut` (engine hoisted and shared with the new
+  `groups: TransferGroupTracker`; group opened before enqueueing on `queue.engine`
+  directly), bridge refusal guards (non-remote pane / `.lost`; `.reconnecting` allowed).
+  Dropped `cancelDragOut` from the plan's API — its only caller was Finder's `NSProgress`
+  cancel button, and NSProgress was measured a no-op in A. Decided matrix #10: dragging an
+  unselected row now selects it (Finder's mouse-down semantics); `dragItems` routes
+  through `DragOutPolicy.itemsToDrag` over the sorted listing. +5 `DragOutDownloadTests`
+  vs live Docker SFTP (byte-exact file with no `.ferrypart` left; nested tree complete at
+  the instant `.finished` arrives; cancel cleans up the created directory; `.restart`
+  truncates seeded garbage; monotonic progress with the total closing exactly).
+  **452 kit + 22 XCUITests green** (the embedded-terminal flake passed this run); both
+  flavors build. Docs: ADR-038 + DOMAIN/DESIGN/ARCHITECTURE/TESTING (manual Finder
+  checklist)/ROADMAP; Help's "Transferring files" gained the drag-out paragraph (+1 guard
+  test). **User ran the manual Finder matrix by hand in both flavors — all pass**, and
+  measured the last open question (matrix #7): a same-name drop is silently renamed by
+  Finder, no prompt (recorded in ADR-038). **Approved & committed — completes the
+  drag-out milestone; a release Direct build was installed to /Applications for daily
+  use.**
 - **2026-08-15** — **M21 checkpoint B: groups/plan/policy in FerryCore (built, awaiting
   review)**. Implemented the checkpoint exactly per the approved plan: `groupID` threaded
   through `TransferRequest`/`TransferSnapshot`/`performDirectory` (defaulted — no call-site

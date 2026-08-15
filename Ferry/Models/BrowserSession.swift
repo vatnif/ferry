@@ -200,6 +200,11 @@ final class BrowserSession {
     let local: PaneModel
     let remote: PaneModel
     let queue: TransferQueueModel
+    /// Group-completion signals over the SAME engine as `queue` (ADR-038):
+    /// a Finder drag-out signals its promise only when every member of the
+    /// dragged tree has finished, never when the root directory has merely
+    /// enqueued its children.
+    let groups: TransferGroupTracker
     /// AppKit plumbing for remote→Finder drag-out (ADR-038). Session-scoped
     /// because it must retain each promise's delegate until the promise
     /// resolves — a `Table` row view can be recycled mid-drag.
@@ -273,10 +278,16 @@ final class BrowserSession {
         // conflict/interrupted policies are re-read at each staging call so
         // they apply immediately.
         let settings = TransferSettingsSnapshot.current
-        self.queue = TransferQueueModel(engine: TransferEngine(
+        // The queue model and the group tracker must observe the SAME engine —
+        // and the tracker must be constructed with it (a late subscriber could
+        // miss members and vacuously conclude a group).
+        let engine = TransferEngine(
             maxConcurrent: settings.simultaneous,
             maxAttempts: settings.maxAttempts,
-            retryDelay: settings.retryDelay))
+            retryDelay: settings.retryDelay)
+        self.queue = TransferQueueModel(engine: engine)
+        self.groups = TransferGroupTracker(engine: engine)
+        drag.session = self
         queue.onCompleted = { [weak self] snapshot in
             guard let self else { return }
             let destination = snapshot.direction == .download ? self.local : self.remote
@@ -605,6 +616,34 @@ final class BrowserSession {
             request.mode = .automatic
             queue.enqueue(request)
         }
+    }
+
+    // MARK: Finder drag-out (M21, ADR-038)
+
+    /// Stages one remote→Finder drag-out. `destinationPath` is the exact path
+    /// Finder chose: the NSFilePromiseReceiver resolves any name conflict in
+    /// the drop folder before handing over the promise, so none of the pane
+    /// exists/dedup/resume policy applies — and honouring that path is the
+    /// contract. Mode is always `.restart` (ADR-038: the resume heuristic
+    /// would silently append to a stranger's `.ferrypart` at the drop
+    /// location, and a drag has no conflict prompt to reason about it).
+    func beginDragOut(_ item: FileItem, to destinationPath: String) async
+        -> (plan: DragOutPlan, handle: TransferGroupHandle) {
+        let groupID = UUID()
+        let destinationExisted = (try? await local.source.stat(path: destinationPath)) != nil
+        let plan = DragOutPlan.make(item: item,
+                                    destinationPath: destinationPath,
+                                    source: remote.source,
+                                    destination: local.source,
+                                    destinationExisted: destinationExisted,
+                                    groupID: groupID)
+        // Open the group BEFORE enqueueing, and enqueue on the engine
+        // directly — `queue.enqueue` spawns an unordered Task that could race
+        // the registration, and a root enqueued before its group is seeded
+        // would never conclude.
+        let handle = await groups.open(group: groupID, root: plan.request.id)
+        await queue.engine.enqueue(plan.request)
+        return (plan, handle)
     }
 
     // MARK: Settings-derived helpers

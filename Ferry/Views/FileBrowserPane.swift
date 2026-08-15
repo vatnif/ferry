@@ -259,11 +259,15 @@ struct FileBrowserPane: View {
         }
     }
 
-    /// Finder semantics: dragging a row inside the selection drags the whole
-    /// selection (in listing order); an unselected row drags only itself.
+    /// Finder semantics (DragOutPolicy): dragging a row inside the selection
+    /// drags the whole selection in listing order; an unselected row drags
+    /// only itself — and becomes the selection, the way Finder's own
+    /// mouse-down would have selected it before the drag.
     private func dragItems(startingFrom item: FileItem) -> [FileItem] {
-        guard pane.selection.contains(item.id), pane.selection.count > 1 else { return [item] }
-        return pane.items.filter { pane.selection.contains($0.id) }
+        if !pane.selection.contains(item.id) { selectOnly(item) }
+        return DragOutPolicy.itemsToDrag(clicked: item,
+                                         selection: pane.selection,
+                                         in: pane.sortedItems)
     }
 
     private func selectOnly(_ item: FileItem) {

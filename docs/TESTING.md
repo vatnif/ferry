@@ -169,6 +169,53 @@ update the golden in `CertificateInfoTests` and `FTPSCertTrustTests`.
    external options are absent and the toolbar button is disabled on macOS 14 with the
    "requires macOS 15" explainer.
 
+## M21 checkpoint C additions (engine-backed Finder drag-out, ADR-038)
+
+New integration coverage (`FerryIntegrationTests/DragOutDownloadTests`, 5 tests vs the
+Docker SFTP server) — the drag-out pipeline exactly as `BrowserSession.beginDragOut`
+stages it (group opened before the root is enqueued, on the engine directly):
+
+- **File drag-out** lands byte-exact at the Finder-chosen path with **no `.ferrypart`
+  left behind**.
+- **Folder drag-out** over a seeded three-level tree: at the instant `.finished`
+  arrives — the promise-signalling moment — every file is already on disk byte-exact
+  (the real-server version of the tracker's invariant test).
+- **Cancel mid-transfer** → `.finished(.cancelled)`, and `cleanUp` removes the directory
+  the drag created, leaving the drop folder empty.
+- **`.restart` truncates a pre-existing garbage `.ferrypart`** at the drop location (the
+  exact corruption the resume heuristic would have caused) — the landed file is byte-exact.
+- **Progress honesty**: aggregate bytes are monotonic; `totalBytes` starts nil while the
+  directory enumerates, closes to the exact sum, and never reopens.
+
+The waits are modelled on `SFTPTransferTests.waitForFinish` (deadline checked per event).
+The Finder half itself (a real drop) is not automatable — XCUITest cannot drive Finder —
+so the two checkpoint-A XCUITests protect the hit-testing contract (icon click selects /
+double-click navigates / right-click menu; icon drag to the local pane still enqueues,
+the M8 regression gate), and the following **manual checklist** covers the rest. Run it
+in **both flavors** (Direct + AppStore) after any change to the drag pipeline:
+
+1. Drag a remote file to a Finder window → it downloads there; Finder waits until the
+   bytes have actually landed (no early completion), then the file is complete.
+2. Drag a folder with nested content → a real directory lands, complete.
+3. Count badge is truthful: 1 row → plain ＋ cursor, 2 rows → ＋2.
+4. Drop where a same-named file exists → Finder silently renames to a numbered name
+   (no Keep Both/Replace prompt — measured 2026-08-15); Ferry honours Finder's path
+   exactly.
+5. Drop onto a folder icon in Finder → lands inside it.
+6. Cancel the transfer from Ferry's queue → Finder aborts silently; no `.ferrypart`
+   or created directory remains at the drop location.
+7. Pause the transfer in Ferry → Finder stops waiting (no alert); the row stays paused
+   with its partial; Resume still lands the file at the drop path.
+8. Kill the connection (stop the container) mid-drag → Finder shows Ferry's error
+   message; litter is cleaned up.
+9. Drag to TextEdit / Mail → no text pastes, nothing hangs.
+10. Cancelled drag (Esc / drop nowhere) → nothing enqueued, nothing leaked.
+11. Dragging an unselected row selects it; a row inside a multi-selection drags the
+    whole selection; ⌘/⇧ icon clicks still toggle/extend.
+12. Pane-to-pane icon drag still enqueues a real transfer (M8 gate, also automated).
+13. Scroll a multi-thousand-entry remote listing → no frame drops, sane CPU (per-row
+    NSView cost).
+
 ## M21 checkpoint B additions (drag-out groups/plan/policy — headless FerryCore)
 
 New unit coverage (headless, `FerryCoreTests/`, both on the shared `InMemoryFileSource`
@@ -197,7 +244,7 @@ stub, which gained a `listFailuresRemaining` failure knob):
 Waits follow ADR-014: predicates race a timer task (`waitUntil`/`assertNever`) so a
 stream that never emits fails fast instead of hanging. No integration tests or
 XCUITests here by design — checkpoint B is engine-side only; the real engine-backed
-promise + `DragOutDownloadTests` against Docker land in checkpoint C (see the plan).
+promise + `DragOutDownloadTests` against Docker landed in checkpoint C (section above).
 
 ## M20 checkpoint B additions (Profile export/import — Ferry's own format)
 

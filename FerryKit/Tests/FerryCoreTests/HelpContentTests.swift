@@ -110,6 +110,18 @@ final class HelpContentTests: XCTestCase {
                       "the connect topic should explain that a trusted certificate is pinned")
     }
 
+    func testTopicsDocumentFinderDragOut() {
+        // M21 (ADR-038): remote→Finder drag-out is user-facing and must stay
+        // documented (the user mandated updating Help for any new feature),
+        // including the pause/Resume behaviour and Finder's rename-on-conflict.
+        let body = HelpContent.topics.first { $0.title == "Transferring files" }?.body ?? ""
+        XCTAssertTrue(body.contains("Finder"), "the transfer topic omits the Finder drag-out")
+        XCTAssertTrue(body.lowercased().contains("numbered name"),
+                      "must explain Finder renames on a same-name drop")
+        XCTAssertTrue(body.contains("Resume"),
+                      "must explain a paused drag-out still lands via Resume")
+    }
+
     func testTopicsIncludeResumeExplainer() {
         XCTAssertFalse(HelpContent.topics.isEmpty)
         for topic in HelpContent.topics {

@@ -242,9 +242,19 @@ listing, stat, mkdir, delete, rename, or chmod. So Ferry splits the surface:
   the other side ⇒ that pane stays, path bar flashes, link persists. Toggle off ⇒
   independent again.
 - Drag & drop: between panes ⇒ queue transfer; from Finder ⇒ same (drop files onto a
-  pane to upload/copy); local files drag out to Finder. Remote→Finder promise drag is
-  backlogged. Double-click: folders navigate; files on local Quick Look, on remote
-  download-and-Quick-Look (streamed to a temp file first).
+  pane to upload/copy); local files drag out to Finder. **Remote rows drag out to Finder
+  too (M21, ADR-038)**: files and folders, downloaded to the drop location through the
+  real transfer queue, and the Finder promise is signalled only after every byte lands
+  (a folder waits for its whole tree, via `TransferGroupTracker`). The drop path is
+  Finder's — its receiver resolves name conflicts, so the pane exists/dedup/resume
+  policies don't apply; mode is always restart (a drag has no conflict prompt to reason
+  about a foreign `.ferrypart`). Failure shows Ferry's message in Finder's alert and
+  cleans up (a `.ferrypart`, or a whole directory the drag created — never a
+  pre-existing one); pausing releases Finder without an alert but keeps the row and its
+  partial, so Resume still lands the file. Dragging a row inside the selection drags the
+  whole selection; an unselected row drags only itself and becomes the selection.
+  Double-click: folders navigate; files on local Quick Look, on remote
+  download-and-Quick-Look (streamed to a temp file first) — including on the row icon.
 - File ops (row context menu): rename (in place, rejects "/" and clobbering an existing
   name), delete (confirms; recursive for folders; no Trash — items are removed, not moved),
   chmod (both panes). Rename refuses to overwrite; replacements go through the conflict

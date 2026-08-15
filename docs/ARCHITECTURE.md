@@ -20,7 +20,12 @@ Ferry.app (SwiftUI, @MainActor)
 ├── TabStripView (M16)         one chip per ConnectionTab (green/grey dot),
 │                              ＋/✕; selected chip drives the detail column
 ├── BrowserView (M7)           dual pane + toolbar + status bar (per selected tab)
-│   └── FileBrowserPane ×2     same component for local & remote panes
+│   └── FileBrowserPane ×2     same component for local & remote panes; the remote
+│                              icon hosts RemoteDragHandle (transparent AppKit overlay,
+│                              M21/ADR-038) → RemoteDragBridge (session-scoped
+│                              NSDraggingSource; retains each promise delegate until it
+│                              resolves) → PromisedRemoteDownload (file-promise delegate;
+│                              signals Finder off the TransferGroupTracker stream)
 ├── TransferQueueView (M8), TunnelManagerView (M14), Settings (M16)
 ├── HelpGuideWindowView + AcknowledgementsWindowView (M16 C, ADR-028)
 │                              standalone Help-menu Window scenes rendering the
@@ -55,7 +60,15 @@ FerryCore (FerryKit package)
 │                                        snapshot stream w/ replay, robust cancel
 │                                        (ADR-013); M9: .ferrypart staging + resume,
 │                                        pause/resume, transient-error retry (3×/5 s),
-│                                        lazy directory expansion (ADR-014)
+│                                        lazy directory expansion (ADR-014); M21:
+│                                        optional groupID on request/snapshot (children
+│                                        inherit it)
+├── TransferGroupTracker (actor, M21)    second engine subscriber (alongside the queue
+│                                        model): folds a group's member snapshots into
+│                                        one progress/stalled/finished stream — the
+│                                        truthful completion behind the Finder drag-out
+│                                        promise (ADR-038); DragOut.swift holds the
+│                                        plan/litter policy + Finder selection semantics
 ├── ConnectionSupervisor (actor, M9)     keep-alive ping (30 s) + auto-reconnect with
 │                                        backoff over a SupervisedConnection
 │                                        (ping/reestablish — SFTPSource conforms)
@@ -135,6 +148,9 @@ FerryTerminalUI (second FerryKit product, M15.5)
 - Long-lived mutable state (sessions, queue) lives in **actors** (`TransferEngine`,
   `SSHSessionManager`). Value types (`ConnectionProfile`, `FileItem`) are `Sendable`.
 - No completion handlers in new code; `async/await` + `AsyncSequence` for progress streams.
+  (This governs Ferry's own APIs. One sanctioned exception, ADR-038: the
+  `NSFilePromiseProviderDelegate` completion handler is an OS-imposed boundary — its only
+  job there is to relay what a `TransferGroupTracker` stream already decided.)
 - Blocking C calls (libcurl's `curl_easy_perform`, M12) never run on the cooperative
   executor: `FTPSource` dispatches every perform onto a detached `Thread` and bridges back
   via a continuation / `AsyncThrowingStream`. C callbacks use `@convention(c)` closures with

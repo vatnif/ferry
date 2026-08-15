@@ -17,15 +17,19 @@ tab 7 "Terminal" added in M15.5, approved 2026-07-18, ADR-023).
   sheet, Quick Look (local in place / remote via temp download), and Finder drag & drop
   (drop files onto a pane to transfer; drag local files out to Finder).
   Notes: drag handle is the file icon (whole-row drag breaks double-click, ADR-013); local
-  items vend a file URL, remote items a string payload (ADR-015). The **Tunnels toolbar
-  button** (SSH profiles only) and the **active-tunnel count** in the status bar are live
-  (M14). The Terminal control (M15/M15.5) is live. **Connection tabs are live (M16
-  checkpoint B, ADR-027)**: the `.wintabs` strip above the toolbar — one chip per connection
-  (green dot connected / grey disconnected), active chip highlighted, per-tab ✕, trailing ＋;
-  double-click connects in the current tab, ⌘-double-click / ＋ / ⌘T open a new tab; the sidebar
-  is shared. **Within-folder drag reorder is live (M16)** — drop an item onto a profile row to
-  reposition it. Pending: remote→Finder promise drag (backlog). Status bar shows first-listing
-  round-trip instead of continuous latency for now. **The row context menu gained Open in
+  items vend a file URL, remote items an AppKit file promise + Ferry's declared drag type
+  (ADR-015 → ADR-038). **Remote→Finder drag-out is live (M21, ADR-038)**: drag a remote
+  row's icon to Finder and the item downloads there through the queue; the drag image is
+  the row icon only (no new affordance drawn — no mockup change), icon double-click
+  navigates / Quick Looks like a name double-click, and dragging an unselected row selects
+  it. The **Tunnels toolbar button** (SSH profiles only) and the **active-tunnel count** in
+  the status bar are live (M14). The Terminal control (M15/M15.5) is live. **Connection
+  tabs are live (M16 checkpoint B, ADR-027)**: the `.wintabs` strip above the toolbar —
+  one chip per connection (green dot connected / grey disconnected), active chip
+  highlighted, per-tab ✕, trailing ＋; double-click connects in the current tab,
+  ⌘-double-click / ＋ / ⌘T open a new tab; the sidebar is shared. **Within-folder drag
+  reorder is live (M16)** — drop an item onto a profile row to reposition it. Status bar
+  shows first-listing round-trip instead of continuous latency for now. **The row context menu gained Open in
   Editor / Open With (M19, Direct only — editor round-trip; see below).**
 - Screen 2 (connection sheet): live since M4; SSH-key + agent auth rows are wired (M11 —
   key auth live; agent reports "planned"); "Test Connection" is a TCP probe until a
