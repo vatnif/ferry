@@ -30,7 +30,7 @@
 | M18 | Sale readiness | todo (deferred 2026-07-19 — required before sale) |
 | M19 | Editor round-trip (Phase G) | **done** (ADR-030, 2026-07-20) |
 | M20 | Switchers & trust (Phase G) | **done** — A committed ea43d51; B committed ccb252b; C committed 92796ff |
-| M21 (pulled forward) | Remote→Finder drag-out (`NSFilePromiseProvider`) | **done** — A 735b955; B 1420349; C approved 2026-08-15 |
+| M21 (pulled forward) | Remote→Finder drag-out (`NSFilePromiseProvider`) | **done** — A 735b955; B 1420349; C 5d956fb |
 | M21–M31 | Post-v1 Phases G–K (v1.1–v1.5) | todo (planned 2026-07-19, ADR-029) |
 
 Post-v1 plan (Phases G–K, M19–M31): see `docs/ROADMAP.md`. M20 is **split into 3 checkpoints**
@@ -1010,8 +1010,8 @@ secret-free profile export/import · **C** FTPS self-signed cert TOFU (ADR-033, 
   checklist)/ROADMAP; Help's "Transferring files" gained the drag-out paragraph (+1 guard
   test). **User ran the manual Finder matrix by hand in both flavors — all pass**, and
   measured the last open question (matrix #7): a same-name drop is silently renamed by
-  Finder, no prompt (recorded in ADR-038). **Approved & committed — completes the
-  drag-out milestone; a release Direct build was installed to /Applications for daily
+  Finder, no prompt (recorded in ADR-038). **Approved & committed (5d956fb) — completes
+  the drag-out milestone; a release Direct build was installed to /Applications for daily
   use.**
 - **2026-08-15** — **M21 checkpoint B: groups/plan/policy in FerryCore (built, awaiting
   review)**. Implemented the checkpoint exactly per the approved plan: `groupID` threaded
