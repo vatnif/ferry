@@ -26,6 +26,10 @@ public struct TransferRequest: Sendable, Identifiable {
     public let direction: Direction
     public let kind: Kind
     public var mode: Mode
+    /// Items enqueued as one user action (e.g. a Finder drag-out) share a
+    /// group; a directory's children inherit it. TransferGroupTracker turns
+    /// the members' snapshots into one aggregate completion signal.
+    public let groupID: UUID?
     public let source: any FileSystemSource
     public let sourcePath: String
     public let destination: any FileSystemSource
@@ -37,6 +41,7 @@ public struct TransferRequest: Sendable, Identifiable {
                 direction: Direction,
                 kind: Kind = .file,
                 mode: Mode = .automatic,
+                groupID: UUID? = nil,
                 source: any FileSystemSource, sourcePath: String,
                 destination: any FileSystemSource, destinationPath: String,
                 displayName: String) {
@@ -44,6 +49,7 @@ public struct TransferRequest: Sendable, Identifiable {
         self.direction = direction
         self.kind = kind
         self.mode = mode
+        self.groupID = groupID
         self.source = source
         self.sourcePath = sourcePath
         self.destination = destination
@@ -75,6 +81,7 @@ public struct TransferSnapshot: Sendable, Identifiable {
     public let displayName: String
     public let direction: TransferRequest.Direction
     public let kind: TransferRequest.Kind
+    public let groupID: UUID?
     public let sourcePath: String
     public let destinationPath: String
     public let phase: Phase
@@ -150,6 +157,7 @@ public actor TransferEngine {
                                  displayName: request.displayName,
                                  direction: request.direction,
                                  kind: request.kind,
+                                 groupID: request.groupID,
                                  sourcePath: request.sourcePath,
                                  destinationPath: request.destinationPath,
                                  phase: .queued,
@@ -302,6 +310,7 @@ public actor TransferEngine {
             enqueue(TransferRequest(direction: request.direction,
                                     kind: child.isDirectory ? .directory : .file,
                                     mode: request.mode,
+                                    groupID: request.groupID,
                                     source: request.source, sourcePath: child.path,
                                     destination: request.destination,
                                     destinationPath: Self.join(request.destinationPath, child.name),
@@ -449,6 +458,7 @@ private extension TransferSnapshot {
                          displayName: displayName,
                          direction: direction,
                          kind: kind,
+                         groupID: groupID,
                          sourcePath: sourcePath,
                          destinationPath: destinationPath,
                          phase: phase,

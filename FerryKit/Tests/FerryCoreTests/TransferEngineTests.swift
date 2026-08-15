@@ -17,6 +17,9 @@ final class InMemoryFileSource: FileSystemSource, @unchecked Sendable {
     var writeDelayNanoseconds: UInt64 = 0
     /// Next N openRead calls throw `.io` (transient, retryable).
     var openReadFailuresRemaining = 0
+    /// Next N list calls throw `.io` (transient, retryable) — lets a
+    /// directory item fail and retry (TransferGroupTracker tests).
+    var listFailuresRemaining = 0
     /// One-shot: the next write handle throws `.io` once its byte count
     /// would exceed this (data written so far stays — a real partial).
     var failNextWriteAfterBytes: Int?
@@ -53,6 +56,10 @@ final class InMemoryFileSource: FileSystemSource, @unchecked Sendable {
 
     func list(directory path: String, includeHidden: Bool) async throws -> [FileItem] {
         try synchronized {
+        if listFailuresRemaining > 0 {
+            listFailuresRemaining -= 1
+            throw FileSystemSourceError.io("injected list failure")
+        }
         guard directories.contains(path) else {
             throw FileSystemSourceError.notFound(path: path)
         }

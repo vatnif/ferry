@@ -169,6 +169,36 @@ update the golden in `CertificateInfoTests` and `FTPSCertTrustTests`.
    external options are absent and the toolbar button is disabled on macOS 14 with the
    "requires macOS 15" explainer.
 
+## M21 checkpoint B additions (drag-out groups/plan/policy — headless FerryCore)
+
+New unit coverage (headless, `FerryCoreTests/`, both on the shared `InMemoryFileSource`
+stub, which gained a `listFailuresRemaining` failure knob):
+
+- `TransferGroupTrackerTests` (13): the per-group completion signal behind the Finder
+  drag-out promise. **The invariant test** captures the destination at the instant
+  `.finished` arrives and asserts every file of a nested tree is present byte-exact —
+  because the engine marks a directory `.completed` on *enqueueing* its children
+  (pinned by its own test: root completes strictly before the group finishes). Plus the
+  three guards: **vacuous-truth** (a group whose seeded root never enqueues emits
+  nothing), **paused → `.stalled`** (never `.finished`; resume then completes), and
+  **frozen conclusion** (resuming a failed directory re-enqueues members; a concluded
+  group ignores them — no second `.finished`). Also: failed/cancelled outcome
+  precedence, `cancelGroup` cancels queued members, a retried directory does not
+  duplicate members, `clearFinished()` mid-group doesn't break the stream, group
+  isolation (nil/unopened `groupID`s ignored), and honest totals (`totalBytes` nil
+  until enumeration closes, then the exact sum; aggregate bytes monotonic).
+- `DragOutTests` (4): `DragOutPlan.make` always `.restart` with the exact
+  Finder-chosen destination; the `litter(after:)` matrix (a file's litter is only its
+  `.ferrypart`; a created directory goes whole; a **pre-existing directory is never
+  deleted**); `cleanUp` idempotence; `DragOutPolicy.itemsToDrag` Finder selection
+  semantics (in-selection drags the selection in listing order, outside drags one row,
+  stale ids drop out).
+
+Waits follow ADR-014: predicates race a timer task (`waitUntil`/`assertNever`) so a
+stream that never emits fails fast instead of hanging. No integration tests or
+XCUITests here by design — checkpoint B is engine-side only; the real engine-backed
+promise + `DragOutDownloadTests` against Docker land in checkpoint C (see the plan).
+
 ## M20 checkpoint B additions (Profile export/import — Ferry's own format)
 
 New unit coverage (headless, `FerryCoreTests/`):
