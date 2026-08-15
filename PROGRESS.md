@@ -30,7 +30,7 @@
 | M18 | Sale readiness | todo (deferred 2026-07-19 — required before sale) |
 | M19 | Editor round-trip (Phase G) | **done** (ADR-030, 2026-07-20) |
 | M20 | Switchers & trust (Phase G) | **done** — A committed ea43d51; B committed ccb252b; C committed 92796ff |
-| M21 (pulled forward) | Remote→Finder drag-out (`NSFilePromiseProvider`) | **in progress** — A committed 735b955; **B awaiting review**; C todo |
+| M21 (pulled forward) | Remote→Finder drag-out (`NSFilePromiseProvider`) | **in progress** — A committed 735b955; B committed 1420349; C todo |
 | M21–M31 | Post-v1 Phases G–K (v1.1–v1.5) | todo (planned 2026-07-19, ADR-029) |
 
 Post-v1 plan (Phases G–K, M19–M31): see `docs/ROADMAP.md`. M20 is **split into 3 checkpoints**
@@ -38,7 +38,7 @@ Post-v1 plan (Phases G–K, M19–M31): see `docs/ROADMAP.md`. M20 is **split in
 secret-free profile export/import · **C** FTPS self-signed cert TOFU (ADR-033, committed 92796ff).
 **M20 complete.** M17/M18 still deferred.
 
-## Current state of the code (M21 checkpoint B — groups/plan/policy in FerryCore — awaiting review)
+## Current state of the code (M21 checkpoint B — groups/plan/policy in FerryCore — committed 1420349)
 
 - **The engine-side machinery for a truthful Finder drag-out promise is built and green** —
   all headless FerryCore, no AppKit, no UI change (per the plan:
@@ -75,8 +75,8 @@ secret-free profile export/import · **C** FTPS self-signed cert TOFU (ADR-033, 
   21/22 green; the one failure is `testEmbeddedTerminalTouchShowsFileInRemotePane`, the
   documented under-load flake, which passed its solo re-run as always. Both flavors build
   (Direct + AppStore). TESTING.md updated; the remaining docs (ADR-038, DOMAIN, DESIGN,
-  ARCHITECTURE, ROADMAP) are checkpoint C's per the plan. **Awaiting review — nothing
-  committed.**
+  ARCHITECTURE, ROADMAP) are checkpoint C's per the plan. **Approved after a hands-on run
+  of the Direct build & committed (1420349).**
 
 ## Current state of the code (M21 pulled forward — remote→Finder drag-out, checkpoint A — committed 735b955)
 
@@ -927,8 +927,7 @@ secret-free profile export/import · **C** FTPS self-signed cert TOFU (ADR-033, 
 
 ## Next steps
 
-1. **M21 checkpoint B — awaiting review** (see current-state section above). On approval,
-   commit, then **checkpoint C**: real engine-backed promise replacing the
+1. **M21 checkpoint C**: real engine-backed promise replacing the
    `useStubPromise = true` stub in `RemoteDragBridge`, `DragOutDownloadTests` integration
    suite, ADR-038 + the deferred doc updates (DOMAIN, DESIGN, ARCHITECTURE, ROADMAP), and the
    re-run manual Finder matrix in both flavors. **M17/M18 (packaging, sale readiness) remain
@@ -950,7 +949,9 @@ secret-free profile export/import · **C** FTPS self-signed cert TOFU (ADR-033, 
   semantics). +17 unit tests (tracker 13 incl. the capture-at-`.finished` invariant on a
   nested tree, DragOut 4); `InMemoryFileSource` gained `listFailuresRemaining`. **446 kit
   tests green** against live Docker servers; both flavors build. TESTING.md + PROGRESS.md
-  updated; remaining docs are checkpoint C's. **Nothing committed.**
+  updated; remaining docs are checkpoint C's. XCUITests 21/22 — the one failure is the
+  documented embedded-terminal under-load flake (passed solo). User ran the Direct build by
+  hand and approved. **Committed (1420349).**
 - **2026-08-14** — **M21 checkpoint A: remote→Finder drag-out spike (continued + closed)**.
   Reviewed the uncommitted checkpoint-A tree before deciding next steps; found and fixed a
   cancelled-drag promise-delegate leak and a ⌘/⇧-click selection regression on the new icon
