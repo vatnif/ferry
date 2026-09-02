@@ -78,6 +78,38 @@ final class LocalFileSourceTests: XCTestCase {
         await XCTAssertThrowsErrorAsync(try await source.stat(path: self.path("missing"))) { _ in }
     }
 
+    /// A symlink to a directory must be navigable: `isDirectory` follows the
+    /// link's target (the fix — `.isDirectoryKey` alone reports false for links,
+    /// so the UI would Quick Look a directory alias instead of entering it).
+    func testSymlinkToDirectoryIsListedAsNavigableDirectory() async throws {
+        try FileManager.default.createDirectory(atPath: path("real"), withIntermediateDirectories: false)
+        let target = try makeFile("real/inside.txt")
+        try FileManager.default.createSymbolicLink(atPath: path("dirlink"),
+                                                   withDestinationPath: path("real"))
+        try FileManager.default.createSymbolicLink(atPath: path("filelink"),
+                                                   withDestinationPath: target)
+        try FileManager.default.createSymbolicLink(atPath: path("broken"),
+                                                   withDestinationPath: path("nowhere"))
+
+        let items = try await source.list(directory: root.path, includeHidden: false)
+
+        let dirLink = try XCTUnwrap(items.first { $0.name == "dirlink" })
+        XCTAssertTrue(dirLink.isSymlink)
+        XCTAssertTrue(dirLink.isDirectory, "symlink to a directory should be navigable")
+
+        let fileLink = try XCTUnwrap(items.first { $0.name == "filelink" })
+        XCTAssertTrue(fileLink.isSymlink)
+        XCTAssertFalse(fileLink.isDirectory, "symlink to a file is not a directory")
+
+        let broken = try XCTUnwrap(items.first { $0.name == "broken" })
+        XCTAssertTrue(broken.isSymlink)
+        XCTAssertFalse(broken.isDirectory, "broken symlink is not navigable")
+
+        // The link itself is a directory to navigate INTO, following the target.
+        let listed = try await source.list(directory: dirLink.path, includeHidden: false)
+        XCTAssertEqual(listed.map(\.name), ["inside.txt"])
+    }
+
     // MARK: Mutations
 
     func testCreateDeleteRenameDirectoryTree() async throws {

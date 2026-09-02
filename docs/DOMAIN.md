@@ -255,6 +255,12 @@ listing, stat, mkdir, delete, rename, or chmod. So Ferry splits the surface:
   whole selection; an unselected row drags only itself and becomes the selection.
   Double-click: folders navigate; files on local Quick Look, on remote
   download-and-Quick-Look (streamed to a temp file first) — including on the row icon.
+  A **local symlink is followed by its target**: a symlink to a directory navigates into
+  it, a symlink to a file Quick Looks it, and a broken symlink is treated as a file. The
+  entry still shows the alias icon/kind; `LocalFileSource` resolves the target's type (the
+  listing's `.isDirectoryKey` describes the link itself, not what it points to) and resolves
+  the leaf link before enumerating (`contentsOfDirectory(at:)` will not follow a symlinked
+  directory it is asked to list). Remote symlinks are unchanged (see the SCP note above).
 - File ops (row context menu): rename (in place, rejects "/" and clobbering an existing
   name), delete (confirms; recursive for folders; no Trash — items are removed, not moved),
   chmod (both panes). Rename refuses to overwrite; replacements go through the conflict

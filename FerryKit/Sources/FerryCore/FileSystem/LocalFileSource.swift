@@ -22,7 +22,7 @@ public struct LocalFileSource: FileSystemSource {
 
     public func list(directory path: String, includeHidden: Bool) async throws -> [FileItem] {
         try withAccess(path) {
-            let url = URL(fileURLWithPath: path, isDirectory: true)
+            let requestedURL = URL(fileURLWithPath: path)
             var isDir: ObjCBool = false
             guard FileManager.default.fileExists(atPath: path, isDirectory: &isDir) else {
                 throw FileSystemSourceError.notFound(path: path)
@@ -30,6 +30,16 @@ public struct LocalFileSource: FileSystemSource {
             guard isDir.boolValue else {
                 throw FileSystemSourceError.notADirectory(path: path)
             }
+            // `contentsOfDirectory(at:)` throws "Not a directory" when the URL
+            // itself is a symlink to a directory (it will not follow a symlinked
+            // leaf), so navigating INTO a symlinked folder needs the link
+            // resolved first. Only pay that cost when the leaf is actually a
+            // symlink; a plain directory keeps its exact path.
+            let isSymlinkDir = (try? requestedURL.resourceValues(
+                forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true
+            let url = isSymlinkDir
+                ? requestedURL.resolvingSymlinksInPath()
+                : URL(fileURLWithPath: path, isDirectory: true)
             let contents: [URL]
             do {
                 contents = try FileManager.default.contentsOfDirectory(
@@ -178,11 +188,24 @@ public struct LocalFileSource: FileSystemSource {
         let values = try url.resourceValues(forKeys: resourceKeys)
         let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
         let mode = (attributes?[.posixPermissions] as? NSNumber).map { FilePermissions(rawMode: $0.uint16Value) }
-        let isDirectory = values.isDirectory ?? false
+        let isSymlink = values.isSymbolicLink ?? false
+        // `.isDirectoryKey` from a directory listing uses lstat semantics: for a
+        // symlink it describes the link itself (never a directory), so a symlink
+        // pointing at a directory would report isDirectory=false and the UI would
+        // Quick Look it instead of navigating into it. Resolve the target's type
+        // explicitly — `fileExists(atPath:isDirectory:)` follows the link, and is
+        // false for a broken link, which is correctly left non-navigable.
+        let isDirectory: Bool
+        if isSymlink {
+            var isDir: ObjCBool = false
+            isDirectory = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) && isDir.boolValue
+        } else {
+            isDirectory = values.isDirectory ?? false
+        }
         return FileItem(name: url.lastPathComponent,
                         path: url.path,
                         isDirectory: isDirectory,
-                        isSymlink: values.isSymbolicLink ?? false,
+                        isSymlink: isSymlink,
                         isHidden: (values.isHidden ?? false) || url.lastPathComponent.hasPrefix("."),
                         size: isDirectory ? nil : (values.fileSize).map(Int64.init),
                         modifiedAt: values.contentModificationDate,

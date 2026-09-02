@@ -1390,3 +1390,35 @@ navigates / Quick Looks** (partially retiring the ADR-013 wart — the old `.dra
 swallowed it), and — decided in checkpoint C, matching Finder's mouse-down — **dragging an
 unselected row makes it the selection** (a row inside the selection still drags the whole
 selection in listing order, via `DragOutPolicy.itemsToDrag`).
+
+## 2026-09-02 — ADR-039: Local symlinks to directories are navigable (Foundation lstat/follow gotchas)
+
+**Status: bug fix, shipped (user-verified 2026-09-02).** User-reported: clicking a link in the
+local pane did not follow it. A local symlink to a directory would neither navigate nor behave
+like a folder.
+
+**Two Foundation gotchas, both proven empirically before the fix:**
+
+1. **`.isDirectoryKey` from a directory listing uses lstat semantics.** For a symlink it
+   describes the *link* (never a directory), so `LocalFileSource.fileItem(at:)` set
+   `isDirectory = false` on a symlink-to-directory. `FileBrowserPane.primaryAction` keys off
+   `item.isDirectory`, so the row was routed to Quick Look, not `session.navigate` — the row
+   just sat there. Fix: when the entry is a symlink, resolve the target's type with
+   `FileManager.fileExists(atPath:isDirectory:)` (which follows the link; false for a broken
+   link, correctly left non-navigable) instead of trusting `.isDirectoryKey`.
+
+2. **`contentsOfDirectory(at:)` will not follow a symlinked leaf directory.** Even with the
+   type fixed, listing the link's own path threw `NSCocoaError 256 / POSIX ENOTDIR` — the
+   URL-based API does not resolve a symlink that *is* the directory being enumerated (both the
+   trailing-slash and plain URL forms fail; only `resolvingSymlinksInPath()` or the `atPath:`
+   variant follow it). Fix: in `list`, when the requested path is itself a symlink, enumerate
+   `requestedURL.resolvingSymlinksInPath()`. A plain directory keeps its exact path and code
+   path — the resolve cost is paid only for the rare symlinked-directory navigation.
+
+**Scope kept deliberately small.** The entry still shows the alias icon and "Alias" kind
+(`isSymlink` is unchanged and truthful); only the *navigability* was wrong. Remote symlinks
+are untouched (SCP/SFTP listing behaviour, ADR unchanged). A symlink to a file still Quick
+Looks; a broken symlink is treated as a file. Covered by
+`LocalFileSourceTests.testSymlinkToDirectoryIsListedAsNavigableDirectory` (dir link → navigable
++ enumerable, file link → not a directory, broken link → not a directory). 453 kit tests green;
+both flavors build.

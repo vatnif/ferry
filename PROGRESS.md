@@ -38,6 +38,28 @@ Post-v1 plan (Phases G–K, M19–M31): see `docs/ROADMAP.md`. M20 is **split in
 secret-free profile export/import · **C** FTPS self-signed cert TOFU (ADR-033, committed 92796ff).
 **M20 complete.** M17/M18 still deferred.
 
+## Current state of the code (bug fix — local symlinks to directories are navigable, ADR-039 — committed)
+
+- **User-reported**: clicking a link in the local pane did not follow it. Root cause is two
+  Foundation gotchas in `LocalFileSource`, both proven empirically before touching code:
+  (1) `.isDirectoryKey` from a directory listing uses **lstat** semantics, so a symlink to a
+  directory reported `isDirectory == false` → `FileBrowserPane.primaryAction` Quick Looked it
+  instead of calling `session.navigate`; and (2) even once the type was fixed,
+  `contentsOfDirectory(at:)` **will not follow a symlinked leaf directory** (throws
+  `ENOTDIR`), so `list` could not enter the link either.
+- **Fix (FerryCore only, no app-target change)**: in `fileItem(at:)`, a symlink's
+  `isDirectory` is resolved from the target via `fileExists(atPath:isDirectory:)` (follows the
+  link; false for a broken link). In `list`, when the requested path is itself a symlink,
+  enumeration uses `resolvingSymlinksInPath()`; a plain directory keeps its exact path and the
+  fast path. The alias icon/"Alias" kind are unchanged — only navigability was wrong.
+- Behaviour: symlink→dir navigates; symlink→file Quick Looks; broken symlink treated as a
+  file. Remote symlinks untouched.
+- Tests: **453 kit green** (+1 `LocalFileSourceTests.testSymlinkToDirectoryIsListedAsNavigableDirectory`:
+  dir link navigable + enumerable, file link not a directory, broken link not a directory).
+  Both flavors build (Direct + AppStore). Docs: ADR-039, DOMAIN (local double-click note). No
+  new dependency; no pbxproj edits. **User-verified by hand** (2026-09-02): connected to the
+  Docker SFTP test server, a symlinked directory in the local pane navigates on click.
+
 ## Current state of the code (M21 checkpoint C — engine-backed Finder drag-out — approved, completing the drag-out milestone)
 
 - **The Finder drag-out is real end-to-end**: the checkpoint-A stub
