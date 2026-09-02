@@ -38,7 +38,7 @@ Post-v1 plan (Phases G–K, M19–M31): see `docs/ROADMAP.md`. M20 is **split in
 secret-free profile export/import · **C** FTPS self-signed cert TOFU (ADR-033, committed 92796ff).
 **M20 complete.** M17/M18 still deferred.
 
-## Current state of the code (bug fix — local symlinks to directories are navigable, ADR-039 — committed)
+## Current state of the code (bug fix — local symlinks to directories are navigable, ADR-039 — committed 19aa23a)
 
 - **User-reported**: clicking a link in the local pane did not follow it. Root cause is two
   Foundation gotchas in `LocalFileSource`, both proven empirically before touching code:
