@@ -38,7 +38,7 @@ Post-v1 plan (Phases G–K, M19–M31): see `docs/ROADMAP.md`. M20 is **split in
 secret-free profile export/import · **C** FTPS self-signed cert TOFU (ADR-033, committed 92796ff).
 **M20 complete.** M17/M18 still deferred.
 
-## Current state of the code (UI addition — batch progress in the transfer queue dock, ADR-040 — committed)
+## Current state of the code (UI addition — batch progress in the transfer queue dock, ADR-040 — committed 7b12dc0)
 
 - **User-reported**: transferring multiple files showed "N active · M queued" but no total,
   no transferred/finished count, and no overall progress. Now the dock header, **only while
