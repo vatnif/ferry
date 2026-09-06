@@ -489,7 +489,8 @@ final class BrowserSession {
                 source: pane.source, sourcePath: item.path,
                 destination: destinationPane.source,
                 destinationPath: Self.join(destinationPane.path, item.name),
-                displayName: item.name)
+                displayName: item.name,
+                knownSize: item.isDirectory ? nil : item.size)
 
             let destinationExists = (try? await destinationPane.source.stat(path: request.destinationPath)) != nil
             if destinationExists {
@@ -509,7 +510,8 @@ final class BrowserSession {
                         source: request.source, sourcePath: request.sourcePath,
                         destination: request.destination,
                         destinationPath: Self.join(destinationPane.path, newName),
-                        displayName: newName))
+                        displayName: newName,
+                        knownSize: item.isDirectory ? nil : item.size))
                 }
             } else {
                 takenNames.insert(item.name)
@@ -548,7 +550,8 @@ final class BrowserSession {
                 source: localSource, sourcePath: sourcePath,
                 destination: destinationPane.source,
                 destinationPath: Self.join(destinationPane.path, item.name),
-                displayName: item.name)
+                displayName: item.name,
+                knownSize: item.isDirectory ? nil : item.size)
 
             let destinationExists = (try? await destinationPane.source.stat(path: request.destinationPath)) != nil
             if destinationExists {
@@ -568,7 +571,8 @@ final class BrowserSession {
                         source: request.source, sourcePath: request.sourcePath,
                         destination: request.destination,
                         destinationPath: Self.join(destinationPane.path, newName),
-                        displayName: newName))
+                        displayName: newName,
+                        knownSize: item.isDirectory ? nil : item.size))
                 }
             } else {
                 takenNames.insert(item.name)

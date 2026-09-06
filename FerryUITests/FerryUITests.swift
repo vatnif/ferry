@@ -138,6 +138,96 @@ final class FerryUITests: XCTestCase {
         XCTAssertTrue(connectButton.waitForExistence(timeout: 5))
     }
 
+    /// ADR-040: downloading more than one file surfaces a batch summary in the
+    /// queue dock header — a completed-of-total *file* count ("2 of 2 done")
+    /// plus a byte-weighted overall bar. The count text persists until Clear,
+    /// so it is asserted deterministically; the bar is transient over a fast
+    /// loopback transfer, so it is only observed best-effort here (its
+    /// hidden/indeterminate/fraction states are pinned by QueueBatchSummaryTests).
+    @MainActor
+    func testMultiFileDownloadShowsBatchCount() throws {
+        try XCTSkipUnless(sftpServerUp, "SFTP test server not running — testinfra/start.sh")
+        let app = launchIsolatedApp()
+        let downloadDir = NSTemporaryDirectory() + "ferry-uitests-batch-\(UUID().uuidString)"
+        try FileManager.default.createDirectory(atPath: downloadDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(atPath: downloadDir) }
+
+        app.buttons["sidebar.newConnection"].click()
+        let nameField = app.textFields["editor.name"]
+        XCTAssertTrue(nameField.waitForExistence(timeout: 5))
+        nameField.click(); nameField.typeText("docker-sftp-batch")
+        let hostField = app.textFields["editor.host"]
+        hostField.click(); hostField.typeText("127.0.0.1")
+        let portField = app.textFields["editor.port"]
+        portField.click(); portField.typeKey("a", modifierFlags: .command); portField.typeText("2222")
+        let userField = app.textFields["editor.username"]
+        userField.click(); userField.typeText("ferry")
+        let localStartField = app.textFields["editor.localStart"]
+        localStartField.click(); localStartField.typeText(downloadDir)
+        app.buttons["editor.save"].click()
+
+        let connectButton = app.buttons["detail.connect"]
+        XCTAssertTrue(connectButton.waitForExistence(timeout: 5))
+        connectButton.click()
+        let passwordField = app.secureTextFields["passwordPrompt.password"]
+        XCTAssertTrue(passwordField.waitForExistence(timeout: 5))
+        passwordField.click(); passwordField.typeText("ferrypass")
+        app.buttons["passwordPrompt.connect"].click()
+        trustHostKeyIfPrompted(app)
+
+        XCTAssertTrue(app.staticTexts["browser.status.connected"].waitForExistence(timeout: 15))
+
+        // Enter fixtures (hello.txt + medium-1mb.bin), select BOTH, download.
+        let fixturesRow = app.staticTexts["fixtures"].firstMatch
+        XCTAssertTrue(fixturesRow.waitForExistence(timeout: 10))
+        fixturesRow.doubleClick()
+        var firstFile = app.staticTexts["hello.txt"].firstMatch
+        if !firstFile.waitForExistence(timeout: 8) {
+            app.staticTexts["fixtures"].firstMatch.doubleClick()
+            firstFile = app.staticTexts["hello.txt"].firstMatch
+            XCTAssertTrue(firstFile.waitForExistence(timeout: 10))
+        }
+        firstFile.click()                                   // focus the remote pane
+        app.typeKey("a", modifierFlags: .command)           // select every file in fixtures
+        let downloadButton = app.buttons["browser.download"]
+        XCTAssertTrue(downloadButton.isEnabled)
+        downloadButton.click()
+
+        // Best-effort: try to catch the transient overall bar while bytes flow.
+        var sawBar = false
+        let barDeadline = Date().addingTimeInterval(4)
+        while Date() < barDeadline {
+            if app.progressIndicators["queue.batchbar"].exists { sawBar = true; break }
+        }
+
+        // Both files really landed — a deterministic proof that ⌘A selected the
+        // whole 2-file batch and it transferred.
+        let fm = FileManager.default
+        let filesDeadline = Date().addingTimeInterval(20)
+        while Date() < filesDeadline {
+            if fm.fileExists(atPath: downloadDir + "/hello.txt"),
+               fm.fileExists(atPath: downloadDir + "/medium-1mb.bin") { break }
+        }
+        XCTAssertTrue(fm.fileExists(atPath: downloadDir + "/hello.txt"))
+        XCTAssertTrue(fm.fileExists(atPath: downloadDir + "/medium-1mb.bin"))
+
+        // Deterministic: the header reports the completed-of-total file count.
+        // Give the summary a moment to settle, then read every label mentioning
+        // the queue counts so the assertion reports the real header text.
+        let counts = app.descendants(matching: .any)["queue.counts"]
+        XCTAssertTrue(counts.waitForExistence(timeout: 15), "queue.counts element should exist")
+        let deadline = Date().addingTimeInterval(15)
+        var seen = ""
+        while Date() < deadline {
+            seen = "label=“\(counts.label)” value=“\(String(describing: counts.value))”"
+            if counts.label.contains("2 of 2 done") || (counts.value as? String)?.contains("2 of 2 done") == true { break }
+        }
+        XCTAssertTrue(counts.label.contains("2 of 2 done") || (counts.value as? String)?.contains("2 of 2 done") == true,
+                      "queue header should report “2 of 2 done”; saw \(seen)")
+
+        XCTContext.runActivity(named: "Overall batch bar observed mid-transfer: \(sawBar)") { _ in }
+    }
+
     /// M14: with an SSH connection live, the Tunnels toolbar button opens the
     /// tunnel manager (screen 4); adding a local forward through the editor
     /// lands a row in the table.

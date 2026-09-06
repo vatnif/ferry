@@ -36,6 +36,12 @@ public struct TransferRequest: Sendable, Identifiable {
     public let destinationPath: String
     /// File name shown in the queue.
     public let displayName: String
+    /// The source size when the caller already knows it (from a directory
+    /// listing). Populates the queued snapshot's `totalBytes` so aggregate
+    /// progress is byte-weighted from the start instead of unknown until the
+    /// item reaches the front of the queue. Nil for directories and whenever
+    /// the size isn't known up front (it is then read at transfer time).
+    public let knownSize: Int64?
 
     public init(id: UUID = UUID(),
                 direction: Direction,
@@ -44,7 +50,8 @@ public struct TransferRequest: Sendable, Identifiable {
                 groupID: UUID? = nil,
                 source: any FileSystemSource, sourcePath: String,
                 destination: any FileSystemSource, destinationPath: String,
-                displayName: String) {
+                displayName: String,
+                knownSize: Int64? = nil) {
         self.id = id
         self.direction = direction
         self.kind = kind
@@ -55,6 +62,7 @@ public struct TransferRequest: Sendable, Identifiable {
         self.destination = destination
         self.destinationPath = destinationPath
         self.displayName = displayName
+        self.knownSize = knownSize
     }
 }
 
@@ -162,7 +170,7 @@ public actor TransferEngine {
                                  destinationPath: request.destinationPath,
                                  phase: .queued,
                                  bytesTransferred: 0,
-                                 totalBytes: nil,
+                                 totalBytes: request.knownSize,
                                  attempt: 1,
                                  resumedFromOffset: nil))
         pending.append(request)
@@ -314,7 +322,8 @@ public actor TransferEngine {
                                     source: request.source, sourcePath: child.path,
                                     destination: request.destination,
                                     destinationPath: Self.join(request.destinationPath, child.name),
-                                    displayName: child.name))
+                                    displayName: child.name,
+                                    knownSize: child.isDirectory ? nil : child.size))
         }
     }
 
@@ -362,7 +371,14 @@ public actor TransferEngine {
     }
 
     private func performFile(_ request: TransferRequest, attempt: Int) async throws {
-        let total = (try? await request.source.stat(path: request.sourcePath))?.size
+        // Trust the caller's size when it supplied one (from a listing); only
+        // stat when it didn't, so a known-size item needs no extra round trip.
+        let total: Int64?
+        if let known = request.knownSize {
+            total = known
+        } else {
+            total = (try? await request.source.stat(path: request.sourcePath))?.size
+        }
         let plan = await plan(for: request, totalBytes: total)
         let resumedFrom: Int64? = plan.offset > 0 ? plan.offset : nil
         update(request.id) {

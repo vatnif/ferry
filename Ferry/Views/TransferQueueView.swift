@@ -10,6 +10,7 @@ struct TransferQueueView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
+            batchBar
             if !collapsed {
                 Divider()
                 ScrollView {
@@ -31,13 +32,14 @@ struct TransferQueueView: View {
         HStack(spacing: 10) {
             Text("Transfers")
                 .font(.caption.bold())
-            Text("\(queue.activeCount) active · \(queue.queuedCount) queued")
+            Text(countsText)
                 .font(.caption2.bold())
                 .padding(.horizontal, 7)
                 .padding(.vertical, 1)
                 .background(Capsule().fill(Color.accentColor.opacity(0.15)))
                 .foregroundStyle(Color.accentColor)
                 .accessibilityIdentifier("queue.counts")
+                .accessibilityLabel(countsText)
             Spacer()
             if queue.hasFinishedRows {
                 Button("Clear") { queue.clearFinished() }
@@ -61,6 +63,41 @@ struct TransferQueueView: View {
         .padding(.vertical, 5)
         .contentShape(Rectangle())
         .onTapGesture { collapsed.toggle() }
+        // Keep the counts/Clear children individually accessible — the header's
+        // tap-to-collapse would otherwise merge the row into one element and
+        // swallow the batch counts (VoiceOver + queue.counts queries).
+        .accessibilityElement(children: .contain)
+    }
+
+    /// "3 of 10 done · 2 active · 5 queued" while a multi-file batch runs;
+    /// falls back to just active/queued for a single item.
+    private var countsText: String {
+        let summary = queue.summary
+        if summary.showsSummary {
+            return "\(summary.completedFiles) of \(summary.totalFiles) done · "
+                + "\(queue.activeCount) active · \(queue.queuedCount) queued"
+        }
+        return "\(queue.activeCount) active · \(queue.queuedCount) queued"
+    }
+
+    /// Byte-weighted overall progress across the whole batch; indeterminate
+    /// while folders are still enumerating (total size not yet settled).
+    @ViewBuilder
+    private var batchBar: some View {
+        switch queue.summary.bar {
+        case .hidden:
+            EmptyView()
+        case .indeterminate:
+            ProgressView()
+                .progressViewStyle(.linear)
+                .frame(maxWidth: .infinity)
+                .accessibilityIdentifier("queue.batchbar")
+        case .fraction(let value):
+            ProgressView(value: value, total: 1)
+                .progressViewStyle(.linear)
+                .frame(maxWidth: .infinity)
+                .accessibilityIdentifier("queue.batchbar")
+        }
     }
 }
 

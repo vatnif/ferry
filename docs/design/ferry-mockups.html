@@ -281,6 +281,8 @@
   }
   .queue-head .count { background: var(--accent-soft); color: var(--accent); border-radius: 999px; padding: 1px 8px; font-size: 11px; }
   .queue-head .collapse { margin-left: auto; color: var(--faint); }
+  .queue-batchbar { height: 4px; background: var(--progress-track); overflow: hidden; border-bottom: 1px solid var(--border); }
+  .queue-batchbar > i { display: block; height: 100%; background: var(--accent); }
   .qrow { display: grid; grid-template-columns: 26px 1fr 340px 120px 90px; align-items: center; gap: 10px; padding: 7px 12px; border-bottom: 1px solid var(--border); font-size: 12px; }
   .qrow:last-child { border-bottom: none; }
   .qname { min-width: 0; }
@@ -536,7 +538,8 @@
         </div>
 
         <div class="queue">
-          <div class="queue-head">Transfers <span class="count">2 active · 1 queued</span> <span class="collapse">⌄</span></div>
+          <div class="queue-head">Transfers <span class="count">4 of 12 done · 2 active · 1 queued</span> <span class="collapse">⌄</span></div>
+          <div class="queue-batchbar" title="Overall progress across the batch, weighted by bytes"><i style="width:38%"></i></div>
           <div class="qrow">
             <span>⬆︎</span>
             <div class="qname"><div class="n">app.js</div><div class="path">~/Projects/website → /var/www/html</div></div>
@@ -571,7 +574,7 @@
       <li><b>Sidebar</b> holds the connection manager: folders (Work, Clients…) expand/collapse, connections show a protocol badge, drag to reorganize. Double-click connects in the current tab; ⌘-double-click opens a new tab. Right-click gives Edit / Duplicate / Delete / New Folder. Below it, "This Mac" holds local favorites.</li>
       <li><b>Tabs</b> — one per connection; green dot = connected, grey = disconnected. The sidebar is shared across tabs.</li>
       <li><b>Panes</b> — local always left, remote right. Both are the same component: sortable columns, breadcrumb path bar (clickable), per-pane hidden-files toggle (👁) and overflow menu (⋯). The remote pane adds Permissions and Owner columns. Drag rows between panes (or from Finder) to queue transfers.</li>
-      <li><b>Transfer queue</b> docks at the bottom, collapsible to a single summary row. Each row: direction, name, source → destination, progress, speed, ETA, pause/cancel. The "RESUMED" badge marks a transfer continued from a partial file.</li>
+      <li><b>Transfer queue</b> docks at the bottom, collapsible to a single summary row. Each row: direction, name, source → destination, progress, speed, ETA, pause/cancel. The "RESUMED" badge marks a transfer continued from a partial file. For a multi-file batch the header adds a completed-of-total file count ("4 of 12 done") and a byte-weighted overall progress bar beneath it (indeterminate while a folder is still enumerating; hidden once every file has finished).</li>
       <li><b>Toolbar</b> — Upload/Download act on the selection; Tunnels and Terminal open screen 4 and the external terminal. The filter field filters the focused pane as you type.</li>
       <li><b>Status bar</b> — connection state, endpoint, latency, active tunnel count.</li>
       <li><b>Sync browsing (approved)</b> — the "🔗 Linked" toolbar toggle. When enabled, the current paths of both panes become anchor roots; entering or leaving a folder on one side mirrors on the other when a same-named folder exists there. If the folder is missing on the other side, that pane stays put and its path bar flashes briefly (the link is kept, not broken). Turning the toggle off returns both panes to independent navigation. Link state is per tab and shown in the status bar.</li>

@@ -1422,3 +1422,68 @@ Looks; a broken symlink is treated as a file. Covered by
 `LocalFileSourceTests.testSymlinkToDirectoryIsListedAsNavigableDirectory` (dir link → navigable
 + enumerable, file link → not a directory, broken link → not a directory). 453 kit tests green;
 both flavors build.
+
+## 2026-09-06 — ADR-040: Batch progress in the transfer queue dock (count text + byte-weighted bar)
+
+**Status: UI addition, shipped (awaiting user review).** User-reported: when transferring
+multiple files the dock showed "N active · M queued" but no sense of the whole job — no total
+to transfer, no transferred/finished count, no overall progress.
+
+**Decision (user sign-off 2026-09-06, rule 3).** The dock header gains, only while more than
+one file is in the batch:
+
+1. **A completed-of-total file count** in the existing counts capsule —
+   `"3 of 10 done · 2 active · 5 queued"`. The count is over **file** rows only; a directory
+   row merely enumerates its children onto the queue and is not itself a "file transferred".
+   The total **includes** files that failed/cancelled (they were part of the batch and simply
+   never completed), so a batch with a failure honestly reads "9 of 10 done" rather than
+   claiming completeness. The total grows as folders enumerate — that is truthful, not a bug.
+2. **A byte-weighted overall progress bar** below the header (`Σ bytesTransferred / Σ totalBytes`
+   across file rows), **not** a file-count bar. Chosen (over the simpler count-based bar) so
+   nine tiny files + one large file don't sit at "90%" while the real work crawls. The bar is
+   **indeterminate** while the total size is unsettled — any directory row still enumerating, or
+   any running file of unknown size — since claiming a fraction against an incomplete denominator
+   would lie. It **hides** once every file row is finished (the count text stays until Clear).
+
+**Where the logic lives (rule 4/testability).** The reduction is a pure, `Sendable`
+`QueueBatch.summarize([QueueBatchItem]) -> QueueBatchSummary` in **FerryCore**
+(`Transfer/QueueBatchSummary.swift`), unit-tested in FerryKit (11 cases:
+files-not-directories counting, failed/cancelled in-total, byte-weighting vs count,
+indeterminate-while-enumerating, hidden-when-drained, ≤1 clamp). The app's
+`TransferQueueModel` gained `bytesTransferred`/`totalBytes` on its `Row` and maps rows to the
+pure input; `TransferQueueView` renders the count text + the three-state bar
+(`hidden`/`indeterminate`/`fraction`), accessibility id `queue.batchbar`.
+
+**Not reused: `TransferGroupProgress`.** ADR-038's group tracker also aggregates a batch, but it
+is scoped to one drag-out operation and to promise fulfilment; the dock summary is over *all*
+current rows, so a separate, simpler reduction is correct rather than overloading the tracker.
+
+**Accessibility fix, found while writing the UI test.** The queue header's tap-to-collapse
+(`.onTapGesture` on the HStack) made SwiftUI merge the row into a single element, swallowing the
+counts text — so neither VoiceOver nor an XCUITest could read it. Fixed with
+`.accessibilityElement(children: .contain)` on the header plus an explicit `.accessibilityLabel`
+on the counts text; the batch count is now an announced, queryable element.
+
+**Engine fix — size known at enqueue (found in hands-on testing).** The byte-weighted bar first
+showed a permanent *indeterminate* (barber-pole) animation on any real batch. Root cause: the
+engine enqueued every item with `totalBytes: nil` (`TransferEngine.enqueue`) and only learned a
+file's size when it reached the front of the queue (`performFile`'s `stat`). With the 3-at-a-time
+concurrency cap, a batch always contains queued files of unknown size, which the summary's
+determinacy rule (correctly) treats as an unsettled total → indeterminate the whole time. Fix:
+`TransferRequest` gained an optional `knownSize` (defaulted — every existing call site compiles);
+`enqueue` seeds the queued snapshot's `totalBytes` from it; `performDirectory` fills it from each
+child's listing entry (`FileItem.size`); `performFile` trusts it and skips the redundant `stat`
+when present; and `BrowserSession`'s staging/import sites pass `item.size`. Queued items now carry
+their size, so the bar is a settled byte-weighted fill from the start (indeterminate only while a
+*folder* is still enumerating). Directories keep `knownSize == nil`. **`TransferGroupProgress`
+(ADR-038) is unaffected**: it still gates its aggregate total on `enumerationClosed`, so a
+directory drag-out reports nil until enumeration finishes exactly as before — verified by the
+unchanged drag-out group-tracker suite. *Hands-on confirmed 2026-09-06: an 83-file / 480 MB SFTP
+download fills the bar steadily, no barber-pole.*
+
+**Verification.** Both flavors build; 464 kit tests green (+11 `QueueBatchSummaryTests`). New
+`FerryUITests.testMultiFileDownloadShowsBatchCount` connects to the Docker SFTP server, downloads
+the 2-file `fixtures` batch, and asserts the header reads “2 of 2 done” live (both files verified
+on disk). The overall bar is transient over a fast loopback transfer, so the test observes it
+best-effort only; its hidden/indeterminate/fraction states are pinned deterministically by the
+unit tests. Mockup + DESIGN.md screen 1 updated.

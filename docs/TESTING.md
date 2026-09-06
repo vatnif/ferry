@@ -216,6 +216,25 @@ in **both flavors** (Direct + AppStore) after any change to the drag pipeline:
 13. Scroll a multi-thousand-entry remote listing → no frame drops, sane CPU (per-row
     NSView cost).
 
+## ADR-040 additions (batch progress in the transfer queue dock)
+
+- **Unit** (`FerryCoreTests/QueueBatchSummaryTests`, 11 tests): the pure
+  `QueueBatch.summarize` reduction — files-only counting (directory rows excluded),
+  failed/cancelled kept in the total, byte-weighting vs a naive file count, the bar's
+  three states (`hidden` when ≤1 file or all finished, `indeterminate` while a folder is
+  still enumerating or a running file's size is unknown, `fraction` otherwise), the ≤1
+  clamp, and the empty queue.
+- **UI** (`FerryUITests/testMultiFileDownloadShowsBatchCount`): connect to the Docker SFTP
+  server, enter `fixtures`, ⌘A to select both files, Download, then assert the header reads
+  “2 of 2 done” (read via the counts element's accessibility label) with both files verified
+  on disk. The overall bar is transient over a fast loopback transfer, so it is only observed
+  best-effort (logged as a test activity), never hard-asserted — its states are the unit
+  suite's job.
+- **Accessibility gotcha (fixed)**: the queue header's tap-to-collapse merged the row into a
+  single element, so the counts text was invisible to VoiceOver and unqueryable by XCUITest.
+  `.accessibilityElement(children: .contain)` on the header (plus an explicit
+  `.accessibilityLabel` on the counts) restores it.
+
 ## M21 checkpoint B additions (drag-out groups/plan/policy — headless FerryCore)
 
 New unit coverage (headless, `FerryCoreTests/`, both on the shared `InMemoryFileSource`

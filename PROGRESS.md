@@ -38,6 +38,49 @@ Post-v1 plan (Phases G–K, M19–M31): see `docs/ROADMAP.md`. M20 is **split in
 secret-free profile export/import · **C** FTPS self-signed cert TOFU (ADR-033, committed 92796ff).
 **M20 complete.** M17/M18 still deferred.
 
+## Current state of the code (UI addition — batch progress in the transfer queue dock, ADR-040 — committed)
+
+- **User-reported**: transferring multiple files showed "N active · M queued" but no total,
+  no transferred/finished count, and no overall progress. Now the dock header, **only while
+  more than one file is in the batch**, shows a completed-of-total **file** count
+  ("3 of 10 done · 2 active · 5 queued") and a **byte-weighted** overall progress bar beneath it.
+- **Decisions (user sign-off 2026-09-06, ADR-040)**: count is over file rows only (directory
+  rows enumerate children, not "files transferred"); the total includes failed/cancelled files
+  (honest "9 of 10"); the bar is `Σ transferred / Σ total` (not file-count — so 9 tiny + 1 huge
+  file doesn't read 90%), goes **indeterminate** while any folder is still enumerating or a
+  running file's size is unknown, and **hides** once every file has finished (the count text
+  stays until Clear).
+- **Where**: pure `QueueBatch.summarize([QueueBatchItem]) -> QueueBatchSummary` in FerryCore
+  (`Transfer/QueueBatchSummary.swift`), unit-tested in FerryKit; `TransferQueueModel.Row` gained
+  `bytesTransferred`/`totalBytes` and a `summary` property; `TransferQueueView` renders the count
+  text + a three-state bar (`hidden`/`indeterminate`/`fraction`, a11y id `queue.batchbar`).
+  Deliberately **not** reusing ADR-038's `TransferGroupProgress` (that is drag-out/promise-scoped;
+  this is over all current rows).
+- **Accessibility fix (found while writing the UI test)**: the header's tap-to-collapse merged
+  the row into one element, hiding the counts from VoiceOver and XCUITest. Fixed with
+  `.accessibilityElement(children: .contain)` + an explicit `.accessibilityLabel` on the counts.
+- **Engine fix (found in hands-on testing)**: the bar showed a permanent barber-pole because the
+  engine enqueued every item with `totalBytes: nil` and only learned a file's size at the front
+  of the queue — so a batch always had queued files of unknown size → forever indeterminate.
+  `TransferRequest` gained an optional `knownSize` (defaulted); `enqueue` seeds the queued
+  snapshot's `totalBytes`, `performDirectory` fills it from each child's listing size,
+  `performFile` trusts it (skips a redundant `stat`), and `BrowserSession`'s staging/import sites
+  pass `item.size`. The bar is now a settled byte-weighted fill (indeterminate only while a folder
+  enumerates). `TransferGroupProgress` (ADR-038) unaffected — still gated on `enumerationClosed`;
+  the drag-out group-tracker suite is unchanged and green. **User-confirmed by hand (2026-09-06):
+  an 83-file / 480 MB SFTP download fills steadily, no barber-pole.**
+- Tests: **464 kit green (+11)** + new XCUITest `testMultiFileDownloadShowsBatchCount`; both
+  flavors build. Full UI suite's only failures are pre-existing (the terminal flake; and
+  `testRemoteFileContextMenuOffersOpenInEditor`, confirmed failing on the clean tree — tracked
+  separately, not part of this change). Docs: ADR-040, DESIGN, TESTING, mockup. **Committed.**
+- Tests: **464 kit green (+11 `QueueBatchSummaryTests`)** + **new XCUITest
+  `testMultiFileDownloadShowsBatchCount`** (connects to Docker SFTP, downloads the 2-file
+  `fixtures` batch, asserts the header reads “2 of 2 done” live — both files verified on disk;
+  the transient bar is best-effort, its states pinned by the unit tests). Both flavors build
+  (Direct + AppStore). Docs: ADR-040, DESIGN.md screen 1, mockup (`ferry-mockups.html`). No new
+  dependency; no pbxproj edits. **Runtime-verified live against the Docker SFTP server. Not
+  committed — awaiting review.**
+
 ## Current state of the code (bug fix — local symlinks to directories are navigable, ADR-039 — committed 19aa23a)
 
 - **User-reported**: clicking a link in the local pane did not follow it. Root cause is two

@@ -107,6 +107,11 @@ queue (docked, collapsible) → status bar.
 - **Transfer queue**: rows = direction icon, name + "source → destination", progress bar,
   "X of Y · speed · ETA" (tabular), state badge (QUEUED grey / UPLOADING·DOWNLOADING·
   RESUMED accent / ERROR red), pause + cancel. Header shows counts; collapsible to one line.
+  For a **multi-file batch** (>1 file) the header counts read "X of N done · A active · Q
+  queued" (files only — folder rows enumerate, they aren't counted; the N includes items that
+  failed/cancelled), and a **byte-weighted** overall progress bar sits under the header
+  (`Σ transferred / Σ total`); it is indeterminate while any folder is still enumerating or a
+  running file's size is unknown, and hides once every file has finished (ADR-040).
 - **Status bar**: ● connection state (green), endpoint + protocol, latency, link state,
   active tunnel count.
 

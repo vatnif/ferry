@@ -14,6 +14,8 @@ final class TransferQueueModel {
         var kind: TransferRequest.Kind
         var phase: TransferSnapshot.Phase
         var fraction: Double?
+        var bytesTransferred: Int64
+        var totalBytes: Int64?
         var metaText: String
         var badgeText: String
 
@@ -43,6 +45,17 @@ final class TransferQueueModel {
     var activeCount: Int { rows.filter { $0.phase == .running }.count }
     var queuedCount: Int { rows.filter { $0.phase == .queued }.count }
     var hasFinishedRows: Bool { rows.contains { $0.phase.isFinished } }
+
+    /// Batch-level completed-of-total count + byte-weighted overall bar,
+    /// shown in the dock header while transferring more than one file.
+    var summary: QueueBatchSummary {
+        QueueBatch.summarize(rows.map {
+            QueueBatchItem(kind: $0.kind,
+                           phase: $0.phase,
+                           bytesTransferred: $0.bytesTransferred,
+                           totalBytes: $0.totalBytes)
+        })
+    }
 
     init(engine: TransferEngine) {
         self.engine = engine
@@ -113,6 +126,8 @@ final class TransferQueueModel {
                    kind: snapshot.kind,
                    phase: snapshot.phase,
                    fraction: fraction,
+                   bytesTransferred: snapshot.bytesTransferred,
+                   totalBytes: snapshot.totalBytes,
                    metaText: metaText(for: snapshot),
                    badgeText: badgeText(for: snapshot))
     }
