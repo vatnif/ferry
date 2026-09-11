@@ -38,6 +38,26 @@ Post-v1 plan (Phases G–K, M19–M31): see `docs/ROADMAP.md`. M20 is **split in
 secret-free profile export/import · **C** FTPS self-signed cert TOFU (ADR-033, committed 92796ff).
 **M20 complete.** M17/M18 still deferred.
 
+## Current state of the code (dev-env fix — local code-signing identity for Keychain persistence, ADR-041)
+
+- **User-reported** (recurring): saving a password re-prompted with the *"Ferry wants to use your
+  confidential information…"* panel on every connect, and *Always Allow* never stuck. Diagnosed
+  (per ADR-034's open item + BUILDING.md) to **ad-hoc signing** — the machine had **0**
+  code-signing identities, so the login-Keychain ACL could never bind to a stable app identity.
+- **Fix (no code change).** User added a free personal Apple ID team in Xcode and enabled
+  Automatic signing on the Ferry app target; Xcode wrote `CODE_SIGN_IDENTITY = "Apple Development"`
+  + `DEVELOPMENT_TEAM = 9H2MFWH42X` to all four app configs in `project.pbxproj`. FerryUITests
+  left ad-hoc (holds no secrets). `tools/reinstall-app.sh` refreshed `/Applications/Ferry.app`.
+- **Verified**: `ReleaseDirect` build + installed copy both sign to `Authority=Apple Development…`,
+  `TeamIdentifier=9H2MFWH42X`, `codesign --verify --deep --strict` passes. **User-verified by hand
+  (2026-09-11)**: connect with "Remember in my Keychain" ticked → *Always Allow* → reconnect no
+  longer prompts. **It works.**
+- **Scope**: `Apple Development` = local runs only. `Developer ID` (Direct distribution) / App
+  Store signing + the `com.gfragos.Ferry` bundle-id placeholder remain **M17** work. Standing
+  gotchas: never rebuild while Ferry is running; always launch the freshly-signed build.
+- Docs: ADR-041, BUILDING.md (signing + Keychain sections rewritten), CLAUDE.md env note. No
+  tests (config/signing only; `CredentialVault` unchanged — its suites stay green).
+
 ## Current state of the code (UI addition — batch progress in the transfer queue dock, ADR-040 — committed 7b12dc0)
 
 - **User-reported**: transferring multiple files showed "N active · M queued" but no total,

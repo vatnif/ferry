@@ -62,6 +62,6 @@ xcodebuild -scheme Ferry-AppStore -destination 'platform=macOS' build
 ## Environment gotchas
 
 - Xcode 26.6 / Swift 6.3 on this machine; deployment target macOS 14. No Homebrew.
-- Code signing is ad-hoc (`CODE_SIGN_IDENTITY=-`) until the user configures a Developer ID team; bundle id `com.gfragos.Ferry` is a placeholder (see BUILDING.md).
+- The app target signs with a personal-team `Apple Development` identity for local runs (`DEVELOPMENT_TEAM=9H2MFWH42X`, ADR-041) so Keychain secrets persist across rebuilds; a **Developer ID / distribution** team is still unconfigured (M17). Bundle id `com.gfragos.Ferry` is a placeholder (see BUILDING.md). Never rebuild while Ferry is running (invalidates the signature → Keychain re-prompts).
 - UI tests fail with "Timed out while enabling automation mode" until the user runs `sudo DevToolsSecurity -enable`.
 - The SFTP test image (atmoz/sftp) is amd64 and runs under emulation on this arm64 Mac — harmless.

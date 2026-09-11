@@ -57,36 +57,47 @@ UI tests need a one-time `sudo DevToolsSecurity -enable`.
 
 ## Signing & distribution (current state)
 
-- **Now**: ad-hoc signing (`CODE_SIGN_IDENTITY = "-"`), runs locally only.
-- **Placeholders to change before any distribution** (both in `project.pbxproj`):
+- **Now**: the **Ferry app target** is signed with a personal-team **`Apple Development`**
+  identity — `DEVELOPMENT_TEAM = 9H2MFWH42X`, Automatic signing, on all four app configs
+  (ADR-041, 2026-09-11). This is a **free** identity (no paid Developer Program needed) and
+  exists so login-Keychain secrets persist across rebuilds; it is **local-run only**. The
+  `FerryUITests` target stays ad-hoc (`CODE_SIGN_IDENTITY = "-"`) — it holds no Keychain items.
+- **Still placeholders to change before any distribution** (in `project.pbxproj`):
   - `PRODUCT_BUNDLE_IDENTIFIER` — currently `com.gfragos.Ferry`; set to a domain the
     user owns.
-  - `DEVELOPMENT_TEAM` — absent; requires an Apple Developer Program membership
-    ($99/yr), then switch `CODE_SIGN_IDENTITY` to `Apple Development` /
-    `Developer ID Application`.
+  - For distribution, switch `CODE_SIGN_IDENTITY` to `Developer ID Application` (Direct,
+    notarized) / an App Store signing+provisioning setup, under a **distribution** team —
+    a paid Apple Developer Program membership ($99/yr). The current personal team is fine
+    for local runs but not for shipping. (Deferred to M17 — packaging.)
 - **Versioning**: `MARKETING_VERSION` (semver, mirror `FerryVersion.current`) +
   `CURRENT_PROJECT_VERSION` (monotonic build number).
 
-### Keychain prompts in local builds (consequence of ad-hoc signing)
+### Keychain prompts in local builds
 
-Login-keychain items carry an ACL naming the app allowed to read them, identified by its code
-signature. An ad-hoc signature has no stable identity, so **every** local build is a different
-app to macOS: any profile whose password was saved by an earlier build triggers the
-"Ferry wants to use your confidential information stored in …" panel on each connect, and
-*Always Allow* cannot make it stick. Typing the login password does not help — the keychain is
-already unlocked; the panel is authorizing the ACL change, not an unlock.
+**Resolved as of 2026-09-11 (ADR-041).** The app target now signs with a stable
+`Apple Development` identity (`DEVELOPMENT_TEAM = 9H2MFWH42X`), so the login-keychain ACL binds
+durably: *Always Allow* / "Remember in my Keychain" **now sticks across rebuilds**. The panel
+still appears **once** on the first access to a newly-saved secret (it is authorizing the ACL,
+not unlocking the keychain) — click *Always Allow* and subsequent connects are silent.
 
-Symptoms and handling while developing:
+Background (why it was broken, and the two rules that still bite): login-keychain items carry an
+ACL naming the app allowed to read them, identified by its code signature. An **ad-hoc**
+signature has no stable identity, so every ad-hoc build was a different app to macOS and the
+panel looped. That is fixed by the stable identity, **but**:
 
-- Panel reappears in a loop ⇒ expected with ad-hoc signing, not an app bug. Deny it, or clear
-  the saved secrets: `security delete-generic-password -s com.gfragos.Ferry` (once per item),
-  then leave "Remember in my Keychain" unticked and type the password at each connect.
-- Never rebuild while the app is running: replacing the bundle underneath a live process
-  invalidates its signature and guarantees the panel on the next Keychain access.
-- The real fix is a stable identity — an Apple Development certificate is enough (no paid
-  membership needed for local runs); set `CODE_SIGN_IDENTITY` accordingly and the ACL survives
-  rebuilds. Until then, `security find-identity -v -p codesigning` reports 0 identities here.
-- The app no longer freezes behind that panel (ADR-034), but it still cannot dismiss it.
+- **Never rebuild while the app is running** — replacing the bundle underneath a live process
+  invalidates its signature and brings the panel back on the next Keychain access.
+- **Run a freshly-signed build, not a stale ad-hoc copy.** `tools/reinstall-app.sh` rebuilds
+  `ReleaseDirect` and installs it to `/Applications`; confirm identity with
+  `codesign -dv --verbose=2 /Applications/Ferry.app` (expect `Authority=Apple Development…`,
+  `TeamIdentifier=9H2MFWH42X`).
+- Confirm the machine has the identity: `security find-identity -v -p codesigning` should list
+  one `Apple Development:` entry (it comes from adding an Apple ID team in Xcode ▸ Settings ▸
+  Accounts — free, no paid membership).
+- To clear secrets left over from the ad-hoc era (their ACLs are bound to the old signature):
+  `security delete-generic-password -s com.gfragos.Ferry` (repeat once per item until
+  "not found"), then re-save.
+- The app never freezes behind the panel (ADR-034); Keychain reads run off the main actor.
 
 ## Release process (filled in at M17)
 

@@ -29,3 +29,7 @@ testinfra/fixtures/certs/
 
 # Coverage profile data (emitted by test runs)
 *.profraw
+
+# Claude Code personal settings + hook build log (do not commit)
+.claude/settings.local.json
+.claude/reinstall-app.log

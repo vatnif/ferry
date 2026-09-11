@@ -1487,3 +1487,36 @@ the 2-file `fixtures` batch, and asserts the header reads “2 of 2 done” live
 on disk). The overall bar is transient over a fast loopback transfer, so the test observes it
 best-effort only; its hidden/indeterminate/fraction states are pinned deterministically by the
 unit tests. Mockup + DESIGN.md screen 1 updated.
+
+## 2026-09-11 — ADR-041: Local code-signing identity configured (Keychain persistence)
+
+**Status: approved 2026-09-11** (development-environment fix, no milestone). Closes the item
+ADR-034 explicitly left open ("Not decided here"): ad-hoc-signed builds cannot hold a durable
+trusted-application ACL entry, so a saved secret re-prompted on every access and *Always Allow*
+never stuck. This was diagnosed to the machine having **0 code-signing identities**
+(`security find-identity -v -p codesigning`), not any fault in `CredentialVault`.
+
+**Decision.** The user added a personal Apple ID team in Xcode (free — no paid Developer Program
+membership needed for local runs) and enabled Automatic signing on the **Ferry app target**.
+Xcode wrote, on all four app configs (`DebugDirect`/`ReleaseDirect`/`DebugAppStore`/
+`ReleaseAppStore` for target `Ferry`) in `project.pbxproj`:
+`CODE_SIGN_IDENTITY = "Apple Development"` and `DEVELOPMENT_TEAM = 9H2MFWH42X`. The **FerryUITests**
+target was deliberately left ad-hoc (`CODE_SIGN_IDENTITY = "-"`, no team) — it does not hold
+Keychain items, so its identity is irrelevant to secret persistence.
+
+**Why this fixes it.** Login-keychain items key their ACL to the app's code signature. An
+`Apple Development` signature is a **stable identity** (`TeamIdentifier=9H2MFWH42X`, chains to
+Apple Root CA), so the ACL survives rebuilds and *Always Allow* / "Remember in my Keychain"
+persists. Verified: `ReleaseDirect` build signs to that authority, `codesign --verify --deep
+--strict` passes, and `/Applications/Ferry.app` (reinstalled via `tools/reinstall-app.sh`) now
+carries the same identity. **User-verified by hand (2026-09-11)**: connect with "Remember in my
+Keychain" ticked → *Always Allow* → reconnect prompts no more.
+
+**Scope / what is NOT decided.** This is `Apple Development` for local runs only. It is **not**
+`Developer ID Application` (Direct distribution) or an App Store signing/provisioning setup — both
+still belong to M17 (packaging), along with the bundle-id placeholder `com.gfragos.Ferry`. The
+team here is a personal one; a distribution team is a separate, later choice. No code changed;
+`CredentialVault` and ADR-010's login-keychain choice are untouched. BUILDING.md's "0 identities
+here" caveat and the ad-hoc Keychain-prompt section are updated to reflect the fix while retaining
+the two operational rules that still bite: never rebuild while the app is running, and run the
+freshly-signed build (not a stale ad-hoc copy).
